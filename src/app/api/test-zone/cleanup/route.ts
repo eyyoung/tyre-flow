@@ -43,29 +43,16 @@ export async function POST(request: NextRequest) {
         }
 
         case 'ledgers': {
-          // 清理台账数据（包括收集记录和转移记录）
+          // 清理台账数据
           const where = collectionPointId ? { collectionPointId } : {};
 
-          // 先获取台账任务ID
-          const tasks = await prisma.ledgerTask.findMany({
-            where,
-            select: { id: true },
-          });
-          const taskIds = tasks.map((t) => t.id);
+          // 删除收集台账任务（会级联删除收集记录）
+          const ledgerResult = await prisma.ledgerTask.deleteMany({ where });
 
-          // 删除收集记录
-          await prisma.collectionRecord.deleteMany({
-            where: { ledgerTaskId: { in: taskIds } },
-          });
+          // 删除转移台账任务（会级联删除转移记录）
+          const transferResult = await prisma.transferTask.deleteMany({ where });
 
-          // 删除转移记录
-          await prisma.transferRecord.deleteMany({
-            where: { ledgerTaskId: { in: taskIds } },
-          });
-
-          // 删除台账任务
-          const result = await prisma.ledgerTask.deleteMany({ where });
-          count = result.count;
+          count = ledgerResult.count + transferResult.count;
           break;
         }
       }
