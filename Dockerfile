@@ -1,15 +1,17 @@
+# syntax=docker/dockerfile:1
+
 # =====================================
 # Stage 1: Dependencies
+# 只有 package.json 或 package-lock.json 变更时才重新运行
 # =====================================
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy package files
+# 先只复制依赖文件（利用缓存）
 COPY package.json package-lock.json* ./
-COPY prisma ./prisma/
 
-# Install dependencies
+# 安装依赖
 RUN npm ci
 
 # =====================================
@@ -18,11 +20,17 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# 复制依赖
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
-# Generate Prisma Client
+# 先复制 prisma schema（变化频率低）
+COPY prisma ./prisma/
+
+# 生成 Prisma Client
 RUN npx prisma generate
+
+# 再复制源代码（变化频率高）
+COPY . .
 
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -65,4 +73,3 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
-

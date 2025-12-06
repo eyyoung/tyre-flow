@@ -13,7 +13,7 @@ set -e
 # 配置项（请根据实际情况修改）
 DEFAULT_SERVER="root@212.129.242.30"  # 默认服务器，格式: user@host
 SSH_PORT="22"                          # SSH 端口
-REMOTE_DIR="~/deployment/tyer-flow"    # 服务器上的项目目录
+REMOTE_DIR="~/deployment/tyre-flow"    # 服务器上的项目目录
 REPO_URL="git@gitee.com:young91/tyre-flow.git"
 BRANCH="main"
 
@@ -43,6 +43,8 @@ echo "📤 连接服务器并执行部署..."
 # SSH 到服务器执行部署命令
 ssh -p $SSH_PORT $SERVER << ENDSSH
 set -e
+sudo ssh-agent bash
+ssh-add ~/.ssh/id_rsa
 
 echo "📂 进入项目目录..."
 mkdir -p $REMOTE_DIR
@@ -60,7 +62,13 @@ fi
 
 echo "🔨 构建 Docker 镜像..."
 docker compose down || true
-docker compose build --no-cache
+
+# 启用 BuildKit 以获得更好的缓存和并行构建
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
+# 使用缓存构建（只有变更的层会重新构建）
+docker compose build
 
 echo "🚢 启动服务..."
 docker compose up -d
