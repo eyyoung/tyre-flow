@@ -1,0 +1,240 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 用户管理 ====================
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  password      String    // bcrypt 加密
+  email         String?   @unique
+  name          String?
+  role          Role      @default(ADMIN)
+  status        Status    @default(ACTIVE)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // 收集点绑定关系
+  collectionPoints UserCollectionPoint[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN // 超级管理员
+  USER  // 收集点审核员
+}
+
+enum Status {
+  ACTIVE
+  DISABLED
+}
+
+// ==================== 收集点管理 ====================
+
+model CollectionPoint {
+  id           String   @id @default(cuid())
+  code         String   @unique // 收集点编码
+  name         String
+  address      String
+  province     String?
+  city         String?
+  district     String?
+  longitude    Float?
+  latitude     Float?
+  certScope    String?  // 认证范围
+  contactName  String?
+  contactPhone String?
+  status       Status   @default(ACTIVE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stores   Store[]
+  vehicles Vehicle[]
+  users    UserCollectionPoint[]
+  tasks    LedgerTask[]
+
+  @@map("collection_points")
+}
+
+// 用户-收集点关联表（多对多）
+model UserCollectionPoint {
+  id                String          @id @default(cuid())
+  userId            String
+  collectionPointId String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+
+  @@unique([userId, collectionPointId])
+  @@map("user_collection_points")
+}
+
+// ==================== 门店管理 ====================
+
+model Store {
+  id                String      @id @default(cuid())
+  code              String      @unique // 门店编码
+  name              String
+  businessLicense   String?     // 营业执照号（统一社会信用代码）
+  legalPerson       String?     // 法人代表
+  address           String
+  province          String?
+  city              String?
+  district          String?
+  longitude         Float?
+  latitude          Float?
+  contactName       String?
+  contactPhone      String?
+  status            StoreStatus @default(ACTIVE)
+  disabledAt        DateTime?
+  disabledReason    String?
+  isVirtual         Boolean     @default(true) // 是否虚拟生成
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  collectionRecords CollectionRecord[]
+
+  @@index([collectionPointId])
+  @@index([status])
+  @@map("stores")
+}
+
+enum StoreStatus {
+  ACTIVE   // 正常
+  DISABLED // 停用（注销/吊销/停业）
+}
+
+// ==================== 车辆管理 ====================
+
+model Vehicle {
+  id                 String      @id @default(cuid())
+  plateNumber        String      @unique // 车牌号
+  type               VehicleType
+  brand              String?     // 品牌
+  model              String?     // 型号
+  tareWeight         Float       // 皮重（吨）
+  tareWeightVariance Float       @default(0.05) // 皮重随机微调范围
+  maxLoad            Float       // 最大载重（吨）
+  driverName         String?
+  driverPhone        String?
+  collectionPointId  String
+  collectionPoint    CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  status             Status      @default(ACTIVE)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  collectionRecords CollectionRecord[]
+  transferRecords   TransferRecord[]
+
+  @@index([collectionPointId])
+  @@index([type])
+  @@map("vehicles")
+}
+
+enum VehicleType {
+  COLLECTION // 收集车辆 4.2米
+  TRANSFER   // 转移车辆 13米半挂
+}
+
+// ==================== 系统配置 ====================
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  category    String?  // 配置分类
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+// ==================== 台账管理（Phase 3） ====================
+
+model LedgerTask {
+  id                String          @id @default(cuid())
+  taskNo            String          @unique // 任务编号
+  year              Int
+  month             Int
+  targetTonnage     Float           // 目标吨数
+  actualTonnage     Float?          // 实际吨数
+  status            TaskStatus      @default(PENDING)
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  collectionRecords CollectionRecord[]
+  transferRecords   TransferRecord[]
+
+  @@unique([collectionPointId, year, month])
+  @@map("ledger_tasks")
+}
+
+enum TaskStatus {
+  PENDING    // 待处理
+  PROCESSING // 处理中
+  COMPLETED  // 已完成
+  FAILED     // 失败
+}
+
+// 收集记录（门店→收集点）
+model CollectionRecord {
+  id             String     @id @default(cuid())
+  recordNo       String     @unique // 记录编号
+  taskId         String
+  task           LedgerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  storeId        String
+  store          Store      @relation(fields: [storeId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle    @relation(fields: [vehicleId], references: [id])
+  collectionDate DateTime
+  tireCount      Int        // 轮胎条数
+  weight         Float      // 重量（吨）
+  remarks        String?
+  createdAt      DateTime   @default(now())
+
+  @@index([taskId])
+  @@index([storeId])
+  @@index([collectionDate])
+  @@map("collection_records")
+}
+
+// 转移记录（收集点→工厂）
+model TransferRecord {
+  id            String     @id @default(cuid())
+  recordNo      String     @unique // 记录编号
+  taskId        String
+  task          LedgerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  vehicleId     String
+  vehicle       Vehicle    @relation(fields: [vehicleId], references: [id])
+  transferDate  DateTime
+  destination   String     // 目的地（工厂）
+  tireCount     Int        // 轮胎条数
+  grossWeight   Float      // 毛重
+  tareWeight    Float      // 皮重
+  netWeight     Float      // 净重
+  weighbridgeNo String?    // 磅单号
+  remarks       String?
+  createdAt     DateTime   @default(now())
+
+  @@index([taskId])
+  @@index([transferDate])
+  @@map("transfer_records")
+}

@@ -1,0 +1,134 @@
+.layout {
+  min-height: 100vh;
+}
+
+.sider {
+  overflow: auto;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 100;
+}
+
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logoIcon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.logoText {
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.menu {
+  border-right: none;
+}
+
+.menu :global(.ant-menu-item) {
+  margin: 4px 8px;
+  border-radius: 8px;
+}
+
+.menu :global(.ant-menu-item-selected) {
+  background: rgba(22, 119, 255, 0.9) !important;
+}
+
+.header {
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 99;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  margin-left: 240px;
+  transition: margin-left 0.2s;
+}
+
+.sider:global(.ant-layout-sider-collapsed) ~ * .header {
+  margin-left: 80px;
+}
+
+.trigger {
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userInfo {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.userInfo:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.userName {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content {
+  margin: 24px;
+  margin-left: calc(240px + 24px);
+  padding: 24px;
+  background: #fff;
+  border-radius: 8px;
+  min-height: calc(100vh - 64px - 48px);
+  transition: margin-left 0.2s;
+}
+
+.sider:global(.ant-layout-sider-collapsed) ~ * .content {
+  margin-left: calc(80px + 24px);
+}
+
+/* 响应式适配 */
+@media (max-width: 768px) {
+  .header {
+    margin-left: 0;
+    padding: 0 16px;
+  }
+
+  .content {
+    margin: 16px;
+    margin-left: 16px;
+    padding: 16px;
+  }
+
+  .sider {
+    position: absolute;
+    z-index: 200;
+  }
+
+  .userName {
+    display: none;
+  }
+}
+
