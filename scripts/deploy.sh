@@ -62,7 +62,13 @@ fi
 
 echo "🔨 构建 Docker 镜像..."
 docker compose down || true
-docker compose build --no-cache
+
+# 启用 BuildKit 以获得更好的缓存和并行构建
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
+# 使用缓存构建（只有变更的层会重新构建）
+docker compose build
 
 echo "🚢 启动服务..."
 docker compose up -d
