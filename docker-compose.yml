@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: tyer-flow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tyer_flow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tyer_flow_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tyer_flow}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tyer_flow} -d ${POSTGRES_DB:-tyer_flow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tyer-flow-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-tyer_flow}:${POSTGRES_PASSWORD:-tyer_flow_password}@db:5432/${POSTGRES_DB:-tyer_flow}?schema=public
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-nextauth-secret-change-in-production}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Database migration and seeding (run once)
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: tyer-flow-migrate
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-tyer_flow}:${POSTGRES_PASSWORD:-tyer_flow_password}@db:5432/${POSTGRES_DB:-tyer_flow}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - setup
+
+volumes:
+  postgres_data:
+

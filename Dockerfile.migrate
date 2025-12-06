@@ -1,0 +1,21 @@
+# Dockerfile for database migration
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files and prisma
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Copy seed script
+COPY prisma/seed.ts ./prisma/
+
+# Run migrations and seed
+CMD ["sh", "-c", "npx prisma db push && npx tsx prisma/seed.ts"]
+
