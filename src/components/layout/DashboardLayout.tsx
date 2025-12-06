@@ -15,6 +15,9 @@ import {
   LogoutOutlined,
   GlobalOutlined,
   DownOutlined,
+  SwapOutlined,
+  ContainerOutlined,
+  IdcardOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useRouter, usePathname } from 'next/navigation';
@@ -74,7 +77,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: '/dashboard/ledgers',
       icon: <FileTextOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard/ledgers`}>{t('menu.ledgers')}</Link>,
+      label: t('menu.ledgers'),
+      children: [
+        {
+          key: '/dashboard/ledgers/collection',
+          icon: <ContainerOutlined />,
+          label: <Link href={`/${currentLocale}/dashboard/ledgers/collection`}>{t('menu.collectionLedger')}</Link>,
+        },
+        {
+          key: '/dashboard/ledgers/transfer',
+          icon: <SwapOutlined />,
+          label: <Link href={`/${currentLocale}/dashboard/ledgers/transfer`}>{t('menu.transferLedger')}</Link>,
+        },
+        {
+          key: '/dashboard/ledgers/driver',
+          icon: <IdcardOutlined />,
+          label: <Link href={`/${currentLocale}/dashboard/ledgers/driver`}>{t('menu.driverLedger')}</Link>,
+        },
+      ],
     },
     {
       key: '/dashboard/settings',
@@ -83,19 +103,50 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     },
   ];
 
+  // 获取所有菜单项（包括子菜单）
+  const getAllMenuKeys = () => {
+    const keys: string[] = [];
+    const extractKeys = (items: typeof menuItems) => {
+      for (const item of items) {
+        keys.push(item.key);
+        if ('children' in item && item.children) {
+          extractKeys(item.children as typeof menuItems);
+        }
+      }
+    };
+    extractKeys(menuItems);
+    return keys;
+  };
+
   // 获取当前选中的菜单项
   const getSelectedKey = () => {
+    const allKeys = getAllMenuKeys();
+    
     // 精确匹配优先
-    const exactMatch = menuItems.find((item) => currentPath === item.key);
-    if (exactMatch) return exactMatch.key;
+    if (allKeys.includes(currentPath)) {
+      return currentPath;
+    }
 
     // 按路径长度降序排列，找到最长的匹配前缀
-    const sortedItems = [...menuItems].sort((a, b) => b.key.length - a.key.length);
-    const prefixMatch = sortedItems.find((item) => currentPath.startsWith(item.key + '/'));
-    if (prefixMatch) return prefixMatch.key;
+    const sortedKeys = [...allKeys].sort((a, b) => b.length - a.length);
+    const prefixMatch = sortedKeys.find((key) => currentPath.startsWith(key + '/'));
+    if (prefixMatch) return prefixMatch;
 
     // 默认返回 dashboard
     return '/dashboard';
+  };
+
+  // 获取应该展开的子菜单
+  const getOpenKeys = () => {
+    for (const item of menuItems) {
+      if ('children' in item && item.children) {
+        const childKeys = item.children.map(c => c.key);
+        if (childKeys.includes(currentPath) || currentPath.startsWith(item.key + '/')) {
+          return [item.key];
+        }
+      }
+    }
+    return [];
   };
 
   // 语言切换
@@ -158,6 +209,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           theme="dark"
           mode="inline"
           selectedKeys={[getSelectedKey()]}
+          defaultOpenKeys={getOpenKeys()}
           items={menuItems}
           className={styles.menu}
         />

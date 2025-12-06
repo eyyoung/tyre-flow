@@ -45,6 +45,20 @@
   border-radius: 8px;
 }
 
+.menu :global(.ant-menu-submenu-title) {
+  margin: 4px 8px;
+  border-radius: 8px;
+}
+
+.menu :global(.ant-menu-sub.ant-menu-inline) {
+  background: transparent !important;
+}
+
+.menu :global(.ant-menu-sub .ant-menu-item) {
+  padding-left: 36px !important;
+  margin-left: 12px;
+}
+
 .menu :global(.ant-menu-item-selected) {
   background: rgba(22, 119, 255, 0.9) !important;
 }

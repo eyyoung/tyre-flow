@@ -15,8 +15,6 @@ import {
   Typography,
   Row,
   Col,
-  InputNumber,
-  Progress,
   App,
 } from 'antd';
 import {
@@ -26,7 +24,6 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   ShopOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -77,11 +74,8 @@ export default function StoresPage() {
   const [isVirtualFilter, setIsVirtualFilter] = useState<string>('');
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [generateModalVisible, setGenerateModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Store | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [form] = Form.useForm();
-  const [generateForm] = Form.useForm();
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -122,7 +116,7 @@ export default function StoresPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, cpFilter, isVirtualFilter, t]);
+  }, [page, pageSize, search, statusFilter, cpFilter, isVirtualFilter, t, message]);
 
   useEffect(() => {
     fetchCollectionPoints();
@@ -201,34 +195,6 @@ export default function StoresPage() {
       }
     } catch {
       // 表单验证失败
-    }
-  };
-
-  const handleGenerateStores = async () => {
-    try {
-      const values = await generateForm.validateFields();
-      setGenerating(true);
-
-      const response = await fetch('/api/stores/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        message.success(t('stores.generateSuccess', { count: result.count }));
-        setGenerateModalVisible(false);
-        generateForm.resetFields();
-        fetchData();
-      } else {
-        message.error(result.message || t('common.error'));
-      }
-    } catch {
-      // 表单验证失败
-    } finally {
-      setGenerating(false);
     }
   };
 
@@ -388,14 +354,6 @@ export default function StoresPage() {
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             {t('stores.addStore')}
           </Button>
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            onClick={() => setGenerateModalVisible(true)}
-            style={{ background: '#52c41a', borderColor: '#52c41a' }}
-          >
-            {t('stores.generateStores')}
-          </Button>
         </Space>
 
         <Table
@@ -425,7 +383,8 @@ export default function StoresPage() {
         onOk={handleModalOk}
         onCancel={() => setModalVisible(false)}
         width={700}
-        destroyOnClose
+        destroyOnHidden
+        forceRender
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
@@ -543,60 +502,6 @@ export default function StoresPage() {
           )}
         </Form>
       </Modal>
-
-      {/* 批量生成门店弹窗 */}
-      <Modal
-        title={t('stores.generateTitle')}
-        open={generateModalVisible}
-        onOk={handleGenerateStores}
-        onCancel={() => setGenerateModalVisible(false)}
-        confirmLoading={generating}
-        destroyOnClose
-      >
-        <Form form={generateForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t('stores.collectionPoint')}
-            rules={[
-              {
-                required: true,
-                message: t('validation.required', {
-                  field: t('stores.collectionPoint'),
-                }),
-              },
-            ]}
-          >
-            <Select
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="count"
-            label={t('stores.generateCount')}
-            rules={[
-              {
-                required: true,
-                message: t('validation.required', { field: t('stores.generateCount') }),
-              },
-            ]}
-            extra={t('stores.generateCountHint')}
-          >
-            <InputNumber min={1} max={4000} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
-        {generating && (
-          <div style={{ marginTop: 16 }}>
-            <Progress percent={100} status="active" />
-            <p style={{ textAlign: 'center', color: '#666' }}>
-              {t('stores.generating')}
-            </p>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
-

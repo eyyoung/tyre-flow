@@ -98,6 +98,9 @@ function generateVirtualStore(
   const baseLongitude = 113.2 + Math.random() * 7; // 113.2 ~ 120.2
   const baseLatitude = 22.5 + Math.random() * 9; // 22.5 ~ 31.5
 
+  // 预估行程时间：15-90分钟（模拟不同距离的门店）
+  const estimatedTravelMinutes = Math.floor(15 + Math.random() * 75);
+
   return {
     code: `${baseCode}-${String(index).padStart(5, '0')}`,
     name,
@@ -111,6 +114,7 @@ function generateVirtualStore(
     latitude: parseFloat(baseLatitude.toFixed(6)),
     contactName: `${surname}先生`,
     contactPhone: randomPhone(),
+    estimatedTravelMinutes,
     collectionPointId,
     isVirtual: true,
   };

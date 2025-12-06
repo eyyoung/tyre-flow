@@ -59,10 +59,11 @@ model CollectionPoint {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  stores   Store[]
-  vehicles Vehicle[]
-  users    UserCollectionPoint[]
-  tasks    LedgerTask[]
+  stores        Store[]
+  vehicles      Vehicle[]
+  users         UserCollectionPoint[]
+  tasks         LedgerTask[]
+  transferTasks TransferTask[]
 
   @@map("collection_points")
 }
@@ -83,27 +84,28 @@ model UserCollectionPoint {
 // ==================== 门店管理 ====================
 
 model Store {
-  id                String      @id @default(cuid())
-  code              String      @unique // 门店编码
-  name              String
-  businessLicense   String?     // 营业执照号（统一社会信用代码）
-  legalPerson       String?     // 法人代表
-  address           String
-  province          String?
-  city              String?
-  district          String?
-  longitude         Float?
-  latitude          Float?
-  contactName       String?
-  contactPhone      String?
-  status            StoreStatus @default(ACTIVE)
-  disabledAt        DateTime?
-  disabledReason    String?
-  isVirtual         Boolean     @default(true) // 是否虚拟生成
-  collectionPointId String
-  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id                     String      @id @default(cuid())
+  code                   String      @unique // 门店编码
+  name                   String
+  businessLicense        String?     // 营业执照号（统一社会信用代码）
+  legalPerson            String?     // 法人代表
+  address                String
+  province               String?
+  city                   String?
+  district               String?
+  longitude              Float?
+  latitude               Float?
+  contactName            String?
+  contactPhone           String?
+  estimatedTravelMinutes Int         @default(30) // 到收集点的预估行程时间（分钟）
+  status                 StoreStatus @default(ACTIVE)
+  disabledAt             DateTime?
+  disabledReason         String?
+  isVirtual              Boolean     @default(true) // 是否虚拟生成
+  collectionPointId      String
+  collectionPoint        CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
 
   collectionRecords CollectionRecord[]
 
@@ -181,10 +183,29 @@ model LedgerTask {
   updatedAt         DateTime        @updatedAt
 
   collectionRecords CollectionRecord[]
-  transferRecords   TransferRecord[]
 
   @@unique([collectionPointId, year, month])
   @@map("ledger_tasks")
+}
+
+// 转移任务（手动触发）
+model TransferTask {
+  id                String          @id @default(cuid())
+  taskNo            String          @unique // 任务编号
+  targetTonnage     Float           // 目标吨数
+  actualTonnage     Float?          // 实际吨数
+  status            TaskStatus      @default(PENDING)
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  transferRecords TransferRecord[]
+
+  @@map("transfer_tasks")
 }
 
 enum TaskStatus {
@@ -204,7 +225,9 @@ model CollectionRecord {
   store          Store      @relation(fields: [storeId], references: [id])
   vehicleId      String
   vehicle        Vehicle    @relation(fields: [vehicleId], references: [id])
-  collectionDate DateTime
+  collectionDate DateTime   // 收集日期
+  departureTime  DateTime   // 出发时间（精确到分）
+  arrivalTime    DateTime   // 到达时间（精确到分）
   tireCount      Int        // 轮胎条数
   weight         Float      // 重量（吨）
   remarks        String?
@@ -218,21 +241,23 @@ model CollectionRecord {
 
 // 转移记录（收集点→工厂）
 model TransferRecord {
-  id            String     @id @default(cuid())
-  recordNo      String     @unique // 记录编号
+  id            String       @id @default(cuid())
+  recordNo      String       @unique // 记录编号
   taskId        String
-  task          LedgerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task          TransferTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   vehicleId     String
-  vehicle       Vehicle    @relation(fields: [vehicleId], references: [id])
-  transferDate  DateTime
-  destination   String     // 目的地（工厂）
-  tireCount     Int        // 轮胎条数
-  grossWeight   Float      // 毛重
-  tareWeight    Float      // 皮重
-  netWeight     Float      // 净重
-  weighbridgeNo String?    // 磅单号
+  vehicle       Vehicle      @relation(fields: [vehicleId], references: [id])
+  transferDate  DateTime     // 转移日期
+  departureTime DateTime     // 出发时间（精确到分）
+  arrivalTime   DateTime     // 到达时间（精确到分）
+  destination   String       // 目的地（工厂）
+  tireCount     Int          // 轮胎条数
+  grossWeight   Float        // 毛重
+  tareWeight    Float        // 皮重
+  netWeight     Float        // 净重
+  weighbridgeNo String?      // 磅单号
   remarks       String?
-  createdAt     DateTime   @default(now())
+  createdAt     DateTime     @default(now())
 
   @@index([taskId])
   @@index([transferDate])

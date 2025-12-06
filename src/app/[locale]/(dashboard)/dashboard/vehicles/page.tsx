@@ -410,7 +410,8 @@ export default function VehiclesPage() {
         onOk={handleModalOk}
         onCancel={() => setModalVisible(false)}
         width={700}
-        destroyOnClose
+        destroyOnHidden
+        forceRender
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>

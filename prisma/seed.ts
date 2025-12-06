@@ -32,7 +32,9 @@ async function main() {
     { key: 'transfer_vehicle_load', value: '30.0', description: '转移车默认载重（吨）', category: 'vehicle' },
     { key: 'tire_weight_kg', value: '10', description: '单条轮胎重量（kg）', category: 'ledger' },
     { key: 'collection_tire_limit', value: '200', description: '单次收集条数上限', category: 'ledger' },
-    { key: 'collection_interval_days', value: '7', description: '门店收集间隔天数', category: 'ledger' },
+    { key: 'collection_interval_min', value: '7', description: '门店收集最小间隔天数', category: 'ledger' },
+    { key: 'collection_interval_max', value: '15', description: '门店收集最大间隔天数', category: 'ledger' },
+    { key: 'cold_store_ratio', value: '0.1', description: '冷门门店比例（0-1）', category: 'ledger' },
   ];
 
   for (const config of defaultConfigs) {
