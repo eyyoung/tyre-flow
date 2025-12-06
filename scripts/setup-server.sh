@@ -99,6 +99,11 @@ POSTGRES_DB=tyer_flow
 JWT_SECRET=请设置32位随机字符串
 NEXTAUTH_SECRET=请设置另一个随机字符串
 NEXTAUTH_URL=http://你的服务器IP:3000
+
+# Cookie 安全设置
+# 如果使用 HTTPS，设置为 true
+# 如果使用 HTTP，设置为 false
+SECURE_COOKIES=false
 EOF
     echo "⚠️  请编辑 $REMOTE_DIR/.env 配置环境变量"
 else

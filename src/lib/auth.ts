@@ -52,10 +52,13 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
 // 设置认证 Cookie
 export async function setAuthCookie(token: string): Promise<void> {
   const cookieStore = await cookies();
+  // 只有在 HTTPS 环境下才启用 secure（通过 SECURE_COOKIES 环境变量控制）
+  const isSecure = process.env.SECURE_COOKIES === 'true';
+  
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isSecure,
+    sameSite: isSecure ? 'strict' : 'lax',
     maxAge: COOKIE_MAX_AGE,
     path: '/',
   });
