@@ -237,6 +237,17 @@ export async function generateTransferData(
       // vehicle.maxLoad 是 kg
       const maxNetWeight = vehicle.maxLoad * loadFactor;
       const remainingKg = targetWeightKg - transferredKg;
+      
+      // 最小装车重量：车辆最大载重的 30%（约 6-7 吨）
+      const minLoadWeight = vehicle.maxLoad * 0.3;
+      
+      // 如果剩余量太小（小于最小装车重量），视为完成，不再生成记录
+      if (remainingKg < minLoadWeight) {
+        // 标记为完成，退出主循环
+        transferredKg = targetWeightKg;
+        break;
+      }
+      
       const loadingNetWeight = parseFloat(Math.min(maxNetWeight, remainingKg).toFixed(2));
 
       // 计算折损
