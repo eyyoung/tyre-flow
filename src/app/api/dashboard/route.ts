@@ -30,7 +30,7 @@ export async function GET() {
       prisma.vehicle.count({
         where: { status: 'ACTIVE' },
       }),
-      // 本月收集重量
+      // 本月收集重量（使用卸车净重）
       prisma.collectionRecord.aggregate({
         where: {
           collectionDate: {
@@ -39,7 +39,7 @@ export async function GET() {
           },
         },
         _sum: {
-          weight: true,
+          unloadingNetWeight: true,
         },
       }),
       // 本月转移重量
@@ -67,8 +67,8 @@ export async function GET() {
     ]);
 
     // 计算本月总吨数（收集 + 转移）
-    const collectionWeight = monthlyCollectionWeight._sum.weight || 0;
-    const transferWeight = monthlyTransferWeight._sum.netWeight || 0;
+    const collectionWeight = monthlyCollectionWeight._sum?.unloadingNetWeight || 0;
+    const transferWeight = monthlyTransferWeight._sum?.netWeight || 0;
     const monthlyTonnage = collectionWeight + transferWeight;
 
     return NextResponse.json({
@@ -76,7 +76,7 @@ export async function GET() {
         collectionPoints: collectionPointCount,
         stores: storeCount,
         vehicles: vehicleCount,
-        monthlyTonnage: parseFloat(monthlyTonnage.toFixed(2)),
+        monthlyWeight: parseFloat(monthlyTonnage.toFixed(2)),
       },
       recentTasks: recentTasks.map((task) => ({
         key: task.id,

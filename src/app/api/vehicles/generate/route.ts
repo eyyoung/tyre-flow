@@ -144,9 +144,10 @@ export async function POST(request: NextRequest) {
           type: 'COLLECTION' as const,
           brand: brandData.brand,
           model,
-          tareWeight: parseFloat((2.5 + Math.random() * 0.5).toFixed(2)),
-          tareWeightVariance: parseFloat((0.05 + Math.random() * 0.05).toFixed(3)),
-          maxLoad: 4.0,
+          // 皮重和载重单位：kg
+          tareWeight: parseFloat((2500 + Math.random() * 500).toFixed(0)),
+          tareWeightVariance: parseFloat((50 + Math.random() * 50).toFixed(0)),
+          maxLoad: 4000, // 4.2米货车最大载重 4000 kg
           driverName: `${surname}${name}`,
           driverPhone: generatePhone(),
           collectionPointId,
@@ -170,9 +171,10 @@ export async function POST(request: NextRequest) {
           type: 'TRANSFER' as const,
           brand: brandData.brand,
           model,
-          tareWeight: parseFloat((14 + Math.random() * 2).toFixed(2)),
-          tareWeightVariance: parseFloat((0.1 + Math.random() * 0.1).toFixed(3)),
-          maxLoad: 33.0,
+          // 皮重和载重单位：kg
+          tareWeight: parseFloat((14000 + Math.random() * 2000).toFixed(0)),
+          tareWeightVariance: parseFloat((100 + Math.random() * 100).toFixed(0)),
+          maxLoad: 33000, // 13米半挂车最大载重 33000 kg
           driverName: `${surname}${name}`,
           driverPhone: generatePhone(),
           collectionPointId,

@@ -143,9 +143,9 @@ export default function VehiclesPage() {
     form.setFieldsValue({
       status: 'ACTIVE',
       type: 'COLLECTION',
-      tareWeight: 2.5,
+      tareWeight: 2.5, // 显示吨
       tareWeightVariance: 0.05,
-      maxLoad: 2.0,
+      maxLoad: 4.0, // 显示吨
     });
     setModalVisible(true);
   };
@@ -155,6 +155,10 @@ export default function VehiclesPage() {
     form.setFieldsValue({
       ...item,
       collectionPointId: item.collectionPoint.id,
+      // 将 kg 转换为吨显示
+      tareWeight: item.tareWeight / 1000,
+      tareWeightVariance: item.tareWeightVariance / 1000,
+      maxLoad: item.maxLoad / 1000,
     });
     setModalVisible(true);
   };
@@ -182,10 +186,18 @@ export default function VehiclesPage() {
       const url = isEditing ? `/api/vehicles/${editingItem.id}` : '/api/vehicles';
       const method = isEditing ? 'PUT' : 'POST';
 
+      // 将表单中的吨转换为 kg 存储
+      const dataToSubmit = {
+        ...values,
+        tareWeight: values.tareWeight * 1000,
+        tareWeightVariance: values.tareWeightVariance * 1000,
+        maxLoad: values.maxLoad * 1000,
+      };
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(dataToSubmit),
       });
 
       const result = await response.json();
@@ -202,17 +214,17 @@ export default function VehiclesPage() {
     }
   };
 
-  // 根据车辆类型更新默认值
+  // 根据车辆类型更新默认值（显示吨）
   const handleTypeChange = (type: string) => {
     if (type === 'COLLECTION') {
       form.setFieldsValue({
         tareWeight: 2.5,
-        maxLoad: 2.0,
+        maxLoad: 4.0,
       });
     } else if (type === 'TRANSFER') {
       form.setFieldsValue({
         tareWeight: 15.0,
-        maxLoad: 30.0,
+        maxLoad: 33.0,
       });
     }
   };
@@ -256,14 +268,14 @@ export default function VehiclesPage() {
       dataIndex: 'tareWeight',
       key: 'tareWeight',
       width: 100,
-      render: (v) => `${v} t`,
+      render: (v) => `${(v / 1000).toFixed(2)} t`,
     },
     {
       title: t('vehicles.maxLoad'),
       dataIndex: 'maxLoad',
       key: 'maxLoad',
       width: 100,
-      render: (v) => `${v} t`,
+      render: (v) => `${(v / 1000).toFixed(2)} t`,
     },
     {
       title: t('vehicles.driverName'),
@@ -411,8 +423,8 @@ export default function VehiclesPage() {
         onCancel={() => setModalVisible(false)}
         width={700}
         destroyOnHidden
-        forceRender
       >
+        {modalVisible && (
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
             <Col span={12}>
@@ -495,7 +507,7 @@ export default function VehiclesPage() {
                   },
                 ]}
               >
-                <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.1} addonAfter="t" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -503,7 +515,7 @@ export default function VehiclesPage() {
                 name="tareWeightVariance"
                 label={t('vehicles.tareWeightVariance')}
               >
-                <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} max={1} step={0.01} addonAfter="t" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -517,7 +529,7 @@ export default function VehiclesPage() {
                   },
                 ]}
               >
-                <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.5} addonAfter="t" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>
@@ -544,6 +556,7 @@ export default function VehiclesPage() {
             </Form.Item>
           )}
         </Form>
+        )}
       </Modal>
     </div>
   );

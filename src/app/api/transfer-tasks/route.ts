@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { executeTransferTask } from '@/lib/transfer-generator';
 
 // 获取转移任务列表
 export async function GET(request: NextRequest) {
@@ -54,15 +55,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 创建转移任务
+// 创建转移任务并立即执行
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { collectionPointId, targetTonnage } = body;
+    const { collectionPointId, startDate, endDate, targetTonnage } = body;
 
-    if (!collectionPointId || !targetTonnage) {
+    if (!collectionPointId || !startDate || !endDate || !targetTonnage) {
       return NextResponse.json(
-        { error: '收集点和目标吨数为必填项' },
+        { error: '收集点、时间范围和目标重量为必填项' },
         { status: 400 }
       );
     }
@@ -95,32 +96,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 生成任务编号
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const count = await prisma.transferTask.count();
-    const taskNo = `TT-${dateStr}-${String(count + 1).padStart(4, '0')}`;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
-    const task = await prisma.transferTask.create({
-      data: {
-        taskNo,
-        targetTonnage: parseFloat(targetTonnage),
+    // 检查是否已存在相同时间范围的任务
+    const existingTask = await prisma.transferTask.findFirst({
+      where: {
         collectionPointId,
-      },
-      include: {
-        collectionPoint: {
-          select: { id: true, name: true, code: true },
-        },
+        startDate: start,
+        endDate: end,
       },
     });
 
-    return NextResponse.json(task, { status: 201 });
+    if (existingTask) {
+      return NextResponse.json(
+        { error: '该收集点在此时间范围内已存在转移任务' },
+        { status: 400 }
+      );
+    }
+
+    // 生成任务编号
+    const startStr = startDate.replace(/-/g, '');
+    const endStr = endDate.replace(/-/g, '');
+    const count = await prisma.transferTask.count();
+    const taskNo = `TT-${startStr}-${endStr}-${String(count + 1).padStart(4, '0')}`;
+
+    // 创建任务
+    const task = await prisma.transferTask.create({
+      data: {
+        taskNo,
+        startDate: start,
+        endDate: end,
+        targetTonnage: parseFloat(targetTonnage), // 已经是 kg
+        collectionPointId,
+      },
+    });
+
+    // 立即执行生成任务
+    const summary = await executeTransferTask(task.id);
+
+    return NextResponse.json({ task, summary }, { status: 201 });
   } catch (error) {
     console.error('Error creating transfer task:', error);
     return NextResponse.json(
-      { error: '创建转移任务失败' },
+      { error: error instanceof Error ? error.message : '创建转移任务失败' },
       { status: 500 }
     );
   }
 }
-

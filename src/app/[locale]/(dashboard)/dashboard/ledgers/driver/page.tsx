@@ -48,13 +48,13 @@ interface LedgerRecord {
   id: string;
   recordNo: string;
   date: string;
-  departureTime: string;
-  arrivalTime: string;
+  loadingTime: string;
+  unloadingTime: string;
   type: 'collection' | 'transfer';
   driverName: string;
   driverPhone: string;
   vehiclePlate: string;
-  weight: number;
+  weight: number; // kg
   tireCount: number;
   storeName: string | null;
   destination: string | null;
@@ -236,16 +236,16 @@ export default function DriverLedgerPage() {
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     {
-      title: t('ledgers.departureTime'),
-      dataIndex: 'departureTime',
-      key: 'departureTime',
+      title: t('ledgers.loadingTime'),
+      dataIndex: 'loadingTime',
+      key: 'loadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
     {
-      title: t('ledgers.arrivalTime'),
-      dataIndex: 'arrivalTime',
-      key: 'arrivalTime',
+      title: t('ledgers.unloadingTime'),
+      dataIndex: 'unloadingTime',
+      key: 'unloadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
@@ -283,12 +283,12 @@ export default function DriverLedgerPage() {
       align: 'right',
     },
     {
-      title: t('ledgers.weight'),
+      title: `${t('ledgers.unloadingNetWeight')}(kg)`,
       dataIndex: 'weight',
       key: 'weight',
-      width: 130,
+      width: 140,
       align: 'right',
-      render: (v) => `${v.toFixed(3)} t`,
+      render: (v) => Math.round(v).toLocaleString(),
     },
   ];
 
@@ -368,9 +368,9 @@ export default function DriverLedgerPage() {
               <Statistic
                 title={t('ledgers.totalWeight')}
                 value={summary.totalWeight}
-                precision={3}
+                precision={2}
                 prefix={<ScissorOutlined />}
-                suffix="吨"
+                suffix="t"
               />
             </Card>
           </Col>

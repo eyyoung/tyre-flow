@@ -169,10 +169,14 @@ model SystemConfig {
 model LedgerTask {
   id                String          @id @default(cuid())
   taskNo            String          @unique // 任务编号
-  year              Int
-  month             Int
+  year              Int?            // 保留兼容旧数据
+  month             Int?            // 保留兼容旧数据
+  startDate         DateTime        // 开始日期
+  endDate           DateTime        // 结束日期
   targetTonnage     Float           // 目标吨数
-  actualTonnage     Float?          // 实际吨数
+  actualTonnage     Float?          // 实际吨数（装车净重合计）
+  unloadingTonnage  Float?          // 卸车净重合计
+  totalLoss         Float?          // 折损合计
   status            TaskStatus      @default(PENDING)
   errorMessage      String?
   startedAt         DateTime?
@@ -184,27 +188,32 @@ model LedgerTask {
 
   collectionRecords CollectionRecord[]
 
-  @@unique([collectionPointId, year, month])
+  @@unique([collectionPointId, startDate, endDate])
   @@map("ledger_tasks")
 }
 
 // 转移任务（手动触发）
 model TransferTask {
-  id                String          @id @default(cuid())
-  taskNo            String          @unique // 任务编号
-  targetTonnage     Float           // 目标吨数
-  actualTonnage     Float?          // 实际吨数
-  status            TaskStatus      @default(PENDING)
-  errorMessage      String?
-  startedAt         DateTime?
-  completedAt       DateTime?
-  collectionPointId String
-  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id])
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  taskNo             String          @unique // 任务编号
+  startDate          DateTime        // 开始日期
+  endDate            DateTime        // 结束日期
+  targetTonnage      Float           // 目标重量（kg）
+  actualTonnage      Float?          // 装车总重量（kg）
+  unloadingTonnage   Float?          // 卸车总重量（kg）
+  totalLoss          Float?          // 总折损（kg）
+  status             TaskStatus      @default(PENDING)
+  errorMessage       String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  collectionPointId  String
+  collectionPoint    CollectionPoint @relation(fields: [collectionPointId], references: [id])
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   transferRecords TransferRecord[]
 
+  @@unique([collectionPointId, startDate, endDate])
   @@map("transfer_tasks")
 }
 
@@ -217,21 +226,23 @@ enum TaskStatus {
 
 // 收集记录（门店→收集点）
 model CollectionRecord {
-  id             String     @id @default(cuid())
-  recordNo       String     @unique // 记录编号
-  taskId         String
-  task           LedgerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  storeId        String
-  store          Store      @relation(fields: [storeId], references: [id])
-  vehicleId      String
-  vehicle        Vehicle    @relation(fields: [vehicleId], references: [id])
-  collectionDate DateTime   // 收集日期
-  departureTime  DateTime   // 出发时间（精确到分）
-  arrivalTime    DateTime   // 到达时间（精确到分）
-  tireCount      Int        // 轮胎条数
-  weight         Float      // 重量（吨）
-  remarks        String?
-  createdAt      DateTime   @default(now())
+  id                 String     @id @default(cuid())
+  recordNo           String     @unique // 记录编号
+  taskId             String
+  task               LedgerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  storeId            String
+  store              Store      @relation(fields: [storeId], references: [id])
+  vehicleId          String
+  vehicle            Vehicle    @relation(fields: [vehicleId], references: [id])
+  collectionDate     DateTime   // 收集日期
+  loadingTime        DateTime   // 装车时间（精确到分）
+  unloadingTime      DateTime   // 卸车时间（精确到分）
+  tireCount          Int        // 轮胎条数
+  loadingNetWeight   Float      // 装车净重（吨）
+  unloadingNetWeight Float      // 卸车净重（吨）
+  loss               Float      // 折损（吨）
+  remarks            String?
+  createdAt          DateTime   @default(now())
 
   @@index([taskId])
   @@index([storeId])
@@ -241,23 +252,25 @@ model CollectionRecord {
 
 // 转移记录（收集点→工厂）
 model TransferRecord {
-  id            String       @id @default(cuid())
-  recordNo      String       @unique // 记录编号
-  taskId        String
-  task          TransferTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  vehicleId     String
-  vehicle       Vehicle      @relation(fields: [vehicleId], references: [id])
-  transferDate  DateTime     // 转移日期
-  departureTime DateTime     // 出发时间（精确到分）
-  arrivalTime   DateTime     // 到达时间（精确到分）
-  destination   String       // 目的地（工厂）
-  tireCount     Int          // 轮胎条数
-  grossWeight   Float        // 毛重
-  tareWeight    Float        // 皮重
-  netWeight     Float        // 净重
-  weighbridgeNo String?      // 磅单号
-  remarks       String?
-  createdAt     DateTime     @default(now())
+  id                 String       @id @default(cuid())
+  recordNo           String       @unique // 记录编号
+  taskId             String
+  task               TransferTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  vehicleId          String
+  vehicle            Vehicle      @relation(fields: [vehicleId], references: [id])
+  transferDate       DateTime     // 转移日期
+  loadingTime        DateTime     // 装车时间（精确到分）
+  unloadingTime      DateTime     // 卸车时间（精确到分）
+  destination        String       // 目的地（工厂）
+  tireCount          Int          // 轮胎条数
+  loadingNetWeight   Float        // 装车净重（kg）
+  grossWeight        Float        // 卸车毛重（kg）
+  tareWeight         Float        // 皮重（kg）
+  unloadingNetWeight Float        // 卸车净重（kg）
+  loss               Float        // 折损（kg）
+  weighbridgeNo      String?      // 磅单号
+  remarks            String?
+  createdAt          DateTime     @default(now())
 
   @@index([taskId])
   @@index([transferDate])

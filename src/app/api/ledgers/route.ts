@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
+import { executeLedgerTask } from '@/lib/ledger-generator';
 
 // 获取台账任务列表
 export async function GET(request: NextRequest) {
@@ -11,8 +12,6 @@ export async function GET(request: NextRequest) {
       const pageSize = parseInt(searchParams.get('pageSize') || '10');
       const status = searchParams.get('status') || '';
       const collectionPointId = searchParams.get('collectionPointId') || '';
-      const year = searchParams.get('year') || '';
-      const month = searchParams.get('month') || '';
 
       // 非管理员只能看到自己绑定的收集点的任务
       let allowedCollectionPointIds: string[] | null = null;
@@ -28,8 +27,6 @@ export async function GET(request: NextRequest) {
         AND: [
           status ? { status: status as 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' } : {},
           collectionPointId ? { collectionPointId } : {},
-          year ? { year: parseInt(year) } : {},
-          month ? { month: parseInt(month) } : {},
           allowedCollectionPointIds
             ? { collectionPointId: { in: allowedCollectionPointIds } }
             : {},
@@ -50,7 +47,7 @@ export async function GET(request: NextRequest) {
               },
             },
           },
-          orderBy: [{ year: 'desc' }, { month: 'desc' }, { createdAt: 'desc' }],
+          orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
@@ -73,7 +70,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// 创建台账任务
+// 创建并同步生成收集任务
 export async function POST(request: NextRequest) {
   return withAuth(request, async (user) => {
     if (!isAdmin(user)) {
@@ -82,12 +79,22 @@ export async function POST(request: NextRequest) {
 
     try {
       const body = await request.json();
-      const { collectionPointId, year, month, targetTonnage } = body;
+      const { collectionPointId, startDate, endDate, targetTonnage } = body;
 
       // 验证必填字段
-      if (!collectionPointId || !year || !month || !targetTonnage) {
+      if (!collectionPointId || !startDate || !endDate || !targetTonnage) {
         return NextResponse.json(
-          { message: 'Collection point, year, month and target tonnage are required' },
+          { message: 'Collection point, start date, end date and target tonnage are required' },
+          { status: 400 }
+        );
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (start > end) {
+        return NextResponse.json(
+          { message: '开始日期不能晚于结束日期' },
           { status: 400 }
         );
       }
@@ -104,41 +111,65 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 检查是否已存在相同年月的任务
+      // 检查是否已存在相同时间范围的任务
       const existing = await prisma.ledgerTask.findFirst({
-        where: { collectionPointId, year: parseInt(year), month: parseInt(month) },
+        where: {
+          collectionPointId,
+          startDate: start,
+          endDate: end,
+        },
       });
 
       if (existing) {
         return NextResponse.json(
-          { message: '该收集点在该年月已存在台账任务' },
+          { message: '该收集点在该时间范围已存在收集任务' },
           { status: 400 }
         );
       }
 
       // 生成任务编号
-      const taskNo = `LT-${year}${String(month).padStart(2, '0')}-${collectionPoint.code}-${Date.now().toString(36).toUpperCase()}`;
+      const startStr = startDate.replace(/-/g, '');
+      const endStr = endDate.replace(/-/g, '');
+      const taskNo = `LT-${startStr}-${endStr}-${collectionPoint.code}-${Date.now().toString(36).toUpperCase()}`;
 
+      // 创建任务
       const task = await prisma.ledgerTask.create({
         data: {
           taskNo,
-          year: parseInt(year),
-          month: parseInt(month),
+          startDate: start,
+          endDate: end,
           targetTonnage: parseFloat(targetTonnage),
           collectionPointId,
+          status: 'PENDING',
         },
+      });
+
+      // 同步执行生成
+      const result = await executeLedgerTask(task.id);
+
+      // 获取更新后的任务信息
+      const updatedTask = await prisma.ledgerTask.findUnique({
+        where: { id: task.id },
         include: {
           collectionPoint: {
             select: { id: true, name: true, code: true },
           },
+          _count: {
+            select: {
+              collectionRecords: true,
+            },
+          },
         },
       });
 
-      return NextResponse.json({ data: task }, { status: 201 });
+      return NextResponse.json({
+        data: updatedTask,
+        summary: result,
+      }, { status: 201 });
     } catch (error) {
       console.error('Create ledger task error:', error);
       return NextResponse.json(
-        { message: 'Internal server error' },
+        { message: error instanceof Error ? error.message : 'Internal server error' },
         { status: 500 }
       );
     }

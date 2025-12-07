@@ -306,17 +306,17 @@ export default function SettingsPage() {
               name="collection_vehicle_load"
               label={t('settings.collectionVehicleLoad')}
               rules={[{ required: true }]}
-              extra={<Text type="secondary">4.2米货车默认载重</Text>}
+              extra={<Text type="secondary">4.2米货车默认载重（单位: kg）</Text>}
             >
-              <InputNumber min={0.5} max={10} step={0.5} style={{ width: 200 }} />
+              <InputNumber min={500} max={10000} step={100} style={{ width: 200 }} />
             </Form.Item>
             <Form.Item
               name="transfer_vehicle_load"
               label={t('settings.transferVehicleLoad')}
               rules={[{ required: true }]}
-              extra={<Text type="secondary">13米半挂车默认载重</Text>}
+              extra={<Text type="secondary">13米半挂车默认载重（单位: kg）</Text>}
             >
-              <InputNumber min={10} max={50} step={1} style={{ width: 200 }} />
+              <InputNumber min={10000} max={50000} step={1000} style={{ width: 200 }} />
             </Form.Item>
           </Card>
 
@@ -385,6 +385,28 @@ export default function SettingsPage() {
             >
               <InputNumber min={0} max={0.5} step={0.05} style={{ width: 200 }} />
             </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="loss_ratio_min"
+                  label={t('settings.lossRatioMin')}
+                  rules={[{ required: true }]}
+                  extra={<Text type="secondary">运输折损最小比例（如 0.001 = 0.1%）</Text>}
+                >
+                  <InputNumber min={0} max={0.1} step={0.001} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="loss_ratio_max"
+                  label={t('settings.lossRatioMax')}
+                  rules={[{ required: true }]}
+                  extra={<Text type="secondary">运输折损最大比例（如 0.005 = 0.5%）</Text>}
+                >
+                  <InputNumber min={0} max={0.1} step={0.001} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
           </Card>
 
           <Divider />
@@ -496,35 +518,36 @@ export default function SettingsPage() {
         onCancel={() => setGenerateStoresModalVisible(false)}
         confirmLoading={generating}
         destroyOnHidden
-        forceRender
       >
-        <Form form={storesForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t('stores.collectionPoint')}
-            rules={[
-              {
-                required: true,
-                message: t('settings.selectCollectionPoint'),
-              },
-            ]}
-          >
-            <Select
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="count"
-            label={t('settings.generateCount')}
-            rules={[{ required: true }]}
-            extra="每个收集点生成的门店数量（1-4000）"
-          >
-            <InputNumber min={1} max={4000} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
+        {generateStoresModalVisible && (
+          <Form form={storesForm} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="collectionPointId"
+              label={t('stores.collectionPoint')}
+              rules={[
+                {
+                  required: true,
+                  message: t('settings.selectCollectionPoint'),
+                },
+              ]}
+            >
+              <Select
+                options={collectionPoints.map((cp) => ({
+                  value: cp.id,
+                  label: cp.name,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item
+              name="count"
+              label={t('settings.generateCount')}
+              rules={[{ required: true }]}
+              extra="每个收集点生成的门店数量（1-4000）"
+            >
+              <InputNumber min={1} max={4000} style={{ width: '100%' }} />
+            </Form.Item>
+          </Form>
+        )}
         {generating && (
           <div style={{ marginTop: 16 }}>
             <Progress percent={100} status="active" />
@@ -543,49 +566,50 @@ export default function SettingsPage() {
         onCancel={() => setGenerateVehiclesModalVisible(false)}
         confirmLoading={generating}
         destroyOnHidden
-        forceRender
       >
-        <Form form={vehiclesForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t('stores.collectionPoint')}
-            rules={[
-              {
-                required: true,
-                message: t('settings.selectCollectionPoint'),
-              },
-            ]}
-          >
-            <Select
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="collectionCount"
-                label={t('settings.collectionVehicleCountGen')}
-                rules={[{ required: true }]}
-                initialValue={5}
-              >
-                <InputNumber min={0} max={50} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="transferCount"
-                label={t('settings.transferVehicleCountGen')}
-                rules={[{ required: true }]}
-                initialValue={2}
-              >
-                <InputNumber min={0} max={20} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
+        {generateVehiclesModalVisible && (
+          <Form form={vehiclesForm} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="collectionPointId"
+              label={t('stores.collectionPoint')}
+              rules={[
+                {
+                  required: true,
+                  message: t('settings.selectCollectionPoint'),
+                },
+              ]}
+            >
+              <Select
+                options={collectionPoints.map((cp) => ({
+                  value: cp.id,
+                  label: cp.name,
+                }))}
+              />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="collectionCount"
+                  label={t('settings.collectionVehicleCountGen')}
+                  rules={[{ required: true }]}
+                  initialValue={5}
+                >
+                  <InputNumber min={0} max={50} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="transferCount"
+                  label={t('settings.transferVehicleCountGen')}
+                  rules={[{ required: true }]}
+                  initialValue={2}
+                >
+                  <InputNumber min={0} max={20} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </Form>
+        )}
         {generating && (
           <div style={{ marginTop: 16 }}>
             <Progress percent={100} status="active" />

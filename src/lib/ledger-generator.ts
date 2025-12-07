@@ -6,6 +6,8 @@ interface GeneratorConfig {
   collectionIntervalMin: number;
   collectionIntervalMax: number;
   coldStoreRatio: number;
+  lossRatioMin: number;
+  lossRatioMax: number;
 }
 
 interface StoreInfo {
@@ -20,10 +22,12 @@ interface CollectionRecordData {
   storeId: string;
   vehicleId: string;
   collectionDate: Date;
-  departureTime: Date;
-  arrivalTime: Date;
+  loadingTime: Date;
+  unloadingTime: Date;
   tireCount: number;
-  weight: number;
+  loadingNetWeight: number;
+  unloadingNetWeight: number;
+  loss: number;
 }
 
 interface StoreCollectionPlan {
@@ -106,6 +110,8 @@ async function getConfig(): Promise<GeneratorConfig> {
     collectionIntervalMin: parseInt(configMap.get('collection_interval_min') || configMap.get('collection_interval_days') || '7'),
     collectionIntervalMax: parseInt(configMap.get('collection_interval_max') || '15'),
     coldStoreRatio: parseFloat(configMap.get('cold_store_ratio') || '0.1'),
+    lossRatioMin: parseFloat(configMap.get('loss_ratio_min') || '0.001'),
+    lossRatioMax: parseFloat(configMap.get('loss_ratio_max') || '0.005'),
   };
 }
 
@@ -120,6 +126,17 @@ function randomFloatBetween(min: number, max: number, decimals: number = 2): num
 
 function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
+}
+
+function getDaysInRange(startDate: Date, endDate: Date): number {
+  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+}
+
+function getDateFromRange(startDate: Date, dayOffset: number): Date {
+  const date = new Date(startDate);
+  date.setDate(date.getDate() + dayOffset);
+  return date;
 }
 
 function generateCollectionTripTimes(
@@ -151,7 +168,7 @@ function generateRecordNo(prefix: string, index: number, date: Date): string {
 
 function generateStoreCollectionPlans(
   stores: StoreInfo[],
-  targetTonnage: number,
+  targetWeightKg: number,
   daysInMonth: number,
   config: GeneratorConfig
 ): StoreCollectionPlan[] {
@@ -166,8 +183,9 @@ function generateStoreCollectionPlans(
   const avgInterval = (config.collectionIntervalMin + config.collectionIntervalMax) / 2;
   const avgCollectionsPerStore = Math.ceil(daysInMonth / avgInterval);
   
-  const avgWeightPerCollection = 0.8;
-  const totalCollections = Math.ceil(targetTonnage / avgWeightPerCollection);
+  // 平均每次收集重量 800 kg
+  const avgWeightPerCollection = 800;
+  const totalCollections = Math.ceil(targetWeightKg / avgWeightPerCollection);
   const neededActiveStores = Math.min(
     activeStores.length,
     Math.ceil(totalCollections / avgCollectionsPerStore)
@@ -175,10 +193,10 @@ function generateStoreCollectionPlans(
   
   const participatingStores = activeStores.slice(0, neededActiveStores);
   
-  let remainingTonnage = targetTonnage;
+  let remainingWeightKg = targetWeightKg;
   
   for (const store of participatingStores) {
-    if (remainingTonnage <= 0) break;
+    if (remainingWeightKg <= 0) break;
     
     const collectionDays: number[] = [];
     let currentDay = randomBetween(1, Math.min(5, daysInMonth));
@@ -191,9 +209,10 @@ function generateStoreCollectionPlans(
     
     if (collectionDays.length === 0) continue;
     
+    // 每次收集 300-2000 kg
     const storeTargetWeight = Math.min(
-      remainingTonnage,
-      randomFloatBetween(0.3, 2.0) * collectionDays.length
+      remainingWeightKg,
+      randomFloatBetween(300, 2000, 0) * collectionDays.length
     );
     
     const weightPerCollection = storeTargetWeight / collectionDays.length;
@@ -205,18 +224,19 @@ function generateStoreCollectionPlans(
       weightPerCollection,
     });
     
-    remainingTonnage -= storeTargetWeight;
+    remainingWeightKg -= storeTargetWeight;
   }
   
-  if (remainingTonnage > 0 && coldStoreCount > 0) {
+  if (remainingWeightKg > 0 && coldStoreCount > 0) {
     const coldStoreList = shuffledStores.slice(0, coldStoreCount);
     const coldParticipants = coldStoreList.slice(0, Math.ceil(coldStoreCount * 0.3));
     
     for (const store of coldParticipants) {
-      if (remainingTonnage <= 0) break;
+      if (remainingWeightKg <= 0) break;
       
       const collectionDay = randomBetween(10, daysInMonth - 5);
-      const weight = Math.min(remainingTonnage, randomFloatBetween(0.2, 0.8));
+      // 冷门门店每次收集 200-800 kg
+      const weight = Math.min(remainingWeightKg, randomFloatBetween(200, 800, 0));
       
       plans.push({
         storeId: store.id,
@@ -225,7 +245,7 @@ function generateStoreCollectionPlans(
         weightPerCollection: weight,
       });
       
-      remainingTonnage -= weight;
+      remainingWeightKg -= weight;
     }
   }
   
@@ -281,16 +301,21 @@ function assignCollectionVehicle(
 
 /**
  * 生成收集台账数据（不包含转移记录）
+ * @param taskId 任务ID
+ * @param collectionPointId 收集点ID
+ * @param startDate 开始日期
+ * @param endDate 结束日期
+ * @param targetTonnage 目标吨数
  */
 export async function generateLedgerData(
   taskId: string,
   collectionPointId: string,
-  year: number,
-  month: number,
+  startDate: Date,
+  endDate: Date,
   targetTonnage: number
 ): Promise<{ collectionRecords: CollectionRecordData[] }> {
   const config = await getConfig();
-  const daysInMonth = getDaysInMonth(year, month);
+  const totalDays = getDaysInRange(startDate, endDate);
 
   const [stores, collectionVehicles] = await Promise.all([
     prisma.store.findMany({
@@ -313,12 +338,12 @@ export async function generateLedgerData(
   const collectionRecords: CollectionRecordData[] = [];
   const collectionScheduler = new VehicleScheduler();
 
-  const storePlans = generateStoreCollectionPlans(stores, targetTonnage, daysInMonth, config);
+  const storePlans = generateStoreCollectionPlans(stores, targetTonnage, totalDays, config);
   
   const allCollectionTasks: Array<{
     storeId: string;
     estimatedTravelMinutes: number;
-    day: number;
+    dayOffset: number;
     targetWeight: number;
   }> = [];
   
@@ -327,23 +352,28 @@ export async function generateLedgerData(
       allCollectionTasks.push({
         storeId: plan.storeId,
         estimatedTravelMinutes: plan.estimatedTravelMinutes,
-        day,
+        dayOffset: day - 1, // 转换为从0开始的偏移量
         targetWeight: plan.weightPerCollection,
       });
     }
   }
   
-  allCollectionTasks.sort((a, b) => a.day - b.day);
+  allCollectionTasks.sort((a, b) => a.dayOffset - b.dayOffset);
   
   let collectionIndex = 0;
   
   for (const task of allCollectionTasks) {
+    const targetDate = getDateFromRange(startDate, task.dayOffset);
+    const year = targetDate.getFullYear();
+    const month = targetDate.getMonth() + 1;
+    const day = targetDate.getDate();
+    
     const assignment = assignCollectionVehicle(
       collectionVehicles,
       collectionScheduler,
       year,
       month,
-      task.day,
+      day,
       task.estimatedTravelMinutes
     );
     
@@ -353,14 +383,22 @@ export async function generateLedgerData(
     
     const { vehicle, departureTime, arrivalTime, returnTime } = assignment;
     
-    const actualWeight = task.targetWeight * randomFloatBetween(0.8, 1.2);
-    const tireCount = Math.max(1, Math.round(actualWeight * 1000 / config.tireWeightKg));
+    // task.targetWeight 现在是 kg
+    const actualWeightKg = task.targetWeight * randomFloatBetween(0.8, 1.2);
+    const tireCount = Math.max(1, Math.round(actualWeightKg / config.tireWeightKg));
     
-    const maxTires = Math.floor(vehicle.maxLoad * 1000 / config.tireWeightKg);
+    // vehicle.maxLoad 现在是 kg
+    const maxTires = Math.floor(vehicle.maxLoad / config.tireWeightKg);
     const actualTireCount = Math.min(tireCount, maxTires, config.collectionTireLimit);
-    const actualWeightTon = actualTireCount * config.tireWeightKg / 1000;
+    // 重量单位：kg
+    const loadingNetWeight = parseFloat((actualTireCount * config.tireWeightKg).toFixed(2));
     
-    const collectionDate = new Date(year, month - 1, task.day);
+    // 生成折损：卸车净重 = 装车净重 - 折损，模拟运输过程中的轻微损耗
+    const lossRatio = randomFloatBetween(config.lossRatioMin, config.lossRatioMax, 5);
+    const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
+    const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
+    
+    const collectionDate = new Date(year, month - 1, day);
     
     collectionScheduler.book(vehicle.id, departureTime, arrivalTime, returnTime);
     
@@ -369,30 +407,38 @@ export async function generateLedgerData(
       storeId: task.storeId,
       vehicleId: vehicle.id,
       collectionDate,
-      departureTime,
-      arrivalTime,
+      loadingTime: departureTime,
+      unloadingTime: arrivalTime,
       tireCount: actualTireCount,
-      weight: actualWeightTon,
+      loadingNetWeight,
+      unloadingNetWeight,
+      loss,
     });
   }
 
   return { collectionRecords };
 }
 
+export interface LedgerGenerationResult {
+  totalRecords: number;
+  totalLoadingWeight: number;
+  totalUnloadingWeight: number;
+  totalLoss: number;
+  storesCount: number;
+  vehiclesCount: number;
+}
+
 /**
- * 执行收集台账生成任务
+ * 执行收集台账生成任务（同步执行）
+ * @returns 生成结果统计
  */
-export async function executeLedgerTask(taskId: string): Promise<void> {
+export async function executeLedgerTask(taskId: string): Promise<LedgerGenerationResult> {
   const task = await prisma.ledgerTask.findUnique({
     where: { id: taskId },
   });
 
   if (!task) {
     throw new Error('任务不存在');
-  }
-
-  if (task.status !== 'PENDING') {
-    throw new Error('任务状态不正确，只能处理待处理状态的任务');
   }
 
   try {
@@ -403,28 +449,45 @@ export async function executeLedgerTask(taskId: string): Promise<void> {
 
     await prisma.collectionRecord.deleteMany({ where: { taskId } });
 
+    // targetTonnage 字段实际存储的是 kg 值
     const { collectionRecords } = await generateLedgerData(
       taskId,
       task.collectionPointId,
-      task.year,
-      task.month,
-      task.targetTonnage
+      task.startDate,
+      task.endDate,
+      task.targetTonnage // 单位: kg
     );
 
     await prisma.collectionRecord.createMany({
       data: collectionRecords.map(r => ({ ...r, taskId })),
     });
 
-    const actualTonnage = collectionRecords.reduce((sum, r) => sum + r.weight, 0);
+    // 所有重量单位为 kg
+    const totalLoadingWeight = collectionRecords.reduce((sum, r) => sum + r.loadingNetWeight, 0);
+    const totalUnloadingWeight = collectionRecords.reduce((sum, r) => sum + r.unloadingNetWeight, 0);
+    const totalLoss = collectionRecords.reduce((sum, r) => sum + r.loss, 0);
+    const storesCount = new Set(collectionRecords.map(r => r.storeId)).size;
+    const vehiclesCount = new Set(collectionRecords.map(r => r.vehicleId)).size;
 
     await prisma.ledgerTask.update({
       where: { id: taskId },
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
-        actualTonnage: parseFloat(actualTonnage.toFixed(3)),
+        actualTonnage: parseFloat(totalLoadingWeight.toFixed(2)),
+        unloadingTonnage: parseFloat(totalUnloadingWeight.toFixed(2)),
+        totalLoss: parseFloat(totalLoss.toFixed(2)),
       },
     });
+
+    return {
+      totalRecords: collectionRecords.length,
+      totalLoadingWeight: parseFloat(totalLoadingWeight.toFixed(2)),
+      totalUnloadingWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
+      totalLoss: parseFloat(totalLoss.toFixed(2)),
+      storesCount,
+      vehiclesCount,
+    };
   } catch (error) {
     await prisma.ledgerTask.update({
       where: { id: taskId },

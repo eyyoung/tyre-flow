@@ -7,7 +7,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// 执行台账生成
+// 执行台账生成（重新生成）
 export async function POST(request: NextRequest, { params }: RouteParams) {
   return withAuth(request, async (user) => {
     if (!isAdmin(user)) {
@@ -32,13 +32,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      // 如果任务已完成，需要先重置状态
+      // 如果任务已完成或失败，需要先重置状态
       if (task.status === 'COMPLETED' || task.status === 'FAILED') {
         await prisma.ledgerTask.update({
           where: { id },
           data: {
             status: 'PENDING',
             actualTonnage: null,
+            unloadingTonnage: null,
+            totalLoss: null,
             errorMessage: null,
             startedAt: null,
             completedAt: null,
@@ -46,19 +48,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
       }
 
-      // 异步执行生成任务
-      executeLedgerTask(id).catch((error) => {
-        console.error('Ledger generation error:', error);
-      });
+      // 同步执行生成任务
+      const result = await executeLedgerTask(id);
 
       return NextResponse.json({
-        message: '台账生成任务已开始执行',
+        message: '台账生成完成',
         taskId: id,
+        summary: result,
       });
     } catch (error) {
       console.error('Generate ledger error:', error);
       return NextResponse.json(
-        { message: 'Internal server error' },
+        { message: error instanceof Error ? error.message : 'Internal server error' },
         { status: 500 }
       );
     }

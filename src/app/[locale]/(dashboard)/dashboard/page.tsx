@@ -17,7 +17,7 @@ interface DashboardStats {
   collectionPoints: number;
   stores: number;
   vehicles: number;
-  monthlyTonnage: number;
+  monthlyWeight: number;
 }
 
 interface RecentTask {
@@ -37,7 +37,7 @@ export default function DashboardPage() {
     collectionPoints: 0,
     stores: 0,
     vehicles: 0,
-    monthlyTonnage: 0,
+    monthlyWeight: 0,
   });
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
 
@@ -88,10 +88,10 @@ export default function DashboardPage() {
       bgColor: "#fffbe6",
     },
     {
-      key: "tonnage",
-      title: t("dashboard.monthlyTonnage"),
-      value: stats.monthlyTonnage,
-      suffix: "t",
+      key: "weight",
+      title: t("dashboard.monthlyWeight"),
+      value: stats.monthlyWeight,
+      suffix: "kg",
       icon: <RiseOutlined />,
       color: "#722ed1",
       bgColor: "#f9f0ff",
@@ -112,18 +112,18 @@ export default function DashboardPage() {
       width: 150,
     },
     {
-      title: t("ledgers.targetTonnage"),
+      title: t("ledgers.targetWeight"),
       dataIndex: "targetTonnage",
       key: "targetTonnage",
-      width: 120,
-      render: (value: number) => `${value} t`,
+      width: 130,
+      render: (value: number) => `${value} kg`,
     },
     {
-      title: t("ledgers.actualTonnage"),
+      title: t("ledgers.actualWeight"),
       dataIndex: "actualTonnage",
       key: "actualTonnage",
-      width: 120,
-      render: (value: number | null) => value !== null ? `${value} t` : '-',
+      width: 130,
+      render: (value: number | null) => value !== null ? `${value} kg` : '-',
     },
     {
       title: t("ledgers.status"),

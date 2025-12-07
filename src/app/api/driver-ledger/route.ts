@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
       id: string;
       recordNo: string;
       date: Date;
-      departureTime: Date;
-      arrivalTime: Date;
+      loadingTime: Date;
+      unloadingTime: Date;
       type: 'collection';
       driverName: string;
       driverPhone: string;
@@ -69,13 +69,13 @@ export async function GET(request: NextRequest) {
         id: r.id,
         recordNo: r.recordNo,
         date: r.collectionDate,
-        departureTime: r.departureTime,
-        arrivalTime: r.arrivalTime,
+        loadingTime: r.loadingTime,
+        unloadingTime: r.unloadingTime,
         type: 'collection' as const,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
         vehiclePlate: r.vehicle.plateNumber,
-        weight: r.weight,
+        weight: r.unloadingNetWeight,
         tireCount: r.tireCount,
         storeName: r.store.name,
         destination: null,
@@ -87,8 +87,8 @@ export async function GET(request: NextRequest) {
       id: string;
       recordNo: string;
       date: Date;
-      departureTime: Date;
-      arrivalTime: Date;
+      loadingTime: Date;
+      unloadingTime: Date;
       type: 'transfer';
       driverName: string;
       driverPhone: string;
@@ -126,13 +126,13 @@ export async function GET(request: NextRequest) {
         id: r.id,
         recordNo: r.recordNo,
         date: r.transferDate,
-        departureTime: r.departureTime,
-        arrivalTime: r.arrivalTime,
+        loadingTime: r.loadingTime,
+        unloadingTime: r.unloadingTime,
         type: 'transfer' as const,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
         vehiclePlate: r.vehicle.plateNumber,
-        weight: r.netWeight,
+        weight: r.unloadingNetWeight,
         tireCount: r.tireCount,
         storeName: null,
         destination: r.destination,
@@ -147,9 +147,9 @@ export async function GET(request: NextRequest) {
     const total = allRecords.length;
     const paginatedRecords = allRecords.slice((page - 1) * pageSize, page * pageSize);
 
-    // 统计
+    // 统计 (weight 现在是 kg)
     const totalTrips = allRecords.length;
-    const totalWeight = allRecords.reduce((sum, r) => sum + r.weight, 0);
+    const totalWeightKg = allRecords.reduce((sum, r) => sum + r.weight, 0);
 
     return NextResponse.json({
       data: paginatedRecords,
@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(total / pageSize),
       summary: {
         totalTrips,
-        totalWeight: parseFloat(totalWeight.toFixed(3)),
+        totalWeight: parseFloat((totalWeightKg / 1000).toFixed(2)), // 转换为吨显示
       },
     });
   } catch (error) {

@@ -17,6 +17,11 @@ import {
   Spin,
   Progress,
   App,
+  DatePicker,
+  Result,
+  Row,
+  Col,
+  Statistic,
 } from 'antd';
 import {
   PlusOutlined,
@@ -26,18 +31,24 @@ import {
   ReloadOutlined,
   SwapOutlined,
   EyeOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
+const { RangePicker } = DatePicker;
 
 interface TransferTask {
   id: string;
   taskNo: string;
+  startDate: string;
+  endDate: string;
   targetTonnage: number;
   actualTonnage: number | null;
+  unloadingTonnage: number | null;
+  totalLoss: number | null;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   errorMessage: string | null;
   startedAt: string | null;
@@ -63,15 +74,25 @@ interface TransferRecord {
   id: string;
   recordNo: string;
   transferDate: string;
-  departureTime: string;
-  arrivalTime: string;
+  loadingTime: string;
+  unloadingTime: string;
   tireCount: number;
+  loadingNetWeight: number;
   grossWeight: number;
   tareWeight: number;
-  netWeight: number;
+  unloadingNetWeight: number;
+  loss: number;
   weighbridgeNo: string | null;
   destination: string;
   vehicle: { plateNumber: string };
+}
+
+interface GenerationSummary {
+  totalRecords: number;
+  totalLoadingWeight: number;
+  totalUnloadingWeight: number;
+  totalLoss: number;
+  vehiclesCount: number;
 }
 
 export default function TransferLedgerPage() {
@@ -86,6 +107,9 @@ export default function TransferLedgerPage() {
   const [cpFilter, setCpFilter] = useState<string>('');
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TransferTask | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -94,6 +118,11 @@ export default function TransferLedgerPage() {
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
   const [form] = Form.useForm();
+
+  // 格式化数字，添加千分位
+  const formatNumber = (num: number, precision = 2) => {
+    return num.toLocaleString('zh-CN', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+  };
 
   const fetchCollectionPoints = useCallback(async () => {
     try {
@@ -152,34 +181,51 @@ export default function TransferLedgerPage() {
   }, [data, fetchData]);
 
   const handleAdd = () => {
-    form.resetFields();
-    form.setFieldsValue({
-      targetTonnage: 30,
-    });
     setModalVisible(true);
+  };
+
+  // Modal 打开动画完成后设置默认值
+  const handleModalAfterOpenChange = (open: boolean) => {
+    if (open) {
+      form.setFieldsValue({
+        dateRange: [dayjs().startOf('month'), dayjs().endOf('month')],
+        targetTonnage: 30, // 默认目标重量 30 吨
+      });
+    }
   };
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
+      const [startDate, endDate] = values.dateRange;
+
+      setCreating(true);
 
       const response = await fetch('/api/transfer-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({
+          collectionPointId: values.collectionPointId,
+          startDate: startDate.format('YYYY-MM-DD'),
+          endDate: endDate.format('YYYY-MM-DD'),
+          targetTonnage: values.targetTonnage * 1000, // 吨转换为 kg
+        }),
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        message.success(t('common.success'));
         setModalVisible(false);
+        setGenerationSummary(result.summary);
+        setSuccessModalVisible(true);
         fetchData();
       } else {
         message.error(result.error || t('common.error'));
       }
     } catch {
       // 表单验证失败
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -192,7 +238,8 @@ export default function TransferLedgerPage() {
       const result = await response.json();
 
       if (response.ok) {
-        message.success('转移记录生成成功');
+        setGenerationSummary(result.summary);
+        setSuccessModalVisible(true);
         fetchData();
       } else {
         message.error(result.error || t('common.error'));
@@ -215,6 +262,28 @@ export default function TransferLedgerPage() {
       }
     } catch {
       message.error(t('common.error'));
+    }
+  };
+
+  const handleExport = async (id: string) => {
+    try {
+      const response = await fetch(`/api/transfer-tasks/${id}/export`);
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `转移台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        message.error('导出失败');
+      }
+    } catch {
+      message.error('导出失败');
     }
   };
 
@@ -267,12 +336,17 @@ export default function TransferLedgerPage() {
     return <Tag color={color}>{text}</Tag>;
   };
 
+  const formatDateRange = (startDate: string, endDate: string) => {
+    return `${dayjs(startDate).format('YYYY-MM-DD')} ~ ${dayjs(endDate).format('YYYY-MM-DD')}`;
+  };
+
   const columns: ColumnsType<TransferTask> = [
     {
       title: t('ledgers.taskNo'),
       dataIndex: 'taskNo',
       key: 'taskNo',
-      width: 200,
+      width: 260,
+      ellipsis: true,
     },
     {
       title: t('ledgers.collectionPoint'),
@@ -281,18 +355,38 @@ export default function TransferLedgerPage() {
       width: 120,
     },
     {
-      title: t('ledgers.targetTonnage'),
-      dataIndex: 'targetTonnage',
-      key: 'targetTonnage',
-      width: 120,
-      render: (v) => `${v} t`,
+      title: t('ledgers.dateRange'),
+      key: 'dateRange',
+      width: 200,
+      render: (_, record) => formatDateRange(record.startDate, record.endDate),
     },
     {
-      title: t('ledgers.actualTonnage'),
+      title: `${t('ledgers.targetWeight')}(t)`,
+      dataIndex: 'targetTonnage',
+      key: 'targetTonnage',
+      width: 130,
+      render: (v) => formatNumber(v / 1000),
+    },
+    {
+      title: `${t('ledgers.loadingNetWeight')}(t)`,
       dataIndex: 'actualTonnage',
       key: 'actualTonnage',
-      width: 120,
-      render: (v) => (v !== null ? `${v} t` : '-'),
+      width: 130,
+      render: (v) => (v !== null ? formatNumber(v / 1000) : '-'),
+    },
+    {
+      title: `${t('ledgers.unloadingNetWeight')}(t)`,
+      dataIndex: 'unloadingTonnage',
+      key: 'unloadingTonnage',
+      width: 140,
+      render: (v) => (v !== null ? formatNumber(v / 1000) : '-'),
+    },
+    {
+      title: `${t('ledgers.loss')}(t)`,
+      dataIndex: 'totalLoss',
+      key: 'totalLoss',
+      width: 100,
+      render: (v) => (v !== null ? formatNumber(v / 1000, 3) : '-'),
     },
     {
       title: t('ledgers.status'),
@@ -318,7 +412,7 @@ export default function TransferLedgerPage() {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 200,
+      width: 280,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small" wrap>
@@ -339,6 +433,15 @@ export default function TransferLedgerPage() {
             disabled={record.status === 'PROCESSING'}
           >
             {t('ledgers.generateTransfer')}
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<DownloadOutlined />}
+            onClick={() => handleExport(record.id)}
+            disabled={record.status !== 'COMPLETED'}
+          >
+            {t('ledgers.exportExcel')}
           </Button>
           <Popconfirm
             title="确定要删除此任务吗？"
@@ -369,45 +472,61 @@ export default function TransferLedgerPage() {
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     {
-      title: t('ledgers.departureTime'),
-      dataIndex: 'departureTime',
-      key: 'departureTime',
+      title: t('ledgers.loadingTime'),
+      dataIndex: 'loadingTime',
+      key: 'loadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
     {
-      title: t('ledgers.arrivalTime'),
-      dataIndex: 'arrivalTime',
-      key: 'arrivalTime',
+      title: t('ledgers.unloadingTime'),
+      dataIndex: 'unloadingTime',
+      key: 'unloadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
     { title: t('vehicles.plateNumber'), dataIndex: ['vehicle', 'plateNumber'], key: 'vehicle', width: 110 },
     { title: t('ledgers.destination'), dataIndex: 'destination', key: 'destination', width: 160, ellipsis: true },
-    { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right' },
+    { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right', render: (v) => v.toLocaleString() },
     {
-      title: t('ledgers.grossWeight'),
+      title: `${t('ledgers.loadingNetWeight')}(kg)`,
+      dataIndex: 'loadingNetWeight',
+      key: 'loadingNetWeight',
+      width: 140,
+      align: 'right',
+      render: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      title: `${t('ledgers.grossWeight')}(kg)`,
       dataIndex: 'grossWeight',
       key: 'grossWeight',
-      width: 110,
+      width: 130,
       align: 'right',
-      render: (v) => v.toFixed(3),
+      render: (v) => Math.round(v).toLocaleString(),
     },
     {
-      title: t('ledgers.tareWeight'),
+      title: `${t('ledgers.tareWeight')}(kg)`,
       dataIndex: 'tareWeight',
       key: 'tareWeight',
-      width: 110,
+      width: 120,
       align: 'right',
-      render: (v) => v.toFixed(3),
+      render: (v) => Math.round(v).toLocaleString(),
     },
     {
-      title: t('ledgers.netWeight'),
-      dataIndex: 'netWeight',
-      key: 'netWeight',
-      width: 110,
+      title: `${t('ledgers.unloadingNetWeight')}(kg)`,
+      dataIndex: 'unloadingNetWeight',
+      key: 'unloadingNetWeight',
+      width: 140,
       align: 'right',
-      render: (v) => v.toFixed(3),
+      render: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      title: `${t('ledgers.loss')}(kg)`,
+      dataIndex: 'loss',
+      key: 'loss',
+      width: 100,
+      align: 'right',
+      render: (v) => formatNumber(v, 2),
     },
     { title: t('ledgers.weighbridgeNo'), dataIndex: 'weighbridgeNo', key: 'weighbridgeNo', width: 160, ellipsis: true },
   ];
@@ -458,7 +577,7 @@ export default function TransferLedgerPage() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1400 }}
           pagination={{
             current: page,
             pageSize,
@@ -478,34 +597,105 @@ export default function TransferLedgerPage() {
         open={modalVisible}
         onOk={handleCreate}
         onCancel={() => setModalVisible(false)}
+        confirmLoading={creating}
         destroyOnHidden
-        forceRender
+        afterOpenChange={handleModalAfterOpenChange}
+        okText={creating ? '生成中...' : t('common.confirm')}
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t('ledgers.collectionPoint')}
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="targetTonnage"
-            label={t('ledgers.targetTonnage')}
-            rules={[{ required: true }]}
-            extra={<Text type="secondary">{t('ledgers.transferTonnageHint')}</Text>}
-          >
-            <Space.Compact>
-              <InputNumber min={1} max={1000} style={{ width: 160 }} />
-              <Button disabled style={{ pointerEvents: 'none' }}>吨</Button>
-            </Space.Compact>
-          </Form.Item>
-        </Form>
+        {modalVisible && (
+          <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="collectionPointId"
+              label={t('ledgers.collectionPoint')}
+              rules={[{ required: true }]}
+            >
+              <Select
+                options={collectionPoints.map((cp) => ({
+                  value: cp.id,
+                  label: cp.name,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item
+              name="dateRange"
+              label={t('ledgers.dateRange')}
+              rules={[{ required: true, message: '请选择时间范围' }]}
+            >
+              <RangePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="targetTonnage"
+              label={t('ledgers.targetWeight')}
+              rules={[{ required: true }]}
+            >
+              <Space.Compact>
+                <InputNumber min={0.1} max={1000} step={0.1} style={{ width: 160 }} />
+                <Button disabled style={{ pointerEvents: 'none' }}>t (吨)</Button>
+              </Space.Compact>
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
+
+      <Modal
+        title={
+          <Space>
+            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+            {t('ledgers.generateSuccess')}
+          </Space>
+        }
+        open={successModalVisible}
+        onOk={() => setSuccessModalVisible(false)}
+        onCancel={() => setSuccessModalVisible(false)}
+        footer={[
+          <Button key="ok" type="primary" onClick={() => setSuccessModalVisible(false)}>
+            {t('common.confirm')}
+          </Button>,
+        ]}
+        width={600}
+      >
+        {generationSummary && (
+          <Result
+            status="success"
+            title={t('ledgers.generateSuccess')}
+            subTitle={t('ledgers.generateSummary')}
+            extra={
+              <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+                <Col span={12}>
+                  <Statistic title={t('ledgers.totalRecords')} value={generationSummary.totalRecords} suffix="条" />
+                </Col>
+                <Col span={12}>
+                  <Statistic title={t('ledgers.vehiclesCount')} value={generationSummary.vehiclesCount} suffix="辆" />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalLoadingWeight')}
+                    value={generationSummary.totalLoadingWeight / 1000}
+                    precision={2}
+                    suffix="t"
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalUnloadingWeight')}
+                    value={generationSummary.totalUnloadingWeight / 1000}
+                    precision={2}
+                    suffix="t"
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalLoss')}
+                    value={generationSummary.totalLoss / 1000}
+                    precision={3}
+                    suffix="t"
+                    valueStyle={{ color: '#ff4d4f' }}
+                  />
+                </Col>
+              </Row>
+            }
+          />
+        )}
       </Modal>
 
       <Modal
@@ -513,7 +703,7 @@ export default function TransferLedgerPage() {
         open={detailModalVisible}
         onCancel={() => setDetailModalVisible(false)}
         footer={null}
-        width={1200}
+        width={1500}
         destroyOnHidden
         centered
       >
@@ -524,17 +714,21 @@ export default function TransferLedgerPage() {
               <Descriptions.Item label={t('ledgers.collectionPoint')}>
                 {selectedTask.collectionPoint.name}
               </Descriptions.Item>
+              <Descriptions.Item label={t('ledgers.dateRange')}>
+                {formatDateRange(selectedTask.startDate, selectedTask.endDate)}
+              </Descriptions.Item>
               <Descriptions.Item label={t('ledgers.status')}>{getStatusTag(selectedTask.status)}</Descriptions.Item>
-              <Descriptions.Item label="完成时间">
-                {selectedTask.completedAt
-                  ? dayjs(selectedTask.completedAt).format('YYYY-MM-DD HH:mm')
-                  : '-'}
+              <Descriptions.Item label={`${t('ledgers.targetWeight')}(t)`}>{formatNumber(selectedTask.targetTonnage / 1000)}</Descriptions.Item>
+              <Descriptions.Item label={`${t('ledgers.loadingNetWeight')}(t)`}>
+                {selectedTask.actualTonnage !== null ? formatNumber(selectedTask.actualTonnage / 1000) : '-'}
               </Descriptions.Item>
-              <Descriptions.Item label={t('ledgers.targetTonnage')}>{selectedTask.targetTonnage} t</Descriptions.Item>
-              <Descriptions.Item label={t('ledgers.actualTonnage')}>
-                {selectedTask.actualTonnage !== null ? `${selectedTask.actualTonnage} t` : '-'}
+              <Descriptions.Item label={`${t('ledgers.unloadingNetWeight')}(t)`}>
+                {selectedTask.unloadingTonnage !== null ? formatNumber(selectedTask.unloadingTonnage / 1000) : '-'}
               </Descriptions.Item>
-              <Descriptions.Item label="完成度" span={2}>
+              <Descriptions.Item label={`${t('ledgers.loss')}(t)`}>
+                {selectedTask.totalLoss !== null ? formatNumber(selectedTask.totalLoss / 1000, 3) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="完成度">
                 {selectedTask.actualTonnage !== null && (
                   <Progress
                     percent={Math.min(
@@ -542,9 +736,14 @@ export default function TransferLedgerPage() {
                       Math.round((selectedTask.actualTonnage / selectedTask.targetTonnage) * 100)
                     )}
                     size="small"
-                    style={{ width: 200 }}
+                    style={{ width: 100 }}
                   />
                 )}
+              </Descriptions.Item>
+              <Descriptions.Item label="完成时间">
+                {selectedTask.completedAt
+                  ? dayjs(selectedTask.completedAt).format('YYYY-MM-DD HH:mm')
+                  : '-'}
               </Descriptions.Item>
             </Descriptions>
 
@@ -553,7 +752,7 @@ export default function TransferLedgerPage() {
               dataSource={transferRecords}
               rowKey="id"
               size="small"
-              scroll={{ x: 1200, y: 'calc(100vh - 450px)' }}
+              scroll={{ x: 1600, y: 'calc(100vh - 450px)' }}
               pagination={{
                 current: recordPage,
                 pageSize: recordPageSize,
@@ -564,10 +763,19 @@ export default function TransferLedgerPage() {
                 onChange: handleRecordPageChange,
               }}
             />
+
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={() => handleExport(selectedTask.id)}
+              >
+                {t('ledgers.exportExcel')}
+              </Button>
+            </div>
           </Spin>
         )}
       </Modal>
     </div>
   );
 }
-

@@ -25,13 +25,13 @@ const defaultConfigs: Record<string, { value: string; description: string; categ
     category: 'vehicle',
   },
   collection_vehicle_load: {
-    value: '2.0',
-    description: '收集车默认载重（吨）',
+    value: '2000',
+    description: '收集车默认载重（kg）',
     category: 'vehicle',
   },
   transfer_vehicle_load: {
-    value: '30.0',
-    description: '转移车默认载重（吨）',
+    value: '30000',
+    description: '转移车默认载重（kg）',
     category: 'vehicle',
   },
   tire_weight_kg: {
@@ -47,6 +47,31 @@ const defaultConfigs: Record<string, { value: string; description: string; categ
   collection_interval_days: {
     value: '7',
     description: '门店收集间隔天数',
+    category: 'ledger',
+  },
+  collection_interval_min: {
+    value: '7',
+    description: '收集最小间隔（天）',
+    category: 'ledger',
+  },
+  collection_interval_max: {
+    value: '15',
+    description: '收集最大间隔（天）',
+    category: 'ledger',
+  },
+  cold_store_ratio: {
+    value: '0.1',
+    description: '冷门门店比例',
+    category: 'ledger',
+  },
+  loss_ratio_min: {
+    value: '0.001',
+    description: '折损比例最小值',
+    category: 'ledger',
+  },
+  loss_ratio_max: {
+    value: '0.005',
+    description: '折损比例最大值',
     category: 'ledger',
   },
 };

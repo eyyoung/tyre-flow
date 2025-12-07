@@ -21,7 +21,7 @@ export async function GET(
             select: { plateNumber: true },
           },
         },
-        orderBy: { departureTime: 'asc' },
+        orderBy: { loadingTime: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

@@ -9,9 +9,9 @@ export async function POST(
   try {
     const { id } = await params;
     
-    await executeTransferTask(id);
+    const summary = await executeTransferTask(id);
 
-    return NextResponse.json({ message: '转移记录生成成功' });
+    return NextResponse.json({ message: '转移记录生成成功', summary });
   } catch (error) {
     console.error('Error generating transfer records:', error);
     return NextResponse.json(

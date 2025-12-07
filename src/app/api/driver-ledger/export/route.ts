@@ -39,14 +39,16 @@ export async function GET(request: NextRequest) {
     let collectionRecords: Array<{
       recordNo: string;
       date: Date;
-      departureTime: Date;
-      arrivalTime: Date;
+      loadingTime: Date;
+      unloadingTime: Date;
       driverName: string;
       driverPhone: string;
       vehiclePlate: string;
       storeName: string;
       tireCount: number;
-      weight: number;
+      loadingNetWeight: number;
+      unloadingNetWeight: number;
+      loss: number;
     }> = [];
 
     if (recordType === 'all' || recordType === 'collection') {
@@ -76,14 +78,16 @@ export async function GET(request: NextRequest) {
       collectionRecords = records.map(r => ({
         recordNo: r.recordNo,
         date: r.collectionDate,
-        departureTime: r.departureTime,
-        arrivalTime: r.arrivalTime,
+        loadingTime: r.loadingTime,
+        unloadingTime: r.unloadingTime,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
         vehiclePlate: r.vehicle.plateNumber,
         storeName: r.store.name,
         tireCount: r.tireCount,
-        weight: r.weight,
+        loadingNetWeight: r.loadingNetWeight,
+        unloadingNetWeight: r.unloadingNetWeight,
+        loss: r.loss,
       }));
     }
 
@@ -91,16 +95,18 @@ export async function GET(request: NextRequest) {
     let transferRecords: Array<{
       recordNo: string;
       date: Date;
-      departureTime: Date;
-      arrivalTime: Date;
+      loadingTime: Date;
+      unloadingTime: Date;
       driverName: string;
       driverPhone: string;
       vehiclePlate: string;
       destination: string;
       tireCount: number;
+      loadingNetWeight: number;
       grossWeight: number;
       tareWeight: number;
-      netWeight: number;
+      unloadingNetWeight: number;
+      loss: number;
       weighbridgeNo: string;
     }> = [];
 
@@ -130,16 +136,18 @@ export async function GET(request: NextRequest) {
       transferRecords = records.map(r => ({
         recordNo: r.recordNo,
         date: r.transferDate,
-        departureTime: r.departureTime,
-        arrivalTime: r.arrivalTime,
+        loadingTime: r.loadingTime,
+        unloadingTime: r.unloadingTime,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
         vehiclePlate: r.vehicle.plateNumber,
         destination: r.destination,
         tireCount: r.tireCount,
+        loadingNetWeight: r.loadingNetWeight,
         grossWeight: r.grossWeight,
         tareWeight: r.tareWeight,
-        netWeight: r.netWeight,
+        unloadingNetWeight: r.unloadingNetWeight,
+        loss: r.loss,
         weighbridgeNo: r.weighbridgeNo || '',
       }));
     }
@@ -177,14 +185,16 @@ export async function GET(request: NextRequest) {
       collectionSheet.columns = [
         { header: '记录编号', key: 'recordNo', width: 25 },
         { header: '日期', key: 'date', width: 12 },
-        { header: '出发时间', key: 'departureTime', width: 10 },
-        { header: '到达时间', key: 'arrivalTime', width: 10 },
+        { header: '装车时间', key: 'loadingTime', width: 10 },
+        { header: '卸车时间', key: 'unloadingTime', width: 10 },
         { header: '司机姓名', key: 'driverName', width: 12 },
         { header: '司机电话', key: 'driverPhone', width: 15 },
         { header: '车牌号', key: 'vehiclePlate', width: 12 },
         { header: '门店', key: 'storeName', width: 25 },
         { header: '轮胎条数', key: 'tireCount', width: 10 },
-        { header: '重量（吨）', key: 'weight', width: 12 },
+        { header: '装车净重（kg）', key: 'loadingNetWeight', width: 15 },
+        { header: '卸车净重（kg）', key: 'unloadingNetWeight', width: 15 },
+        { header: '折损（kg）', key: 'loss', width: 12 },
       ];
 
       collectionSheet.getRow(1).eachCell((cell) => {
@@ -196,14 +206,16 @@ export async function GET(request: NextRequest) {
         const row = collectionSheet.addRow({
           recordNo: record.recordNo,
           date: record.date.toISOString().slice(0, 10),
-          departureTime: record.departureTime.toISOString().slice(11, 16),
-          arrivalTime: record.arrivalTime.toISOString().slice(11, 16),
+          loadingTime: record.loadingTime.toISOString().slice(11, 16),
+          unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,
           storeName: record.storeName,
           tireCount: record.tireCount,
-          weight: record.weight,
+          loadingNetWeight: record.loadingNetWeight,
+          unloadingNetWeight: record.unloadingNetWeight,
+          loss: record.loss,
         });
         row.eachCell((cell) => {
           cell.style = cellStyle;
@@ -211,11 +223,13 @@ export async function GET(request: NextRequest) {
       });
 
       // 添加汇总行
-      const totalWeight = collectionRecords.reduce((sum, r) => sum + r.weight, 0);
+      const totalUnloadingWeight = collectionRecords.reduce((sum, r) => sum + r.unloadingNetWeight, 0);
+      const totalLoss = collectionRecords.reduce((sum, r) => sum + r.loss, 0);
       const totalRow = collectionSheet.addRow({
         recordNo: '合计',
         tireCount: collectionRecords.reduce((sum, r) => sum + r.tireCount, 0),
-        weight: parseFloat(totalWeight.toFixed(3)),
+        unloadingNetWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
+        loss: parseFloat(totalLoss.toFixed(2)),
       });
       totalRow.font = { bold: true };
     }
@@ -226,16 +240,18 @@ export async function GET(request: NextRequest) {
       transferSheet.columns = [
         { header: '记录编号', key: 'recordNo', width: 25 },
         { header: '日期', key: 'date', width: 12 },
-        { header: '出发时间', key: 'departureTime', width: 10 },
-        { header: '到达时间', key: 'arrivalTime', width: 10 },
+        { header: '装车时间', key: 'loadingTime', width: 10 },
+        { header: '卸车时间', key: 'unloadingTime', width: 10 },
         { header: '司机姓名', key: 'driverName', width: 12 },
         { header: '司机电话', key: 'driverPhone', width: 15 },
         { header: '车牌号', key: 'vehiclePlate', width: 12 },
         { header: '目的地', key: 'destination', width: 20 },
         { header: '轮胎条数', key: 'tireCount', width: 10 },
-        { header: '毛重', key: 'grossWeight', width: 12 },
-        { header: '皮重', key: 'tareWeight', width: 12 },
-        { header: '净重', key: 'netWeight', width: 12 },
+        { header: '装车净重（kg）', key: 'loadingNetWeight', width: 15 },
+        { header: '毛重（kg）', key: 'grossWeight', width: 12 },
+        { header: '皮重（kg）', key: 'tareWeight', width: 12 },
+        { header: '卸车净重（kg）', key: 'unloadingNetWeight', width: 15 },
+        { header: '折损（kg）', key: 'loss', width: 12 },
         { header: '磅单号', key: 'weighbridgeNo', width: 18 },
       ];
 
@@ -248,16 +264,18 @@ export async function GET(request: NextRequest) {
         const row = transferSheet.addRow({
           recordNo: record.recordNo,
           date: record.date.toISOString().slice(0, 10),
-          departureTime: record.departureTime.toISOString().slice(11, 16),
-          arrivalTime: record.arrivalTime.toISOString().slice(11, 16),
+          loadingTime: record.loadingTime.toISOString().slice(11, 16),
+          unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,
           destination: record.destination,
           tireCount: record.tireCount,
+          loadingNetWeight: record.loadingNetWeight,
           grossWeight: record.grossWeight,
           tareWeight: record.tareWeight,
-          netWeight: record.netWeight,
+          unloadingNetWeight: record.unloadingNetWeight,
+          loss: record.loss,
           weighbridgeNo: record.weighbridgeNo,
         });
         row.eachCell((cell) => {
@@ -266,11 +284,13 @@ export async function GET(request: NextRequest) {
       });
 
       // 添加汇总行
-      const totalNetWeight = transferRecords.reduce((sum, r) => sum + r.netWeight, 0);
+      const totalUnloadingWeight = transferRecords.reduce((sum, r) => sum + r.unloadingNetWeight, 0);
+      const totalLoss = transferRecords.reduce((sum, r) => sum + r.loss, 0);
       const totalRow = transferSheet.addRow({
         recordNo: '合计',
         tireCount: transferRecords.reduce((sum, r) => sum + r.tireCount, 0),
-        netWeight: parseFloat(totalNetWeight.toFixed(3)),
+        unloadingNetWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
+        loss: parseFloat(totalLoss.toFixed(2)),
       });
       totalRow.font = { bold: true };
     }

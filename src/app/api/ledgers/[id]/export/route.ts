@@ -61,18 +61,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           storeAddress: '门店地址',
           vehiclePlate: '车牌号',
           tireCount: '轮胎条数',
-          weight: '重量（吨）',
+          loadingTime: '装车时间',
+          unloadingTime: '卸车时间',
+          loadingNetWeight: '装车净重（kg）',
+          unloadingNetWeight: '卸车净重（kg）',
+          loss: '折损（kg）',
+          weight: '重量（kg）',
           destination: '目的地',
-          grossWeight: '毛重（吨）',
-          tareWeight: '皮重（吨）',
-          netWeight: '净重（吨）',
+          grossWeight: '毛重（kg）',
+          tareWeight: '皮重（kg）',
+          netWeight: '净重（kg）',
           weighbridgeNo: '磅单号',
           remarks: '备注',
           summary: '汇总信息',
           collectionPoint: '收集点',
-          yearMonth: '年月',
-          targetTonnage: '目标吨数',
-          actualTonnage: '实际吨数',
+          dateRange: '时间范围',
+          targetWeight: '目标重量（kg）',
+          actualWeight: '装车净重合计（kg）',
+          unloadingWeight: '卸车净重合计（kg）',
+          totalLoss: '折损合计（kg）',
           totalRecords: '总记录数',
         },
         en: {
@@ -85,18 +92,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           storeAddress: 'Store Address',
           vehiclePlate: 'Vehicle Plate',
           tireCount: 'Tire Count',
-          weight: 'Weight (ton)',
+          loadingTime: 'Loading Time',
+          unloadingTime: 'Unloading Time',
+          loadingNetWeight: 'Loading Net Weight (kg)',
+          unloadingNetWeight: 'Unloading Net Weight (kg)',
+          loss: 'Loss (kg)',
+          weight: 'Weight (kg)',
           destination: 'Destination',
-          grossWeight: 'Gross Weight (ton)',
-          tareWeight: 'Tare Weight (ton)',
-          netWeight: 'Net Weight (ton)',
+          grossWeight: 'Gross Weight (kg)',
+          tareWeight: 'Tare Weight (kg)',
+          netWeight: 'Net Weight (kg)',
           weighbridgeNo: 'Weighbridge No.',
           remarks: 'Remarks',
           summary: 'Summary',
           collectionPoint: 'Collection Point',
-          yearMonth: 'Year-Month',
-          targetTonnage: 'Target Tonnage',
-          actualTonnage: 'Actual Tonnage',
+          dateRange: 'Date Range',
+          targetWeight: 'Target Weight (kg)',
+          actualWeight: 'Total Loading Weight (kg)',
+          unloadingWeight: 'Total Unloading Weight (kg)',
+          totalLoss: 'Total Loss (kg)',
           totalRecords: 'Total Records',
         },
       };
@@ -143,12 +157,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         collectionSheet.columns = [
           { header: l.recordNo, key: 'recordNo', width: 25 },
           { header: l.date, key: 'date', width: 15 },
+          { header: l.loadingTime, key: 'loadingTime', width: 12 },
+          { header: l.unloadingTime, key: 'unloadingTime', width: 12 },
           { header: l.storeCode, key: 'storeCode', width: 20 },
           { header: l.storeName, key: 'storeName', width: 30 },
           { header: l.storeAddress, key: 'storeAddress', width: 40 },
           { header: l.vehiclePlate, key: 'vehiclePlate', width: 15 },
           { header: l.tireCount, key: 'tireCount', width: 12 },
-          { header: l.weight, key: 'weight', width: 15 },
+          { header: l.loadingNetWeight, key: 'loadingNetWeight', width: 18 },
+          { header: l.unloadingNetWeight, key: 'unloadingNetWeight', width: 18 },
+          { header: l.loss, key: 'loss', width: 15 },
           { header: l.remarks, key: 'remarks', width: 20 },
         ];
 
@@ -163,12 +181,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           const row = collectionSheet.addRow({
             recordNo: record.recordNo,
             date: record.collectionDate.toISOString().slice(0, 10),
+            loadingTime: record.loadingTime.toISOString().slice(11, 16),
+            unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
             storeCode: record.store.code,
             storeName: record.store.name,
             storeAddress: record.store.address,
             vehiclePlate: record.vehicle.plateNumber,
             tireCount: record.tireCount,
-            weight: record.weight,
+            loadingNetWeight: record.loadingNetWeight,
+            unloadingNetWeight: record.unloadingNetWeight,
+            loss: record.loss,
             remarks: record.remarks || '',
           });
           row.eachCell((cell) => {
@@ -183,7 +205,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const buffer = await workbook.xlsx.writeBuffer();
 
       // 设置文件名
-      const fileName = `台账_${task.collectionPoint.name}_${task.year}年${task.month}月.xlsx`;
+      const startDateStr = task.startDate.toISOString().slice(0, 10);
+      const endDateStr = task.endDate.toISOString().slice(0, 10);
+      const fileName = `台账_${task.collectionPoint.name}_${startDateStr}_${endDateStr}.xlsx`;
       const encodedFileName = encodeURIComponent(fileName);
 
       return new NextResponse(buffer, {

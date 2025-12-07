@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Layout, Menu, Dropdown, Avatar, Space, Button, theme } from 'antd';
+import React, { useState } from "react";
+import { Layout, Menu, Dropdown, Avatar, Space, Button, theme } from "antd";
 import {
   DashboardOutlined,
   UserOutlined,
@@ -18,12 +18,12 @@ import {
   SwapOutlined,
   ContainerOutlined,
   IdcardOutlined,
-} from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
-import { useRouter, usePathname } from 'next/navigation';
-import Link from 'next/link';
-import { locales, localeNames, type Locale } from '@/i18n/config';
-import styles from './DashboardLayout.module.css';
+} from "@ant-design/icons";
+import { useTranslations } from "next-intl";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { locales, localeNames, type Locale } from "@/i18n/config";
+import styles from "./DashboardLayout.module.css";
 
 const { Header, Sider, Content } = Layout;
 
@@ -39,67 +39,97 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { token } = theme.useToken();
 
   // 获取当前 locale
-  const pathParts = pathname.split('/');
+  const pathParts = pathname.split("/");
   const currentLocale = pathParts[1] as Locale;
-  const currentPath = '/' + pathParts.slice(2).join('/');
+  const currentPath = "/" + pathParts.slice(2).join("/");
 
   // 菜单项配置
   const menuItems = [
     {
-      key: '/dashboard',
+      key: "/dashboard",
       icon: <DashboardOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard`}>{t('menu.dashboard')}</Link>,
-    },
-    {
-      key: '/dashboard/users',
-      icon: <UserOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard/users`}>{t('menu.users')}</Link>,
-    },
-    {
-      key: '/dashboard/collection-points',
-      icon: <EnvironmentOutlined />,
       label: (
-        <Link href={`/${currentLocale}/dashboard/collection-points`}>
-          {t('menu.collectionPoints')}
+        <Link href={`/${currentLocale}/dashboard`}>{t("menu.dashboard")}</Link>
+      ),
+    },
+    {
+      key: "/dashboard/users",
+      icon: <UserOutlined />,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/users`}>
+          {t("menu.users")}
         </Link>
       ),
     },
     {
-      key: '/dashboard/stores',
+      key: "/dashboard/collection-points",
+      icon: <EnvironmentOutlined />,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/collection-points`}>
+          {t("menu.collectionPoints")}
+        </Link>
+      ),
+    },
+    {
+      key: "/dashboard/stores",
       icon: <ShopOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard/stores`}>{t('menu.stores')}</Link>,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/stores`}>
+          {t("menu.stores")}
+        </Link>
+      ),
     },
     {
-      key: '/dashboard/vehicles',
+      key: "/dashboard/vehicles",
       icon: <CarOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard/vehicles`}>{t('menu.vehicles')}</Link>,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/vehicles`}>
+          {t("menu.vehicles")}
+        </Link>
+      ),
     },
     {
-      key: '/dashboard/ledgers',
+      key: "/dashboard/ledgers",
       icon: <FileTextOutlined />,
-      label: t('menu.ledgers'),
+      label: t("menu.ledgers"),
       children: [
         {
-          key: '/dashboard/ledgers/collection',
+          key: "/dashboard/ledgers/collection",
           icon: <ContainerOutlined />,
-          label: <Link href={`/${currentLocale}/dashboard/ledgers/collection`}>{t('menu.collectionLedger')}</Link>,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/ledgers/collection`}>
+              {t("menu.collectionLedger")}
+            </Link>
+          ),
         },
         {
-          key: '/dashboard/ledgers/transfer',
-          icon: <SwapOutlined />,
-          label: <Link href={`/${currentLocale}/dashboard/ledgers/transfer`}>{t('menu.transferLedger')}</Link>,
-        },
-        {
-          key: '/dashboard/ledgers/driver',
+          key: "/dashboard/ledgers/driver",
           icon: <IdcardOutlined />,
-          label: <Link href={`/${currentLocale}/dashboard/ledgers/driver`}>{t('menu.driverLedger')}</Link>,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/ledgers/driver`}>
+              {t("menu.driverLedger")}
+            </Link>
+          ),
+        },
+        {
+          key: "/dashboard/ledgers/transfer",
+          icon: <SwapOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/ledgers/transfer`}>
+              {t("menu.transferLedger")}
+            </Link>
+          ),
         },
       ],
     },
     {
-      key: '/dashboard/settings',
+      key: "/dashboard/settings",
       icon: <SettingOutlined />,
-      label: <Link href={`/${currentLocale}/dashboard/settings`}>{t('menu.settings')}</Link>,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/settings`}>
+          {t("menu.settings")}
+        </Link>
+      ),
     },
   ];
 
@@ -109,7 +139,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const extractKeys = (items: typeof menuItems) => {
       for (const item of items) {
         keys.push(item.key);
-        if ('children' in item && item.children) {
+        if ("children" in item && item.children) {
           extractKeys(item.children as typeof menuItems);
         }
       }
@@ -121,7 +151,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // 获取当前选中的菜单项
   const getSelectedKey = () => {
     const allKeys = getAllMenuKeys();
-    
+
     // 精确匹配优先
     if (allKeys.includes(currentPath)) {
       return currentPath;
@@ -129,19 +159,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     // 按路径长度降序排列，找到最长的匹配前缀
     const sortedKeys = [...allKeys].sort((a, b) => b.length - a.length);
-    const prefixMatch = sortedKeys.find((key) => currentPath.startsWith(key + '/'));
+    const prefixMatch = sortedKeys.find((key) =>
+      currentPath.startsWith(key + "/")
+    );
     if (prefixMatch) return prefixMatch;
 
     // 默认返回 dashboard
-    return '/dashboard';
+    return "/dashboard";
   };
 
   // 获取应该展开的子菜单
   const getOpenKeys = () => {
     for (const item of menuItems) {
-      if ('children' in item && item.children) {
-        const childKeys = item.children.map(c => c.key);
-        if (childKeys.includes(currentPath) || currentPath.startsWith(item.key + '/')) {
+      if ("children" in item && item.children) {
+        const childKeys = item.children.map((c) => c.key);
+        if (
+          childKeys.includes(currentPath) ||
+          currentPath.startsWith(item.key + "/")
+        ) {
           return [item.key];
         }
       }
@@ -157,24 +192,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   // 登出
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch("/api/auth/logout", { method: "POST" });
     router.push(`/${currentLocale}/login`);
   };
 
   // 用户下拉菜单
   const userMenuItems = [
     {
-      key: 'profile',
+      key: "profile",
       icon: <UserOutlined />,
-      label: t('menu.profile'),
+      label: t("menu.profile"),
     },
     {
-      type: 'divider' as const,
+      type: "divider" as const,
     },
     {
-      key: 'logout',
+      key: "logout",
       icon: <LogoutOutlined />,
-      label: t('auth.logout'),
+      label: t("auth.logout"),
       onClick: handleLogout,
     },
   ];
@@ -197,12 +232,35 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       >
         <div className={styles.logo}>
           <svg viewBox="0 0 100 100" className={styles.logoIcon}>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="6" />
-            <circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" strokeWidth="4" />
-            <circle cx="50" cy="50" r="15" fill="none" stroke="currentColor" strokeWidth="3" />
+            <circle
+              cx="50"
+              cy="50"
+              r="45"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="6"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="30"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="15"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            />
             <circle cx="50" cy="50" r="5" fill="currentColor" />
           </svg>
-          {!collapsed && <span className={styles.logoText}>{t('common.appNameShort')}</span>}
+          {!collapsed && (
+            <span className={styles.logoText}>{t("common.appNameShort")}</span>
+          )}
         </div>
 
         <Menu
@@ -254,4 +312,3 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </Layout>
   );
 }
-

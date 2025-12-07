@@ -17,6 +17,11 @@ import {
   Spin,
   Progress,
   App,
+  DatePicker,
+  Result,
+  Statistic,
+  Row,
+  Col,
 } from 'antd';
 import {
   PlusOutlined,
@@ -26,20 +31,26 @@ import {
   ReloadOutlined,
   FileTextOutlined,
   EyeOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
+const { RangePicker } = DatePicker;
 
 interface LedgerTask {
   id: string;
   taskNo: string;
-  year: number;
-  month: number;
+  startDate: string;
+  endDate: string;
+  year?: number;
+  month?: number;
   targetTonnage: number;
   actualTonnage: number | null;
+  unloadingTonnage: number | null;
+  totalLoss: number | null;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   errorMessage: string | null;
   startedAt: string | null;
@@ -65,12 +76,23 @@ interface CollectionRecord {
   id: string;
   recordNo: string;
   collectionDate: string;
-  departureTime: string;
-  arrivalTime: string;
+  loadingTime: string;
+  unloadingTime: string;
   tireCount: number;
-  weight: number;
+  loadingNetWeight: number;
+  unloadingNetWeight: number;
+  loss: number;
   store: { code: string; name: string; address: string };
   vehicle: { plateNumber: string };
+}
+
+interface GenerationSummary {
+  totalRecords: number;
+  totalLoadingWeight: number;
+  totalUnloadingWeight: number;
+  totalLoss: number;
+  storesCount: number;
+  vehiclesCount: number;
 }
 
 export default function CollectionLedgerPage() {
@@ -93,6 +115,9 @@ export default function CollectionLedgerPage() {
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
   const [form] = Form.useForm();
+  const [creating, setCreating] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
 
   const fetchCollectionPoints = useCallback(async () => {
     try {
@@ -151,36 +176,57 @@ export default function CollectionLedgerPage() {
   }, [data, fetchData]);
 
   const handleAdd = () => {
-    form.resetFields();
-    form.setFieldsValue({
-      year: new Date().getFullYear(),
-      month: new Date().getMonth() + 1,
-      targetTonnage: 100,
-    });
     setModalVisible(true);
+  };
+
+  // 格式化数字，添加千分位
+  const formatNumber = (num: number, precision = 2) => {
+    return num.toLocaleString('zh-CN', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+  };
+
+  // Modal 打开动画完成后设置默认值
+  const handleModalAfterOpenChange = (open: boolean) => {
+    if (open) {
+      // 使用独立的 dayjs 实例避免循环引用警告
+      form.setFieldsValue({
+        dateRange: [dayjs().startOf('month'), dayjs().endOf('month')],
+        targetTonnage: 10, // 默认目标重量 10 吨
+      });
+    }
   };
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
+      const [startDate, endDate] = values.dateRange;
+
+      setCreating(true);
 
       const response = await fetch('/api/ledgers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({
+          collectionPointId: values.collectionPointId,
+          startDate: startDate.format('YYYY-MM-DD'),
+          endDate: endDate.format('YYYY-MM-DD'),
+          targetTonnage: values.targetTonnage * 1000, // 吨转换为 kg
+        }),
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        message.success(t('common.success'));
         setModalVisible(false);
+        setGenerationSummary(result.summary);
+        setSuccessModalVisible(true);
         fetchData();
       } else {
         message.error(result.message || t('common.error'));
       }
     } catch {
       // 表单验证失败
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -290,12 +336,17 @@ export default function CollectionLedgerPage() {
     return <Tag color={color}>{text}</Tag>;
   };
 
+  const formatDateRange = (startDate: string, endDate: string) => {
+    return `${dayjs(startDate).format('YYYY-MM-DD')} ~ ${dayjs(endDate).format('YYYY-MM-DD')}`;
+  };
+
   const columns: ColumnsType<LedgerTask> = [
     {
       title: t('ledgers.taskNo'),
       dataIndex: 'taskNo',
       key: 'taskNo',
-      width: 200,
+      width: 260,
+      ellipsis: true,
     },
     {
       title: t('ledgers.collectionPoint'),
@@ -304,24 +355,38 @@ export default function CollectionLedgerPage() {
       width: 120,
     },
     {
-      title: t('ledgers.year') + '-' + t('ledgers.month'),
-      key: 'yearMonth',
-      width: 100,
-      render: (_, record) => `${record.year}-${String(record.month).padStart(2, '0')}`,
+      title: t('ledgers.dateRange'),
+      key: 'dateRange',
+      width: 200,
+      render: (_, record) => formatDateRange(record.startDate, record.endDate),
     },
     {
-      title: t('ledgers.targetTonnage'),
+      title: `${t('ledgers.targetWeight')}(t)`,
       dataIndex: 'targetTonnage',
       key: 'targetTonnage',
-      width: 120,
-      render: (v) => `${v} t`,
+      width: 130,
+      render: (v) => formatNumber(v / 1000),
     },
     {
-      title: t('ledgers.actualTonnage'),
+      title: `${t('ledgers.loadingNetWeight')}(t)`,
       dataIndex: 'actualTonnage',
       key: 'actualTonnage',
-      width: 120,
-      render: (v) => (v !== null ? `${v} t` : '-'),
+      width: 130,
+      render: (v) => (v !== null ? formatNumber(v / 1000) : '-'),
+    },
+    {
+      title: `${t('ledgers.unloadingNetWeight')}(t)`,
+      dataIndex: 'unloadingTonnage',
+      key: 'unloadingTonnage',
+      width: 140,
+      render: (v) => (v !== null ? formatNumber(v / 1000) : '-'),
+    },
+    {
+      title: `${t('ledgers.loss')}(t)`,
+      dataIndex: 'totalLoss',
+      key: 'totalLoss',
+      width: 100,
+      render: (v) => (v !== null ? formatNumber(v / 1000, 3) : '-'),
     },
     {
       title: t('ledgers.status'),
@@ -407,30 +472,46 @@ export default function CollectionLedgerPage() {
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     {
-      title: t('ledgers.departureTime'),
-      dataIndex: 'departureTime',
-      key: 'departureTime',
+      title: t('ledgers.loadingTime'),
+      dataIndex: 'loadingTime',
+      key: 'loadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
     {
-      title: t('ledgers.arrivalTime'),
-      dataIndex: 'arrivalTime',
-      key: 'arrivalTime',
+      title: t('ledgers.unloadingTime'),
+      dataIndex: 'unloadingTime',
+      key: 'unloadingTime',
       width: 90,
       render: (v) => dayjs(v).format('HH:mm'),
     },
     { title: t('stores.code'), dataIndex: ['store', 'code'], key: 'storeCode', width: 160, ellipsis: true },
     { title: t('stores.name'), dataIndex: ['store', 'name'], key: 'storeName', width: 180, ellipsis: true },
     { title: t('vehicles.plateNumber'), dataIndex: ['vehicle', 'plateNumber'], key: 'vehicle', width: 110 },
-    { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right' },
+    { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right', render: (v) => v.toLocaleString() },
     {
-      title: t('ledgers.weight'),
-      dataIndex: 'weight',
-      key: 'weight',
-      width: 110,
+      title: `${t('ledgers.loadingNetWeight')}(kg)`,
+      dataIndex: 'loadingNetWeight',
+      key: 'loadingNetWeight',
+      width: 140,
       align: 'right',
-      render: (v) => v.toFixed(3),
+      render: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      title: `${t('ledgers.unloadingNetWeight')}(kg)`,
+      dataIndex: 'unloadingNetWeight',
+      key: 'unloadingNetWeight',
+      width: 140,
+      align: 'right',
+      render: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      title: `${t('ledgers.loss')}(kg)`,
+      dataIndex: 'loss',
+      key: 'loss',
+      width: 100,
+      align: 'right',
+      render: (v) => formatNumber(v, 2),
     },
   ];
 
@@ -480,7 +561,7 @@ export default function CollectionLedgerPage() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1600 }}
           pagination={{
             current: page,
             pageSize,
@@ -500,41 +581,108 @@ export default function CollectionLedgerPage() {
         open={modalVisible}
         onOk={handleCreate}
         onCancel={() => setModalVisible(false)}
+        confirmLoading={creating}
         destroyOnHidden
-        forceRender
+        afterOpenChange={handleModalAfterOpenChange}
+        okText={creating ? '生成中...' : t('common.confirm')}
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t('ledgers.collectionPoint')}
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-          <Space size="large">
-            <Form.Item name="year" label={t('ledgers.year')} rules={[{ required: true }]}>
-              <InputNumber min={2020} max={2030} style={{ width: 120 }} />
+        {modalVisible && (
+          <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="collectionPointId"
+              label={t('ledgers.collectionPoint')}
+              rules={[{ required: true }]}
+            >
+              <Select
+                options={collectionPoints.map((cp) => ({
+                  value: cp.id,
+                  label: cp.name,
+                }))}
+              />
             </Form.Item>
-            <Form.Item name="month" label={t('ledgers.month')} rules={[{ required: true }]}>
-              <InputNumber min={1} max={12} style={{ width: 120 }} />
+            <Form.Item
+              name="dateRange"
+              label={t('ledgers.dateRange')}
+              rules={[{ required: true, message: '请选择时间范围' }]}
+            >
+              <RangePicker style={{ width: '100%' }} />
             </Form.Item>
+            <Form.Item
+              name="targetTonnage"
+              label={t('ledgers.targetWeight')}
+              rules={[{ required: true }]}
+            >
+              <Space.Compact>
+                <InputNumber min={0.1} max={1000} step={0.1} style={{ width: 160 }} />
+                <Button disabled style={{ pointerEvents: 'none' }}>t (吨)</Button>
+              </Space.Compact>
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
+
+      <Modal
+        title={
+          <Space>
+            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+            {t('ledgers.generateSuccess')}
           </Space>
-          <Form.Item
-            name="targetTonnage"
-            label={t('ledgers.targetTonnage')}
-            rules={[{ required: true }]}
-          >
-            <Space.Compact>
-              <InputNumber min={1} max={10000} style={{ width: 160 }} />
-              <Button disabled style={{ pointerEvents: 'none' }}>吨</Button>
-            </Space.Compact>
-          </Form.Item>
-        </Form>
+        }
+        open={successModalVisible}
+        onOk={() => setSuccessModalVisible(false)}
+        onCancel={() => setSuccessModalVisible(false)}
+        footer={[
+          <Button key="ok" type="primary" onClick={() => setSuccessModalVisible(false)}>
+            {t('common.confirm')}
+          </Button>,
+        ]}
+        width={600}
+      >
+        {generationSummary && (
+          <Result
+            status="success"
+            title={t('ledgers.generateSuccess')}
+            subTitle={t('ledgers.generateSummary')}
+            extra={
+              <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+                <Col span={8}>
+                  <Statistic title={t('ledgers.totalRecords')} value={generationSummary.totalRecords} suffix="条" />
+                </Col>
+                <Col span={8}>
+                  <Statistic title={t('ledgers.storesCount')} value={generationSummary.storesCount} suffix="家" />
+                </Col>
+                <Col span={8}>
+                  <Statistic title={t('ledgers.vehiclesCount')} value={generationSummary.vehiclesCount} suffix="辆" />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalLoadingWeight')}
+                    value={generationSummary.totalLoadingWeight / 1000}
+                    precision={2}
+                    suffix="t"
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalUnloadingWeight')}
+                    value={generationSummary.totalUnloadingWeight / 1000}
+                    precision={2}
+                    suffix="t"
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title={t('ledgers.totalLoss')}
+                    value={generationSummary.totalLoss / 1000}
+                    precision={3}
+                    suffix="t"
+                    valueStyle={{ color: '#ff4d4f' }}
+                  />
+                </Col>
+              </Row>
+            }
+          />
+        )}
       </Modal>
 
       <Modal
@@ -542,7 +690,7 @@ export default function CollectionLedgerPage() {
         open={detailModalVisible}
         onCancel={() => setDetailModalVisible(false)}
         footer={null}
-        width={1200}
+        width={1400}
         destroyOnHidden
         centered
       >
@@ -553,13 +701,19 @@ export default function CollectionLedgerPage() {
               <Descriptions.Item label={t('ledgers.collectionPoint')}>
                 {selectedTask.collectionPoint.name}
               </Descriptions.Item>
-              <Descriptions.Item label={t('ledgers.year') + '-' + t('ledgers.month')}>
-                {selectedTask.year}-{String(selectedTask.month).padStart(2, '0')}
+              <Descriptions.Item label={t('ledgers.dateRange')}>
+                {formatDateRange(selectedTask.startDate, selectedTask.endDate)}
               </Descriptions.Item>
               <Descriptions.Item label={t('ledgers.status')}>{getStatusTag(selectedTask.status)}</Descriptions.Item>
-              <Descriptions.Item label={t('ledgers.targetTonnage')}>{selectedTask.targetTonnage} t</Descriptions.Item>
-              <Descriptions.Item label={t('ledgers.actualTonnage')}>
-                {selectedTask.actualTonnage !== null ? `${selectedTask.actualTonnage} t` : '-'}
+              <Descriptions.Item label={`${t('ledgers.targetWeight')}(t)`}>{formatNumber(selectedTask.targetTonnage / 1000)}</Descriptions.Item>
+              <Descriptions.Item label={`${t('ledgers.loadingNetWeight')}(t)`}>
+                {selectedTask.actualTonnage !== null ? formatNumber(selectedTask.actualTonnage / 1000) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={`${t('ledgers.unloadingNetWeight')}(t)`}>
+                {selectedTask.unloadingTonnage !== null ? formatNumber(selectedTask.unloadingTonnage / 1000) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={`${t('ledgers.loss')}(t)`}>
+                {selectedTask.totalLoss !== null ? formatNumber(selectedTask.totalLoss / 1000, 3) : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="完成度">
                 {selectedTask.actualTonnage !== null && (
@@ -585,7 +739,7 @@ export default function CollectionLedgerPage() {
               dataSource={collectionRecords}
               rowKey="id"
               size="small"
-              scroll={{ x: 1100, y: 'calc(100vh - 450px)' }}
+              scroll={{ x: 1300, y: 'calc(100vh - 450px)' }}
               pagination={{
                 current: recordPage,
                 pageSize: recordPageSize,
@@ -612,4 +766,3 @@ export default function CollectionLedgerPage() {
     </div>
   );
 }
-
