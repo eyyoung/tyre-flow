@@ -62,9 +62,9 @@ npm run dev
 ```bash
 # 创建 .env 文件并配置
 cat > .env << EOF
-POSTGRES_USER=tyer_flow
+POSTGRES_USER=tyre_flow
 POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=tyer_flow
+POSTGRES_DB=tyre_flow
 JWT_SECRET=your-super-secret-jwt-key
 NEXTAUTH_SECRET=your-nextauth-secret
 NEXTAUTH_URL=http://localhost:3000
@@ -86,14 +86,14 @@ docker-compose up -d
 
 ```bash
 # 构建镜像
-docker build -t tyer-flow .
+docker build -t tyre-flow .
 
 # 运行容器（需要外部 PostgreSQL）
 docker run -d \
   -p 3000:3000 \
   -e DATABASE_URL="postgresql://user:password@host:5432/db" \
   -e JWT_SECRET="your-jwt-secret" \
-  tyer-flow
+  tyre-flow
 ```
 
 ### Docker Compose 命令
@@ -141,9 +141,9 @@ docker-compose build --no-cache
 | JWT_SECRET | JWT 签名密钥 | - |
 | NEXTAUTH_SECRET | NextAuth 密钥 | - |
 | NEXTAUTH_URL | 应用 URL | http://localhost:3000 |
-| POSTGRES_USER | 数据库用户名 | tyer_flow |
+| POSTGRES_USER | 数据库用户名 | tyre_flow |
 | POSTGRES_PASSWORD | 数据库密码 | - |
-| POSTGRES_DB | 数据库名称 | tyer_flow |
+| POSTGRES_DB | 数据库名称 | tyre_flow |
 
 ## License
 

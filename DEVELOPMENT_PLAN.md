@@ -515,7 +515,7 @@ npm run db:reset     # 重置数据库
 DATABASE_URL="postgresql://user:password@localhost:5432/tyre_flow"
 
 # 认证
-AUTH_SECRET="your-secret-key-here-min-32-chars-long-xxxxx"
+JWT_SECRET="your-secret-key-here-min-32-chars-long-xxxxx"
 AUTH_URL="http://localhost:3000"
 
 # 应用
