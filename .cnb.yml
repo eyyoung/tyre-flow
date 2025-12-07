@@ -1,0 +1,126 @@
+# CNB 云原生构建配置
+# 文档: https://docs.cnb.cool
+
+# ===========================================
+# 主分支推送触发自动部署
+# ===========================================
+main:
+  push:
+    - docker:
+        image: alpine:latest
+      stages:
+        - name: 🚀 部署到服务器
+          script:
+            # 安装必要工具
+            - apk add --no-cache openssh-client git
+            
+            # 配置 SSH
+            - mkdir -p ~/.ssh
+            - echo "$CNB_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - chmod 600 ~/.ssh/id_rsa
+            - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
+            
+            # 部署到服务器
+            - |
+              ssh -o StrictHostKeyChecking=no root@212.129.242.30 << 'DEPLOY_SCRIPT'
+              set -e
+              
+              echo "📂 进入项目目录..."
+              DEPLOY_DIR="/root/deployment/tyre-flow"
+              mkdir -p $DEPLOY_DIR
+              cd $DEPLOY_DIR
+              
+              echo "📥 同步代码..."
+              if [ -d ".git" ]; then
+                git fetch origin
+                git reset --hard origin/main
+              else
+                git clone -b main https://cnb.cool/tyre-flow/tyre-flow.git .
+              fi
+              
+              echo "🔨 构建 Docker 镜像..."
+              export DOCKER_BUILDKIT=1
+              export COMPOSE_DOCKER_CLI_BUILD=1
+              
+              docker compose down || true
+              docker compose build --no-cache
+              
+              echo "🚢 启动服务..."
+              docker compose up -d
+              
+              echo "⏳ 等待服务启动..."
+              sleep 15
+              
+              # 运行数据库迁移
+              echo "📊 运行数据库迁移..."
+              docker compose run --rm migrate || echo "迁移已完成或跳过"
+              
+              echo "🔍 检查服务状态..."
+              if docker compose ps | grep -q "Up"; then
+                echo "✅ 服务运行正常"
+                docker compose ps
+              else
+                echo "❌ 服务启动失败"
+                docker compose logs --tail=50
+                exit 1
+              fi
+              
+              echo "🧹 清理旧镜像..."
+              docker image prune -f
+              
+              echo ""
+              echo "========================================"
+              echo "✅ 部署完成！"
+              echo "========================================"
+              DEPLOY_SCRIPT
+
+# ===========================================
+# 其他分支 - 仅构建测试，不部署
+# ===========================================
+"*":
+  push:
+    - docker:
+        image: node:20-alpine
+      stages:
+        - name: 📦 安装依赖
+          script:
+            - npm ci
+            
+        - name: 🔍 代码检查
+          script:
+            - npm run lint || true
+            
+        - name: 🏗️ 构建测试
+          script:
+            - npx prisma generate
+            - npm run build
+          env:
+            DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+
+# ===========================================
+# 手动触发部署 (通过 tag)
+# ===========================================
+"v*":
+  tag:
+    - docker:
+        image: alpine:latest
+      stages:
+        - name: 🏷️ 发布版本
+          script:
+            - echo "发布版本 $CNB_BRANCH"
+            - apk add --no-cache openssh-client
+            - mkdir -p ~/.ssh
+            - echo "$CNB_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - chmod 600 ~/.ssh/id_rsa
+            - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
+            - |
+              ssh -o StrictHostKeyChecking=no root@212.129.242.30 << DEPLOY
+              cd /root/deployment/tyre-flow
+              git fetch --tags
+              git checkout $CNB_BRANCH
+              docker compose down || true
+              docker compose build
+              docker compose up -d
+              echo "✅ 版本 $CNB_BRANCH 部署完成"
+              DEPLOY
+
