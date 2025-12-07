@@ -145,6 +145,3 @@ docker-compose build --no-cache
 | POSTGRES_PASSWORD | 数据库密码 | - |
 | POSTGRES_DB | 数据库名称 | tyre_flow |
 
-## License
-
-MIT
