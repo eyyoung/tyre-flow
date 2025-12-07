@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
       id: string;
       recordNo: string;
       date: Date;
+      departureTime: Date;
+      arrivalTime: Date;
       type: 'collection';
       driverName: string;
       driverPhone: string;
@@ -67,6 +69,8 @@ export async function GET(request: NextRequest) {
         id: r.id,
         recordNo: r.recordNo,
         date: r.collectionDate,
+        departureTime: r.departureTime,
+        arrivalTime: r.arrivalTime,
         type: 'collection' as const,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
@@ -83,6 +87,8 @@ export async function GET(request: NextRequest) {
       id: string;
       recordNo: string;
       date: Date;
+      departureTime: Date;
+      arrivalTime: Date;
       type: 'transfer';
       driverName: string;
       driverPhone: string;
@@ -120,6 +126,8 @@ export async function GET(request: NextRequest) {
         id: r.id,
         recordNo: r.recordNo,
         date: r.transferDate,
+        departureTime: r.departureTime,
+        arrivalTime: r.arrivalTime,
         type: 'transfer' as const,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',

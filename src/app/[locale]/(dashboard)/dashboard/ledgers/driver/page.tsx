@@ -48,6 +48,8 @@ interface LedgerRecord {
   id: string;
   recordNo: string;
   date: string;
+  departureTime: string;
+  arrivalTime: string;
   type: 'collection' | 'transfer';
   driverName: string;
   driverPhone: string;
@@ -234,6 +236,20 @@ export default function DriverLedgerPage() {
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     {
+      title: t('ledgers.departureTime'),
+      dataIndex: 'departureTime',
+      key: 'departureTime',
+      width: 90,
+      render: (v) => dayjs(v).format('HH:mm'),
+    },
+    {
+      title: t('ledgers.arrivalTime'),
+      dataIndex: 'arrivalTime',
+      key: 'arrivalTime',
+      width: 90,
+      render: (v) => dayjs(v).format('HH:mm'),
+    },
+    {
       title: t('ledgers.driverName'),
       dataIndex: 'driverName',
       key: 'driverName',
@@ -365,7 +381,7 @@ export default function DriverLedgerPage() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1400 }}
           pagination={{
             current: page,
             pageSize,
