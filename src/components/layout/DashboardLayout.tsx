@@ -1,7 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
-import { Layout, Menu, Dropdown, Avatar, Space, Button, theme } from "antd";
+import React, { useState, useEffect } from "react";
+import {
+  Layout,
+  Menu,
+  Dropdown,
+  Avatar,
+  Space,
+  Button,
+  theme,
+  Drawer,
+} from "antd";
 import {
   DashboardOutlined,
   UserOutlined,
@@ -27,6 +36,9 @@ import styles from "./DashboardLayout.module.css";
 
 const { Header, Sider, Content } = Layout;
 
+// 移动端断点
+const MOBILE_BREAKPOINT = 768;
+
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
@@ -36,7 +48,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { token } = theme.useToken();
+
+  // 检测是否为移动端
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // 菜单点击时关闭移动端抽屉
+  const handleMenuClick = () => {
+    if (isMobile) {
+      setMobileMenuOpen(false);
+    }
+  };
 
   // 获取当前 locale
   const pathParts = pathname.split("/");
@@ -221,74 +253,111 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     onClick: () => handleLocaleChange(locale),
   }));
 
+  // 侧边栏菜单内容
+  const siderContent = (
+    <>
+      <div className={styles.logo}>
+        <svg viewBox="0 0 100 100" className={styles.logoIcon}>
+          <circle
+            cx="50"
+            cy="50"
+            r="45"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="30"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+          />
+          <circle cx="50" cy="50" r="5" fill="currentColor" />
+        </svg>
+        {(!collapsed || isMobile) && (
+          <span className={styles.logoText}>{t("common.appNameShort")}</span>
+        )}
+      </div>
+
+      <Menu
+        theme="dark"
+        mode="inline"
+        selectedKeys={[getSelectedKey()]}
+        defaultOpenKeys={getOpenKeys()}
+        items={menuItems}
+        className={styles.menu}
+        onClick={handleMenuClick}
+      />
+    </>
+  );
+
   return (
     <Layout className={styles.layout}>
-      <Sider
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        className={styles.sider}
-        width={240}
-      >
-        <div className={styles.logo}>
-          <svg viewBox="0 0 100 100" className={styles.logoIcon}>
-            <circle
-              cx="50"
-              cy="50"
-              r="45"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="6"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="30"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            />
-            <circle cx="50" cy="50" r="5" fill="currentColor" />
-          </svg>
-          {!collapsed && (
-            <span className={styles.logoText}>{t("common.appNameShort")}</span>
-          )}
-        </div>
+      {/* 桌面端侧边栏 */}
+      {!isMobile && (
+        <Sider
+          trigger={null}
+          collapsible
+          collapsed={collapsed}
+          className={styles.sider}
+          width={240}
+        >
+          {siderContent}
+        </Sider>
+      )}
 
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[getSelectedKey()]}
-          defaultOpenKeys={getOpenKeys()}
-          items={menuItems}
-          className={styles.menu}
-        />
-      </Sider>
+      {/* 移动端抽屉菜单 */}
+      {isMobile && (
+        <Drawer
+          placement="left"
+          open={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+          width={280}
+          styles={{
+            body: { padding: 0, background: "#001529" },
+            header: { display: "none" },
+          }}
+        >
+          {siderContent}
+        </Drawer>
+      )}
 
-      <Layout>
+      <Layout className={isMobile ? styles.mobileLayout : undefined}>
         <Header
-          className={styles.header}
+          className={`${styles.header} ${isMobile ? styles.mobileHeader : ""}`}
           style={{ background: token.colorBgContainer }}
         >
           <Button
             type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
+            icon={
+              isMobile ? (
+                <MenuUnfoldOutlined />
+              ) : collapsed ? (
+                <MenuUnfoldOutlined />
+              ) : (
+                <MenuFoldOutlined />
+              )
+            }
+            onClick={() =>
+              isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed)
+            }
             className={styles.trigger}
           />
 
           <div className={styles.headerRight}>
             <Dropdown menu={{ items: langMenuItems }} placement="bottomRight">
               <Button type="text" icon={<GlobalOutlined />}>
-                {!collapsed && (
+                {!isMobile && (
                   <Space>
                     {localeNames[currentLocale]}
                     <DownOutlined style={{ fontSize: 10 }} />
@@ -300,14 +369,22 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Space className={styles.userInfo}>
                 <Avatar size="small" icon={<UserOutlined />} />
-                <span className={styles.userName}>Admin</span>
-                <DownOutlined style={{ fontSize: 10 }} />
+                {!isMobile && (
+                  <>
+                    <span className={styles.userName}>Admin</span>
+                    <DownOutlined style={{ fontSize: 10 }} />
+                  </>
+                )}
               </Space>
             </Dropdown>
           </div>
         </Header>
 
-        <Content className={styles.content}>{children}</Content>
+        <Content
+          className={`${styles.content} ${isMobile ? styles.mobileContent : ""}`}
+        >
+          {children}
+        </Content>
       </Layout>
     </Layout>
   );

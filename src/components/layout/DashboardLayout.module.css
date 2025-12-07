@@ -123,26 +123,42 @@
   margin-left: calc(80px + 24px);
 }
 
+/* 移动端布局 */
+.mobileLayout {
+  margin-left: 0 !important;
+}
+
+.mobileHeader {
+  margin-left: 0 !important;
+  padding: 0 12px !important;
+}
+
+.mobileContent {
+  margin: 12px !important;
+  margin-left: 12px !important;
+  padding: 16px !important;
+  min-height: calc(100vh - 64px - 24px) !important;
+}
+
 /* 响应式适配 */
 @media (max-width: 768px) {
   .header {
     margin-left: 0;
-    padding: 0 16px;
+    padding: 0 12px;
   }
 
   .content {
-    margin: 16px;
-    margin-left: 16px;
+    margin: 12px;
+    margin-left: 12px;
     padding: 16px;
   }
 
-  .sider {
-    position: absolute;
-    z-index: 200;
+  .headerRight {
+    gap: 4px;
   }
 
-  .userName {
-    display: none;
+  .userInfo {
+    padding: 4px;
   }
 }
 
