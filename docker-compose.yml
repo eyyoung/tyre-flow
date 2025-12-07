@@ -39,6 +39,8 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-nextauth-secret-change-in-production}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      # 高德地图 API Key（用于地理编码和路径规划）
+      - AMAP_API_KEY=${AMAP_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -59,6 +61,8 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-nextauth-secret-change-in-production}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      # 高德地图 API Key（用于地理编码和路径规划）
+      - AMAP_API_KEY=${AMAP_API_KEY:-}
     profiles:
       - external-db
 
