@@ -1,0 +1,42 @@
+version: 1.0
+name: deploy
+displayName: 自动部署到生产服务器
+triggers:
+  trigger: auto
+  push:
+    branches:
+      include:
+        - main
+stages:
+  - name: stage-81d279c0
+    displayName: 未命名
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: shell@agent
+        name: execute_shell
+        displayName: Shell 脚本执行
+        hostGroupID:
+          ID: tyre-flow-t
+          hostID:
+            - 65b47b01-e2da-491f-99a6-36028d6b08b3
+        scriptType: SH
+        script:
+          - '# 请在此输入您想执行的脚本'
+          - cd /root/deployment/tyre-flow
+          - git fetch origin
+          - git reset --hard origin/main
+          - ''
+          - log "🔨 重新构建应用..."
+          - docker compose build app
+          - ''
+          - log "🚢 重启应用服务..."
+          - docker compose up -d app
+          - ''
+          - log "⏳ 等待服务启动..."
+          - sleep 10
+        gitClone: false
+        notify: []
+        strategy:
+          retry: '0'
