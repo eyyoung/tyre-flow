@@ -60,6 +60,7 @@
     "collectionLedger": "Collection Ledger",
     "transferLedger": "Transfer Ledger",
     "driverLedger": "Driver Ledger",
+    "driverAnalysis": "Ledger Analysis",
     "settings": "Settings",
     "profile": "Profile"
   },
@@ -261,7 +262,15 @@
     "storesCount": "Stores Involved",
     "vehiclesCount": "Vehicles Involved",
     "startDate": "Start Date",
-    "endDate": "End Date"
+    "endDate": "End Date",
+    "driverAnalysisTitle": "Driver Ledger Analysis",
+    "analysisDescription": "Select collection point, date range and record type to view loading weight trends for different drivers",
+    "selectCollectionPointRequired": "Please select a collection point",
+    "selectDateRangeRequired": "Please select a date range",
+    "selectRecordTypeRequired": "Please select a record type",
+    "loadingWeight": "Loading Weight",
+    "queryChart": "Query Chart",
+    "noDataForChart": "No data available, please adjust query conditions"
   },
   "validation": {
     "required": "{field} is required",

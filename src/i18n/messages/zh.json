@@ -60,6 +60,7 @@
     "collectionLedger": "收集台账",
     "transferLedger": "转移台账",
     "driverLedger": "司机台账",
+    "driverAnalysis": "台账检查",
     "settings": "系统设置",
     "profile": "个人中心"
   },
@@ -261,7 +262,15 @@
     "storesCount": "涉及门店数",
     "vehiclesCount": "涉及车辆数",
     "startDate": "开始日期",
-    "endDate": "结束日期"
+    "endDate": "结束日期",
+    "driverAnalysisTitle": "司机台账检查",
+    "analysisDescription": "选择收集点、时间段和记录类型，查看不同司机的装车重量趋势",
+    "selectCollectionPointRequired": "请选择收集点",
+    "selectDateRangeRequired": "请选择时间段",
+    "selectRecordTypeRequired": "请选择记录类型",
+    "loadingWeight": "装车重量",
+    "queryChart": "查询图表",
+    "noDataForChart": "暂无数据，请调整查询条件"
   },
   "validation": {
     "required": "{field}不能为空",

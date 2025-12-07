@@ -27,6 +27,7 @@ import {
   SwapOutlined,
   ContainerOutlined,
   IdcardOutlined,
+  LineChartOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
@@ -140,6 +141,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           label: (
             <Link href={`/${currentLocale}/dashboard/ledgers/driver`}>
               {t("menu.driverLedger")}
+            </Link>
+          ),
+        },
+        {
+          key: "/dashboard/ledgers/driver-analysis",
+          icon: <LineChartOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/ledgers/driver-analysis`}>
+              {t("menu.driverAnalysis")}
             </Link>
           ),
         },
