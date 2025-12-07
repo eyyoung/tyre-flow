@@ -194,12 +194,16 @@ export async function POST(request: NextRequest) {
       }> = [];
 
       // 逐个处理（高德免费API有QPS限制）
+      // 此时 destLng 和 destLat 已确保有值（上面的逻辑已处理null情况）
+      const destinationLng = destLng as number;
+      const destinationLat = destLat as number;
+      
       for (const store of stores) {
         const result = await planRoute(
           store.longitude,
           store.latitude,
-          destLng,
-          destLat,
+          destinationLng,
+          destinationLat,
           apiKey
         );
         

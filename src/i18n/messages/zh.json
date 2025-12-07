@@ -138,6 +138,7 @@
     "isVirtual": "虚拟门店",
     "disabledAt": "停用时间",
     "disabledReason": "停用原因",
+    "estimatedTravelMinutes": "预估行程",
     "deleteConfirm": "确定要删除门店 {name} 吗？",
     "generateTitle": "批量生成虚拟门店",
     "generateCount": "生成数量",

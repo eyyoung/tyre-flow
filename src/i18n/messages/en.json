@@ -138,6 +138,7 @@
     "isVirtual": "Virtual Store",
     "disabledAt": "Disabled At",
     "disabledReason": "Disabled Reason",
+    "estimatedTravelMinutes": "Est. Travel",
     "deleteConfirm": "Are you sure you want to delete store {name}?",
     "generateTitle": "Batch Generate Virtual Stores",
     "generateCount": "Generate Count",

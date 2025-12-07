@@ -24,6 +24,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   ShopOutlined,
+  CarOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -43,6 +44,7 @@ interface Store {
   district: string | null;
   contactName: string | null;
   contactPhone: string | null;
+  estimatedTravelMinutes: number;
   status: 'ACTIVE' | 'DISABLED';
   isVirtual: boolean;
   disabledAt: string | null;
@@ -234,11 +236,16 @@ export default function StoresPage() {
       ellipsis: true,
     },
     {
-      title: t('stores.contactName'),
-      dataIndex: 'contactName',
-      key: 'contactName',
-      width: 100,
-      render: (v) => v || '-',
+      title: t('stores.estimatedTravelMinutes'),
+      dataIndex: 'estimatedTravelMinutes',
+      key: 'estimatedTravelMinutes',
+      width: 120,
+      render: (v) => (
+        <span>
+          <CarOutlined style={{ marginRight: 4 }} />
+          {v} {t('storeCleanup.minutes')}
+        </span>
+      ),
     },
     {
       title: t('stores.isVirtual'),
