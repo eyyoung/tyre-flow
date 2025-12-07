@@ -250,6 +250,13 @@ export async function generateTransferData(
       
       const loadingNetWeight = parseFloat(Math.min(maxNetWeight, remainingKg).toFixed(2));
 
+      // 最终安全检查：装车重量必须大于 5000kg（5吨）
+      if (loadingNetWeight < 5000) {
+        // 装车量太小，不生成这条记录，视为完成
+        transferredKg = targetWeightKg;
+        break;
+      }
+
       // 计算折损
       const lossRatio = randomFloatBetween(config.lossRatioMin, config.lossRatioMax, 5);
       const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
@@ -261,8 +268,10 @@ export async function generateTransferData(
       const grossWeight = parseFloat((unloadingNetWeight + actualTareWeight).toFixed(2));
 
       // 计算轮胎条数（给平均轮胎重量添加随机波动，模拟真实世界中轮胎重量差异）
+      // 转移车辆装载的轮胎数量应该较大，最小 500 条
       const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
-      const tireCount = Math.round(loadingNetWeight / avgTireWeight);
+      const calculatedTireCount = Math.round(loadingNetWeight / avgTireWeight);
+      const tireCount = Math.max(500, calculatedTireCount);
 
       scheduler.book(vehicle.id, loadingTime, unloadingTime, returnTime);
 
