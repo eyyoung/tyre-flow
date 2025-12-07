@@ -1,5 +1,6 @@
 # CNB 云原生构建配置
 # 文档: https://docs.cnb.cool
+# 方案：在 CNB 构建镜像，然后部署到服务器
 
 # ===========================================
 # 主分支推送触发自动部署
@@ -7,29 +8,47 @@
 main:
   push:
     # 从密钥仓库导入 SSH 私钥
-    # 需要先在 CNB 创建一个密钥仓库，例如：tyre-flow/secrets
-    # 在密钥仓库中创建 envs.yml 文件，内容如下：
-    # SSH_PRIVATE_KEY: |
-    #   -----BEGIN OPENSSH PRIVATE KEY-----
-    #   your-private-key-content-here
-    #   -----END OPENSSH PRIVATE KEY-----
     - imports:
         - https://cnb.cool/tyre-flow/tyre-flow-env/-/blob/main/envs.yml
-      docker:
-        image: alpine:latest
+      # 使用 Docker-in-Docker 构建镜像
+      services:
+        - docker
+      env:
+        DOCKER_HOST: unix:///var/run/docker.sock
       stages:
+        # 阶段1: 构建 Docker 镜像
+        - name: 🏗️ 构建 Docker 镜像
+          script:
+            - echo "开始构建 Docker 镜像..."
+            - docker version
+            - docker build -t tyre-flow-app:latest -t tyre-flow-app:${CI_COMMIT_SHORT_SHA:-latest} .
+            - echo "镜像构建完成"
+            - docker images | grep tyre-flow
+
+        # 阶段2: 保存并传输镜像到服务器
+        - name: 📦 保存镜像
+          script:
+            - echo "保存镜像为 tar 文件..."
+            - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
+            - ls -lh tyre-flow-app.tar.gz
+
+        # 阶段3: 部署到服务器
         - name: 🚀 部署到服务器
           script:
-            # 安装必要工具
-            - apk add --no-cache openssh-client git
+            # 安装 SSH 客户端
+            - apt-get update && apt-get install -y openssh-client || apk add --no-cache openssh-client
             
-            # 配置 SSH（使用从密钥仓库导入的 SSH_PRIVATE_KEY）
+            # 配置 SSH 密钥
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
             
-            # 部署到服务器
+            # 传输镜像到服务器
+            - echo "传输镜像到服务器..."
+            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@212.129.242.30:/tmp/
+            
+            # 在服务器上部署
             - |
               ssh -o StrictHostKeyChecking=no root@212.129.242.30 << 'DEPLOY_SCRIPT'
               set -e
@@ -39,7 +58,11 @@ main:
               mkdir -p $DEPLOY_DIR
               cd $DEPLOY_DIR
               
-              echo "📥 同步代码..."
+              echo "📥 加载 Docker 镜像..."
+              docker load < /tmp/tyre-flow-app.tar.gz
+              rm -f /tmp/tyre-flow-app.tar.gz
+              
+              echo "📥 同步配置文件..."
               if [ -d ".git" ]; then
                 git fetch origin
                 git reset --hard origin/main
@@ -47,22 +70,18 @@ main:
                 git clone -b main https://cnb.cool/tyre-flow/tyre-flow.git .
               fi
               
-              echo "🔨 构建 Docker 镜像..."
-              export DOCKER_BUILDKIT=1
-              export COMPOSE_DOCKER_CLI_BUILD=1
-              
-              docker compose down || true
-              docker compose build --no-cache
-              
               echo "🚢 启动服务..."
-              docker compose up -d
+              docker compose down || true
+              
+              # 使用预构建的镜像启动（不需要再次构建）
+              docker compose up -d --no-build
               
               echo "⏳ 等待服务启动..."
               sleep 15
               
               # 运行数据库迁移
               echo "📊 运行数据库迁移..."
-              docker compose run --rm migrate || echo "迁移已完成或跳过"
+              docker compose --profile setup run --rm migrate || echo "迁移已完成或跳过"
               
               echo "🔍 检查服务状态..."
               if docker compose ps | grep -q "Up"; then
@@ -88,23 +107,13 @@ main:
 # ===========================================
 "*":
   push:
-    - docker:
-        image: node:20-alpine
+    - services:
+        - docker
       stages:
-        - name: 📦 安装依赖
-          script:
-            - npm ci
-            
-        - name: 🔍 代码检查
-          script:
-            - npm run lint || true
-            
         - name: 🏗️ 构建测试
           script:
-            - npx prisma generate
-            - npm run build
-          env:
-            DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+            - docker build -t tyre-flow-app:test .
+            - echo "✅ 构建测试通过"
 
 # ===========================================
 # 手动触发部署 (通过 tag)
@@ -113,24 +122,31 @@ main:
   tag:
     - imports:
         - https://cnb.cool/tyre-flow/tyre-flow-env/-/blob/main/envs.yml
-      docker:
-        image: alpine:latest
+      services:
+        - docker
       stages:
-        - name: 🏷️ 发布版本
+        - name: 🏗️ 构建发布版本
           script:
-            - echo "发布版本 $CNB_BRANCH"
-            - apk add --no-cache openssh-client
+            - echo "构建版本 $CNB_TAG"
+            - docker build -t tyre-flow-app:$CNB_TAG -t tyre-flow-app:latest .
+            - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
+
+        - name: 🚀 部署发布版本
+          script:
+            - apt-get update && apt-get install -y openssh-client || apk add --no-cache openssh-client
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
+            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@212.129.242.30:/tmp/
             - |
               ssh -o StrictHostKeyChecking=no root@212.129.242.30 << DEPLOY
               cd /root/deployment/tyre-flow
-              git fetch --tags
-              git checkout $CNB_BRANCH
+              docker load < /tmp/tyre-flow-app.tar.gz
+              rm -f /tmp/tyre-flow-app.tar.gz
+              git fetch --tags origin
+              git checkout $CNB_TAG 2>/dev/null || git checkout origin/main
               docker compose down || true
-              docker compose build
-              docker compose up -d
-              echo "✅ 版本 $CNB_BRANCH 部署完成"
+              docker compose up -d --no-build
+              echo "✅ 版本 $CNB_TAG 部署完成"
               DEPLOY
