@@ -70,7 +70,9 @@
     "totalCollectionPoints": "Total Collection Points",
     "totalStores": "Total Stores",
     "totalVehicles": "Total Vehicles",
-    "monthlyWeight": "Monthly Weight (kg)",
+    "monthlyCollectionWeight": "Monthly Collection",
+    "monthlyTransferWeight": "Monthly Transfer",
+    "ton": "t",
     "recentTasks": "Recent Tasks"
   },
   "users": {

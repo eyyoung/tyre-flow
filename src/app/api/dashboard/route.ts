@@ -66,17 +66,17 @@ export async function GET() {
       }),
     ]);
 
-    // 计算本月总吨数（收集 + 转移）
-    const collectionWeight = monthlyCollectionWeight._sum?.unloadingNetWeight || 0;
-    const transferWeight = monthlyTransferWeight._sum?.unloadingNetWeight || 0;
-    const monthlyTonnage = collectionWeight + transferWeight;
+    // 分别计算本月收集量和转移量（kg 转换为吨）
+    const collectionWeightKg = monthlyCollectionWeight._sum?.unloadingNetWeight || 0;
+    const transferWeightKg = monthlyTransferWeight._sum?.unloadingNetWeight || 0;
 
     return NextResponse.json({
       stats: {
         collectionPoints: collectionPointCount,
         stores: storeCount,
         vehicles: vehicleCount,
-        monthlyWeight: parseFloat(monthlyTonnage.toFixed(2)),
+        monthlyCollectionWeight: parseFloat((collectionWeightKg / 1000).toFixed(2)),
+        monthlyTransferWeight: parseFloat((transferWeightKg / 1000).toFixed(2)),
       },
       recentTasks: recentTasks.map((task) => ({
         key: task.id,

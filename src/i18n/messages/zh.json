@@ -70,7 +70,9 @@
     "totalCollectionPoints": "收集点总数",
     "totalStores": "门店总数",
     "totalVehicles": "车辆总数",
-    "monthlyWeight": "本月回收量（kg）",
+    "monthlyCollectionWeight": "本月收集量",
+    "monthlyTransferWeight": "本月转移量",
+    "ton": "吨",
     "recentTasks": "最近任务"
   },
   "users": {

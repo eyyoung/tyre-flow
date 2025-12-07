@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Card, Row, Col, Statistic, Typography, Table, Tag, Spin } from "antd";
+import { Card, Statistic, Typography, Table, Tag, Spin } from "antd";
 import {
   EnvironmentOutlined,
   ShopOutlined,
   CarOutlined,
   RiseOutlined,
+  SwapOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import styles from "./dashboard.module.css";
@@ -17,7 +18,8 @@ interface DashboardStats {
   collectionPoints: number;
   stores: number;
   vehicles: number;
-  monthlyWeight: number;
+  monthlyCollectionWeight: number;
+  monthlyTransferWeight: number;
 }
 
 interface RecentTask {
@@ -37,7 +39,8 @@ export default function DashboardPage() {
     collectionPoints: 0,
     stores: 0,
     vehicles: 0,
-    monthlyWeight: 0,
+    monthlyCollectionWeight: 0,
+    monthlyTransferWeight: 0,
   });
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
 
@@ -88,13 +91,22 @@ export default function DashboardPage() {
       bgColor: "#fffbe6",
     },
     {
-      key: "weight",
-      title: t("dashboard.monthlyWeight"),
-      value: stats.monthlyWeight,
-      suffix: "kg",
+      key: "collectionWeight",
+      title: t("dashboard.monthlyCollectionWeight"),
+      value: stats.monthlyCollectionWeight,
+      suffix: t("dashboard.ton"),
       icon: <RiseOutlined />,
       color: "#722ed1",
       bgColor: "#f9f0ff",
+    },
+    {
+      key: "transferWeight",
+      title: t("dashboard.monthlyTransferWeight"),
+      value: stats.monthlyTransferWeight,
+      suffix: t("dashboard.ton"),
+      icon: <SwapOutlined />,
+      color: "#13c2c2",
+      bgColor: "#e6fffb",
     },
   ];
 
@@ -116,14 +128,14 @@ export default function DashboardPage() {
       dataIndex: "targetTonnage",
       key: "targetTonnage",
       width: 130,
-      render: (value: number) => `${value} kg`,
+      render: (value: number) => `${(value / 1000).toFixed(2)} t`,
     },
     {
       title: t("ledgers.actualWeight"),
       dataIndex: "actualTonnage",
       key: "actualTonnage",
       width: 130,
-      render: (value: number | null) => value !== null ? `${value} kg` : '-',
+      render: (value: number | null) => value !== null ? `${(value / 1000).toFixed(2)} t` : '-',
     },
     {
       title: t("ledgers.status"),
@@ -159,28 +171,26 @@ export default function DashboardPage() {
       </Title>
 
       <Spin spinning={loading}>
-        <Row gutter={[24, 24]}>
+        <div className={styles.statGrid}>
           {statCards.map((stat) => (
-            <Col xs={24} sm={12} lg={6} key={stat.key}>
-              <Card className={styles.statCard} variant="borderless">
-                <div className={styles.statContent}>
-                  <div
-                    className={styles.statIcon}
-                    style={{ background: stat.bgColor, color: stat.color }}
-                  >
-                    {stat.icon}
-                  </div>
-                  <Statistic
-                    title={stat.title}
-                    value={stat.value}
-                    suffix={stat.suffix}
-                    valueStyle={{ color: stat.color }}
-                  />
+            <Card className={styles.statCard} variant="borderless" key={stat.key}>
+              <div className={styles.statContent}>
+                <div
+                  className={styles.statIcon}
+                  style={{ background: stat.bgColor, color: stat.color }}
+                >
+                  {stat.icon}
                 </div>
-              </Card>
-            </Col>
+                <Statistic
+                  title={stat.title}
+                  value={stat.value}
+                  suffix={stat.suffix}
+                  valueStyle={{ color: stat.color }}
+                />
+              </div>
+            </Card>
           ))}
-        </Row>
+        </div>
 
         <Card
           title={t("dashboard.recentTasks")}
