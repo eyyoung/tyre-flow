@@ -249,8 +249,9 @@ export async function generateTransferData(
       const actualTareWeight = parseFloat((vehicle.tareWeight + randomFloatBetween(-tareVariance, tareVariance)).toFixed(2));
       const grossWeight = parseFloat((unloadingNetWeight + actualTareWeight).toFixed(2));
 
-      // 计算轮胎条数
-      const tireCount = Math.round(loadingNetWeight / config.tireWeightKg);
+      // 计算轮胎条数（给平均轮胎重量添加随机波动，模拟真实世界中轮胎重量差异）
+      const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
+      const tireCount = Math.round(loadingNetWeight / avgTireWeight);
 
       scheduler.book(vehicle.id, loadingTime, unloadingTime, returnTime);
 
