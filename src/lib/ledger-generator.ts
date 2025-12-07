@@ -421,8 +421,11 @@ export async function generateLedgerData(
     // vehicle.maxLoad 现在是 kg，确保至少能装1个轮胎
     const maxTires = Math.max(1, Math.floor(vehicle.maxLoad / config.tireWeightKg));
     const actualTireCount = Math.min(tireCount, maxTires, config.collectionTireLimit);
+    
     // 重量单位：kg
-    const loadingNetWeight = parseFloat((actualTireCount * config.tireWeightKg).toFixed(2));
+    // 给轮胎重量添加随机波动（±10%），模拟真实世界中每个轮胎重量的差异
+    const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
+    const loadingNetWeight = parseFloat((actualTireCount * avgTireWeight).toFixed(2));
     
     // 生成折损：卸车净重 = 装车净重 - 折损，模拟运输过程中的轻微损耗
     const lossRatio = randomFloatBetween(config.lossRatioMin, config.lossRatioMax, 5);
