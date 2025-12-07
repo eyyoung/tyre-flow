@@ -1,11 +1,11 @@
-version: 1.0
+version: '1.0'
 name: deploy
 displayName: 自动部署到生产服务器
 triggers:
-  trigger: auto
+  trigger: manual
   push:
     branches:
-      include:
+      precise:
         - main
 stages:
   - name: stage-81d279c0
