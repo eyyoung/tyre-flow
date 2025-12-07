@@ -51,7 +51,7 @@ export async function GET() {
           },
         },
         _sum: {
-          netWeight: true,
+          unloadingNetWeight: true,
         },
       }),
       // 最近的台账任务
@@ -68,7 +68,7 @@ export async function GET() {
 
     // 计算本月总吨数（收集 + 转移）
     const collectionWeight = monthlyCollectionWeight._sum?.unloadingNetWeight || 0;
-    const transferWeight = monthlyTransferWeight._sum?.netWeight || 0;
+    const transferWeight = monthlyTransferWeight._sum?.unloadingNetWeight || 0;
     const monthlyTonnage = collectionWeight + transferWeight;
 
     return NextResponse.json({
