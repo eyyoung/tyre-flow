@@ -387,8 +387,8 @@ export async function generateLedgerData(
     const actualWeightKg = task.targetWeight * randomFloatBetween(0.8, 1.2);
     const tireCount = Math.max(1, Math.round(actualWeightKg / config.tireWeightKg));
     
-    // vehicle.maxLoad 现在是 kg
-    const maxTires = Math.floor(vehicle.maxLoad / config.tireWeightKg);
+    // vehicle.maxLoad 现在是 kg，确保至少能装1个轮胎
+    const maxTires = Math.max(1, Math.floor(vehicle.maxLoad / config.tireWeightKg));
     const actualTireCount = Math.min(tireCount, maxTires, config.collectionTireLimit);
     // 重量单位：kg
     const loadingNetWeight = parseFloat((actualTireCount * config.tireWeightKg).toFixed(2));
