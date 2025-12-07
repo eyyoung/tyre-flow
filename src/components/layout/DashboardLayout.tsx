@@ -30,6 +30,7 @@ import {
   LineChartOutlined,
   UnorderedListOutlined,
   ImportOutlined,
+  ClearOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
@@ -113,8 +114,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/stores/list",
           icon: <UnorderedListOutlined />,
-          label: (
-            <Link href={`/${currentLocale}/dashboard/stores`}>
+      label: (
+        <Link href={`/${currentLocale}/dashboard/stores`}>
               {t("menu.storeList")}
             </Link>
           ),
@@ -125,6 +126,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           label: (
             <Link href={`/${currentLocale}/dashboard/stores/import`}>
               {t("menu.storeImport")}
+        </Link>
+      ),
+        },
+        {
+          key: "/dashboard/stores/cleanup",
+          icon: <ClearOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/stores/cleanup`}>
+              {t("menu.storeCleanup")}
             </Link>
           ),
         },
