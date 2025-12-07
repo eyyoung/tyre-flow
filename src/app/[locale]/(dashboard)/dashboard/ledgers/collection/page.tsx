@@ -425,24 +425,6 @@ export default function CollectionLedgerPage() {
           >
             {t('common.view')}
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<PlayCircleOutlined />}
-            onClick={() => handleGenerate(record.id)}
-            disabled={record.status === 'PROCESSING'}
-          >
-            {t('ledgers.generateLedger')}
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<DownloadOutlined />}
-            onClick={() => handleExport(record.id)}
-            disabled={record.status !== 'COMPLETED'}
-          >
-            {t('ledgers.exportExcel')}
-          </Button>
           <Popconfirm
             title="确定要删除此任务吗？"
             onConfirm={() => handleDelete(record.id)}

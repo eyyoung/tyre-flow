@@ -414,12 +414,15 @@ export async function generateLedgerData(
     
     const { vehicle, departureTime, arrivalTime, returnTime } = assignment;
     
+    // 最小轮胎数量（确保每次收集有合理数量，避免出现1-2条的异常数据）
+    const MIN_TIRE_COUNT = 20;
+    
     // task.targetWeight 现在是 kg
     const actualWeightKg = task.targetWeight * randomFloatBetween(0.8, 1.2);
-    const tireCount = Math.max(1, Math.round(actualWeightKg / config.tireWeightKg));
+    const tireCount = Math.max(MIN_TIRE_COUNT, Math.round(actualWeightKg / config.tireWeightKg));
     
-    // vehicle.maxLoad 现在是 kg，确保至少能装1个轮胎
-    const maxTires = Math.max(1, Math.floor(vehicle.maxLoad / config.tireWeightKg));
+    // vehicle.maxLoad 现在是 kg，确保至少能装 MIN_TIRE_COUNT 个轮胎
+    const maxTires = Math.max(MIN_TIRE_COUNT, Math.floor(vehicle.maxLoad / config.tireWeightKg));
     const actualTireCount = Math.min(tireCount, maxTires, config.collectionTireLimit);
     
     // 重量单位：kg
