@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 REMOTE_DIR="/root/deployment/tyre-flow"
-REPO_URL="https://cnb.cool/tyre-flow/tyre-flow.git"
+REPO_URL="https://cnb:7HNZfxtX3b1dEVBNT4TaJh1A1PF@cnb.cool/tyre-flow/tyre-flow.git"
 
 echo "🔧 Tyre Flow 服务器初始化"
 echo "========================================"
