@@ -127,9 +127,9 @@ model Vehicle {
   type               VehicleType
   brand              String?     // 品牌
   model              String?     // 型号
-  tareWeight         Float       // 皮重（吨）
-  tareWeightVariance Float       @default(0.05) // 皮重随机微调范围
-  maxLoad            Float       // 最大载重（吨）
+  tareWeight         Float       // 皮重（kg）
+  tareWeightVariance Float       @default(0.05) // 皮重随机微调范围（kg）
+  maxLoad            Float       // 最大载重（kg）
   driverName         String?
   driverPhone        String?
   collectionPointId  String

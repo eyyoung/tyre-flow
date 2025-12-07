@@ -67,16 +67,16 @@ async function main() {
   });
   console.log('✅ 示例收集点已创建:', collectionPoint.name);
 
-  // 创建示例车辆
+  // 创建示例车辆（重量单位：kg）
   const vehicles = [
     {
       plateNumber: '粤A12345',
       type: 'COLLECTION' as const,
       brand: '五菱',
       model: '4.2米厢式货车',
-      tareWeight: 2.5,
-      tareWeightVariance: 0.05,
-      maxLoad: 2.0,
+      tareWeight: 2500,        // 皮重 2500 kg (2.5吨)
+      tareWeightVariance: 50,  // 皮重微调范围 50 kg
+      maxLoad: 4000,           // 最大载重 4000 kg (4吨)
       driverName: '李师傅',
       driverPhone: '13800138002',
       collectionPointId: collectionPoint.id,
@@ -86,9 +86,9 @@ async function main() {
       type: 'TRANSFER' as const,
       brand: '东风',
       model: '13米半挂',
-      tareWeight: 15.0,
-      tareWeightVariance: 0.05,
-      maxLoad: 30.0,
+      tareWeight: 15000,       // 皮重 15000 kg (15吨)
+      tareWeightVariance: 100, // 皮重微调范围 100 kg
+      maxLoad: 33000,          // 最大载重 33000 kg (33吨)
       driverName: '王师傅',
       driverPhone: '13800138003',
       collectionPointId: collectionPoint.id,
