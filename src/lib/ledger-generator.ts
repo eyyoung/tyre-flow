@@ -174,6 +174,9 @@ function generateStoreCollectionPlans(
 ): StoreCollectionPlan[] {
   const plans: StoreCollectionPlan[] = [];
   
+  // 最小单次收集重量阈值 (kg)
+  const MIN_WEIGHT_PER_COLLECTION = 200;
+  
   const shuffledStores = [...stores].sort(() => Math.random() - 0.5);
   const coldStoreCount = Math.floor(stores.length * config.coldStoreRatio);
   const coldStores = new Set(shuffledStores.slice(0, coldStoreCount).map(s => s.id));
@@ -196,7 +199,8 @@ function generateStoreCollectionPlans(
   let remainingWeightKg = targetWeightKg;
   
   for (const store of participatingStores) {
-    if (remainingWeightKg <= 0) break;
+    // 如果剩余重量不足最小阈值，不再分配新门店
+    if (remainingWeightKg < MIN_WEIGHT_PER_COLLECTION) break;
     
     const collectionDays: number[] = [];
     let currentDay = randomBetween(1, Math.min(5, daysInMonth));
@@ -210,33 +214,52 @@ function generateStoreCollectionPlans(
     if (collectionDays.length === 0) continue;
     
     // 每次收集 300-2000 kg
-    const storeTargetWeight = Math.min(
-      remainingWeightKg,
-      randomFloatBetween(300, 2000, 0) * collectionDays.length
-    );
+    const idealWeightPerCollection = randomFloatBetween(300, 2000, 0);
+    const idealTotalWeight = idealWeightPerCollection * collectionDays.length;
     
-    const weightPerCollection = storeTargetWeight / collectionDays.length;
+    // 计算实际分配重量
+    let storeTargetWeight = Math.min(remainingWeightKg, idealTotalWeight);
+    let weightPerCollection = storeTargetWeight / collectionDays.length;
+    
+    // 如果每次收集重量太小，减少收集天数以确保每次重量合理
+    let actualCollectionDays = [...collectionDays];
+    while (weightPerCollection < MIN_WEIGHT_PER_COLLECTION && actualCollectionDays.length > 1) {
+      // 随机移除一个收集日
+      const removeIndex = randomBetween(0, actualCollectionDays.length - 1);
+      actualCollectionDays.splice(removeIndex, 1);
+      weightPerCollection = storeTargetWeight / actualCollectionDays.length;
+    }
+    
+    // 如果只剩一天但重量仍不足阈值，使用所有剩余重量（至少 MIN_WEIGHT_PER_COLLECTION）
+    if (actualCollectionDays.length === 1 && weightPerCollection < MIN_WEIGHT_PER_COLLECTION) {
+      weightPerCollection = Math.min(remainingWeightKg, idealWeightPerCollection);
+      storeTargetWeight = weightPerCollection;
+    }
     
     plans.push({
       storeId: store.id,
       estimatedTravelMinutes: store.estimatedTravelMinutes,
-      collectionDays,
+      collectionDays: actualCollectionDays,
       weightPerCollection,
     });
     
     remainingWeightKg -= storeTargetWeight;
   }
   
-  if (remainingWeightKg > 0 && coldStoreCount > 0) {
+  // 处理冷门门店
+  if (remainingWeightKg >= MIN_WEIGHT_PER_COLLECTION && coldStoreCount > 0) {
     const coldStoreList = shuffledStores.slice(0, coldStoreCount);
     const coldParticipants = coldStoreList.slice(0, Math.ceil(coldStoreCount * 0.3));
     
     for (const store of coldParticipants) {
-      if (remainingWeightKg <= 0) break;
+      if (remainingWeightKg < MIN_WEIGHT_PER_COLLECTION) break;
       
       const collectionDay = randomBetween(10, daysInMonth - 5);
-      // 冷门门店每次收集 200-800 kg
-      const weight = Math.min(remainingWeightKg, randomFloatBetween(200, 800, 0));
+      // 冷门门店每次收集 200-800 kg，但不能低于最小阈值
+      const weight = Math.max(
+        MIN_WEIGHT_PER_COLLECTION,
+        Math.min(remainingWeightKg, randomFloatBetween(200, 800, 0))
+      );
       
       plans.push({
         storeId: store.id,
@@ -247,6 +270,14 @@ function generateStoreCollectionPlans(
       
       remainingWeightKg -= weight;
     }
+  }
+  
+  // 如果还有少量剩余重量，合并到已有计划的最后一个门店
+  if (remainingWeightKg > 0 && plans.length > 0) {
+    const lastPlan = plans[plans.length - 1];
+    // 将剩余重量平均分配到该门店的所有收集日
+    const additionalPerDay = remainingWeightKg / lastPlan.collectionDays.length;
+    lastPlan.weightPerCollection += additionalPerDay;
   }
   
   return plans;
