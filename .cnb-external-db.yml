@@ -1,13 +1,21 @@
-# CNB 云原生构建配置
+# CNB 云原生构建配置 - 外部数据库版本（手动触发）
 # 文档: https://docs.cnb.cool
 # 方案：在 CNB 构建镜像，然后部署到服务器
-# 数据库：Docker 本地数据库
+# 数据库：外部数据库（如 RDS）
+#
+# 触发方式：
+#   1. 创建 deploy-* 标签手动触发部署，例如: git tag deploy-20231201 && git push --tags
+#   2. 创建 v* 版本标签触发发布，例如: git tag v1.0.0 && git push --tags
+#
+# 使用方法：
+#   将此文件重命名为 .cnb.yml 即可启用外部数据库部署模式
 
 # ===========================================
-# 主分支推送触发自动部署
+# 手动触发部署 (通过 deploy-* 标签)
+# 例如: git tag deploy-20231201 && git push origin deploy-20231201
 # ===========================================
-main:
-  push:
+"deploy-*":
+  tag:
     # 从密钥仓库导入 SSH 私钥
     - imports:
         - https://cnb.cool/tyre-flow/tyre-flow-env/-/blob/main/envs.yml
@@ -33,7 +41,7 @@ main:
             - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
             - ls -lh tyre-flow-app.tar.gz
 
-        # 阶段3: 部署到服务器
+        # 阶段3: 部署到服务器（外部数据库模式）
         - name: 🚀 部署到服务器
           script:
             # 安装 SSH 客户端
@@ -49,7 +57,7 @@ main:
             - echo "传输镜像到服务器..."
             - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@212.129.242.30:/tmp/
             
-            # 在服务器上部署
+            # 在服务器上部署（外部数据库模式）
             - |
               ssh -o StrictHostKeyChecking=no root@212.129.242.30 << 'DEPLOY_SCRIPT'
               set -e
@@ -71,56 +79,39 @@ main:
                 git clone -b main https://cnb.cool/tyre-flow/tyre-flow.git .
               fi
               
-              # 检测是否是首次部署（检查数据库容器是否存在）
+              # 检测是否是首次部署（应用容器不存在）
               FIRST_DEPLOY=false
-              if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-db"; then
-                echo "🆕 检测到首次部署，将初始化数据库..."
+              if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-app"; then
+                echo "🆕 检测到首次部署..."
                 FIRST_DEPLOY=true
               fi
               
               echo "🚢 停止旧服务..."
-              docker compose down || true
+              docker compose --profile external-db down || true
               
               if [ "$FIRST_DEPLOY" = true ]; then
-                echo "🗄️ 首次部署：启动数据库服务..."
-                docker compose up -d db
-                
-                echo "⏳ 等待数据库就绪..."
-                for i in {1..30}; do
-                  if docker compose exec -T db pg_isready -U tyre_flow > /dev/null 2>&1; then
-                    echo "✅ 数据库已就绪"
-                    break
-                  fi
-                  echo "   等待数据库... ($i/30)"
-                  sleep 2
-                done
-                
-                echo "📊 运行数据库迁移和初始化..."
-                docker compose --profile setup run --rm migrate
-                
-                echo "🚀 启动应用服务..."
-                docker compose up -d --no-build
-              else
-                echo "🔄 更新部署：启动所有服务..."
-                docker compose up -d --no-build
-                
-                echo "⏳ 等待服务启动..."
-                sleep 10
-                
-                echo "📊 运行数据库迁移（如有更新）..."
-                docker compose --profile setup run --rm migrate || echo "迁移已完成或无更新"
+                echo "📊 首次部署：运行数据库迁移和初始化..."
+                docker compose --profile external-db-setup run --rm migrate-external-db
               fi
               
-              echo "⏳ 等待服务完全启动..."
-              sleep 5
+              echo "🚀 启动应用服务（外部数据库模式）..."
+              docker compose --profile external-db up -d --no-build
+              
+              echo "⏳ 等待服务启动..."
+              sleep 10
+              
+              if [ "$FIRST_DEPLOY" = false ]; then
+                echo "📊 运行数据库迁移（如有更新）..."
+                docker compose --profile external-db-setup run --rm migrate-external-db || echo "迁移已完成或无更新"
+              fi
               
               echo "🔍 检查服务状态..."
-              if docker compose ps | grep -q "Up"; then
+              if docker compose --profile external-db ps | grep -q "Up"; then
                 echo "✅ 服务运行正常"
-                docker compose ps
+                docker compose --profile external-db ps
               else
                 echo "❌ 服务启动失败"
-                docker compose logs --tail=50
+                docker compose --profile external-db logs --tail=50
                 exit 1
               fi
               
@@ -129,7 +120,7 @@ main:
               
               echo ""
               echo "========================================"
-              echo "✅ 部署完成！"
+              echo "✅ 部署完成！（外部数据库模式）"
               echo "========================================"
               DEPLOY_SCRIPT
 
@@ -147,7 +138,8 @@ main:
             - echo "✅ 构建测试通过"
 
 # ===========================================
-# 手动触发部署 (通过 tag)
+# 版本发布 (通过 v* 标签)
+# 例如: git tag v1.0.0 && git push origin v1.0.0
 # ===========================================
 "v*":
   tag:
@@ -181,26 +173,20 @@ main:
               git fetch --tags origin
               git checkout $CNB_TAG 2>/dev/null || git checkout origin/main
               
-              # 检测是否是首次部署
+              # 检测是否首次部署
               FIRST_DEPLOY=false
-              if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-db"; then
+              if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-app"; then
                 FIRST_DEPLOY=true
+                echo "🆕 首次部署：运行数据库迁移..."
+                docker compose --profile external-db-setup run --rm migrate-external-db
               fi
               
-              docker compose down || true
-              
-              if [ "$FIRST_DEPLOY" = true ]; then
-                echo "🆕 首次部署：初始化数据库..."
-                docker compose up -d db
-                sleep 15
-                docker compose --profile setup run --rm migrate
-              fi
-              
-              docker compose up -d --no-build
+              docker compose --profile external-db down || true
+              docker compose --profile external-db up -d --no-build
               
               if [ "$FIRST_DEPLOY" = false ]; then
-                docker compose --profile setup run --rm migrate || echo "迁移已完成"
+                docker compose --profile external-db-setup run --rm migrate-external-db || echo "迁移已完成"
               fi
               
-              echo "✅ 版本 $CNB_TAG 部署完成"
+              echo "✅ 版本 $CNB_TAG 部署完成（外部数据库模式）"
               DEPLOY

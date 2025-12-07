@@ -6,18 +6,41 @@ set -e
 # 首次部署前在本地执行，用于初始化服务器环境
 #
 # 使用方法:
-#   ./scripts/setup-server.sh user@host
-#   ./scripts/setup-server.sh user@host -p 2222  # 指定 SSH 端口
+#   ./scripts/setup-server.sh user@host                           # 使用 Docker 数据库（默认）
+#   ./scripts/setup-server.sh user@host -d "postgresql://..."     # 使用外部数据库
+#   ./scripts/setup-server.sh user@host -p 2222                   # 指定 SSH 端口
 # ============================================
 
-if [ -z "$1" ]; then
-    echo "❌ 请提供服务器地址"
-    echo "用法: ./scripts/setup-server.sh user@host [-p port]"
-    exit 1
+show_help() {
+    echo "使用方法:"
+    echo "  ./scripts/setup-server.sh user@host [选项]"
+    echo ""
+    echo "选项:"
+    echo "  -d, --database-url URL   使用外部数据库（如 RDS）"
+    echo "                           示例: -d \"postgresql://user:pass@host:5432/db\""
+    echo "  -p, --port PORT          指定 SSH 端口（默认: 22）"
+    echo "  -h, --help               显示帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  # 使用 Docker 本地数据库（默认）"
+    echo "  ./scripts/setup-server.sh root@192.168.1.100"
+    echo ""
+    echo "  # 使用外部 RDS 数据库"
+    echo "  ./scripts/setup-server.sh root@192.168.1.100 -d \"postgresql://user:pass@rds.example.com:5432/mydb\""
+    echo ""
+    echo "  # 指定 SSH 端口"
+    echo "  ./scripts/setup-server.sh root@192.168.1.100 -p 2222"
+}
+
+if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+    exit 0
 fi
 
 SERVER="$1"
 SSH_PORT="22"
+DATABASE_URL=""
+USE_EXTERNAL_DB=false
 
 # 解析参数
 shift  # 跳过第一个参数（服务器地址）
@@ -26,6 +49,15 @@ while [[ $# -gt 0 ]]; do
         -p|--port)
             SSH_PORT="$2"
             shift 2
+            ;;
+        -d|--database-url)
+            DATABASE_URL="$2"
+            USE_EXTERNAL_DB=true
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
             ;;
         *)
             shift
@@ -39,6 +71,14 @@ REPO_URL="https://cnb:7HNZfxtX3b1dEVBNT4TaJh1A1PF@cnb.cool/tyre-flow/tyre-flow.g
 echo "🔧 Tyre Flow 服务器初始化"
 echo "========================================"
 echo "📡 目标服务器: $SERVER"
+if [ "$USE_EXTERNAL_DB" = true ]; then
+    # 隐藏密码显示
+    MASKED_URL=$(echo "$DATABASE_URL" | sed 's/:[^:@]*@/:****@/')
+    echo "🗄️ 数据库模式: 外部数据库"
+    echo "   URL: $MASKED_URL"
+else
+    echo "🗄️ 数据库模式: Docker 本地数据库"
+fi
 echo "========================================"
 echo ""
 
@@ -115,6 +155,47 @@ else
     DB_PASSWORD=$(openssl rand -hex 32)
 fi
 
+# 根据数据库模式生成不同的 .env 内容
+if [ "$USE_EXTERNAL_DB" = true ]; then
+    # 外部数据库模式
+    ENV_CONTENT="# ============================================
+# 数据库配置 - 外部数据库模式
+# ============================================
+DATABASE_URL=${DATABASE_URL}
+
+# ============================================
+# 应用配置
+# ============================================
+JWT_SECRET=${JWT_SECRET}
+NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+NEXTAUTH_URL=http://${SERVER_HOST}:3000
+
+# Cookie 安全设置
+# 如果使用 HTTPS，设置为 true
+# 如果使用 HTTP，设置为 false
+SECURE_COOKIES=false"
+else
+    # Docker 本地数据库模式
+    ENV_CONTENT="# ============================================
+# 数据库配置 - Docker 本地数据库模式
+# ============================================
+POSTGRES_USER=tyre_flow
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=tyre_flow
+
+# ============================================
+# 应用配置
+# ============================================
+JWT_SECRET=${JWT_SECRET}
+NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+NEXTAUTH_URL=http://${SERVER_HOST}:3000
+
+# Cookie 安全设置
+# 如果使用 HTTPS，设置为 true
+# 如果使用 HTTP，设置为 false
+SECURE_COOKIES=false"
+fi
+
 ssh -p $SSH_PORT $SERVER << ENDSSH
 set -e
 
@@ -131,38 +212,11 @@ else
 fi
 
 # 创建或更新 .env 文件
-if [ ! -f ".env" ]; then
-    echo "📝 创建 .env 文件..."
-    cat > .env << EOF
-# ============================================
-# 数据库配置
-# ============================================
-# 方式一：使用本地 Docker PostgreSQL（默认）
-# 保持 DATABASE_URL 注释，使用下面的 POSTGRES_* 变量
-POSTGRES_USER=tyre_flow
-POSTGRES_PASSWORD=${DB_PASSWORD}
-POSTGRES_DB=tyre_flow
-
-# 方式二：使用外部数据库（如 RDS）
-# 取消下行注释并填入 RDS 连接字符串，然后使用 external-db profile 启动
-# DATABASE_URL=postgresql://user:password@rds-host:5432/database?schema=public
-
-# ============================================
-# 应用配置
-# ============================================
-JWT_SECRET=${JWT_SECRET}
-NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-NEXTAUTH_URL=http://${SERVER_HOST}:3000
-
-# Cookie 安全设置
-# 如果使用 HTTPS，设置为 true
-# 如果使用 HTTP，设置为 false
-SECURE_COOKIES=false
+echo "📝 创建 .env 文件..."
+cat > .env << 'EOF'
+${ENV_CONTENT}
 EOF
-    echo "✅ .env 文件已创建"
-else
-    echo "✅ .env 文件已存在，保留现有配置"
-fi
+echo "✅ .env 文件已创建"
 ENDSSH
 
 echo ""
@@ -170,26 +224,24 @@ echo "========================================"
 echo "✅ 服务器初始化完成！"
 echo ""
 echo "📋 后续步骤:"
-echo "   1. SSH 到服务器检查/编辑环境变量:"
+echo ""
+echo "   1. SSH 到服务器检查/编辑环境变量（可选）:"
 echo "      ssh $SERVER"
 echo "      nano $REMOTE_DIR/.env"
 echo ""
-echo "   2. 首次部署:"
-echo ""
-echo "      【使用本地 Docker 数据库（默认）】"
-echo "      cd $REMOTE_DIR"
-echo "      docker compose --profile setup up -d  # 初始化数据库"
-echo "      docker compose up -d"
-echo ""
-echo "      【使用外部数据库（RDS）】"
-echo "      # 先编辑 .env，取消 DATABASE_URL 注释并填入 RDS 连接字符串"
-echo "      cd $REMOTE_DIR"
-echo "      docker compose --profile external-db-setup up  # 初始化数据库"
-echo "      docker compose --profile external-db up -d     # 启动应用"
+
+if [ "$USE_EXTERNAL_DB" = true ]; then
+    echo "   2. 首次部署（外部数据库模式）:"
+    echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
+    echo "      或手动执行:"
+    echo "      ssh $SERVER 'cd $REMOTE_DIR && docker compose --profile external-db up -d'"
+else
+    echo "   2. 首次部署（Docker 数据库模式）:"
+    echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
+    echo "      CI/CD 会自动检测首次部署并初始化数据库"
+fi
+
 echo ""
 echo "   3. 自动部署 (推荐):"
 echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
-echo ""
-echo "   4. 手动部署:"
-echo "      ./scripts/deploy.sh $SERVER"
 echo "========================================"
