@@ -6,7 +6,16 @@
 # ===========================================
 main:
   push:
-    - docker:
+    # 从密钥仓库导入 SSH 私钥
+    # 需要先在 CNB 创建一个密钥仓库，例如：tyre-flow/secrets
+    # 在密钥仓库中创建 envs.yml 文件，内容如下：
+    # SSH_PRIVATE_KEY: |
+    #   -----BEGIN OPENSSH PRIVATE KEY-----
+    #   your-private-key-content-here
+    #   -----END OPENSSH PRIVATE KEY-----
+    - imports:
+        - https://cnb.cool/tyre-flow/tyre-flow-env/-/blob/main/envs.yml
+      docker:
         image: alpine:latest
       stages:
         - name: 🚀 部署到服务器
@@ -14,9 +23,9 @@ main:
             # 安装必要工具
             - apk add --no-cache openssh-client git
             
-            # 配置 SSH
+            # 配置 SSH（使用从密钥仓库导入的 SSH_PRIVATE_KEY）
             - mkdir -p ~/.ssh
-            - echo "$CNB_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
             
@@ -102,7 +111,9 @@ main:
 # ===========================================
 "v*":
   tag:
-    - docker:
+    - imports:
+        - https://cnb.cool/tyre-flow/tyre-flow-env/-/blob/main/envs.yml
+      docker:
         image: alpine:latest
       stages:
         - name: 🏷️ 发布版本
@@ -110,7 +121,7 @@ main:
             - echo "发布版本 $CNB_BRANCH"
             - apk add --no-cache openssh-client
             - mkdir -p ~/.ssh
-            - echo "$CNB_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
             - |
@@ -123,4 +134,3 @@ main:
               docker compose up -d
               echo "✅ 版本 $CNB_BRANCH 部署完成"
               DEPLOY
-
