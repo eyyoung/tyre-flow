@@ -28,6 +28,8 @@ import {
   ContainerOutlined,
   IdcardOutlined,
   LineChartOutlined,
+  UnorderedListOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
@@ -106,11 +108,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/stores",
       icon: <ShopOutlined />,
-      label: (
-        <Link href={`/${currentLocale}/dashboard/stores`}>
-          {t("menu.stores")}
-        </Link>
-      ),
+      label: t("menu.stores"),
+      children: [
+        {
+          key: "/dashboard/stores/list",
+          icon: <UnorderedListOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/stores`}>
+              {t("menu.storeList")}
+            </Link>
+          ),
+        },
+        {
+          key: "/dashboard/stores/import",
+          icon: <ImportOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/stores/import`}>
+              {t("menu.storeImport")}
+            </Link>
+          ),
+        },
+      ],
     },
     {
       key: "/dashboard/vehicles",
@@ -193,6 +211,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // 获取当前选中的菜单项
   const getSelectedKey = () => {
     const allKeys = getAllMenuKeys();
+
+    // 门店列表页特殊处理：/dashboard/stores 映射到 /dashboard/stores/list
+    if (currentPath === "/dashboard/stores") {
+      return "/dashboard/stores/list";
+    }
 
     // 精确匹配优先
     if (allKeys.includes(currentPath)) {

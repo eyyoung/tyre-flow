@@ -76,19 +76,27 @@ export default function VehiclesPage() {
   const [form] = Form.useForm();
 
   // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch('/api/collection-points?all=true');
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchCollectionPoints = async () => {
+      try {
+        const response = await fetch('/api/collection-points?all=true', {
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (response.ok) {
+          setCollectionPoints(result.data);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        // ignore other errors
       }
-    } catch {
-      // ignore
-    }
+    };
+    fetchCollectionPoints();
+    return () => controller.abort();
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -100,7 +108,7 @@ export default function VehiclesPage() {
         collectionPointId: cpFilter,
       });
 
-      const response = await fetch(`/api/vehicles?${params}`);
+      const response = await fetch(`/api/vehicles?${params}`, { signal });
       const result = await response.json();
 
       if (response.ok) {
@@ -109,19 +117,18 @@ export default function VehiclesPage() {
       } else {
         message.error(result.message || t('common.error'));
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
       message.error(t('common.error'));
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, typeFilter, cpFilter, t]);
+  }, [page, pageSize, search, statusFilter, typeFilter, cpFilter, message, t]);
 
   useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
-
-  useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, [fetchData]);
 
   const handleSearch = () => {

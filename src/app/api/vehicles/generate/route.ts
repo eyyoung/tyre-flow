@@ -54,6 +54,7 @@ const provinceShorts: Record<string, string> = {
   四川省: '川',
   湖北省: '鄂',
   湖南省: '湘',
+  安徽省: '皖',
   河南省: '豫',
 };
 
