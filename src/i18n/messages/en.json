@@ -156,6 +156,7 @@
     "hasEstimatedTimeNo": "No estimated time (=0)",
     "onlyHasEstimatedTime": "Only export stores with estimated time (time > 0)",
     "onlyActiveStores": "Only export active stores",
+    "includeEstimatedTime": "Include estimated travel time column",
     "resetGeocode": "Reset Coordinates",
     "resetGeocodeConfirm": "Are you sure you want to re-fetch the coordinates and estimated travel time for this store?",
     "resetGeocodeSuccess": "Coordinates reset successfully",

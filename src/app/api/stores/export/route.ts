@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || '';
     const isVirtual = searchParams.get('isVirtual') || '';
     const hasEstimatedTime = searchParams.get('hasEstimatedTime') || '';
+    const includeEstimatedTime = searchParams.get('includeEstimatedTime') !== 'false'; // 默认导出
 
     // 构建查询条件
     const where: Record<string, unknown> = {};
@@ -92,8 +93,12 @@ export async function GET(request: NextRequest) {
       { header: '纬度', key: 'latitude', width: 12 },
       { header: '联系人', key: 'contactName', width: 12 },
       { header: '联系电话', key: 'contactPhone', width: 15 },
-      { header: '预估行程(分钟)', key: 'estimatedTravelMinutes', width: 16 },
     ];
+    
+    // 根据参数决定是否添加预估行程列
+    if (includeEstimatedTime) {
+      columns.push({ header: '预估行程(分钟)', key: 'estimatedTravelMinutes', width: 16 });
+    }
     
     if (showIsVirtualColumn) {
       columns.push({ header: '是否虚拟', key: 'isVirtual', width: 10 });
@@ -101,7 +106,6 @@ export async function GET(request: NextRequest) {
     
     columns.push(
       { header: '状态', key: 'status', width: 10 },
-      { header: '创建时间', key: 'createdAt', width: 18 },
     );
     
     worksheet.columns = columns;
@@ -128,10 +132,13 @@ export async function GET(request: NextRequest) {
         latitude: store.latitude || '',
         contactName: store.contactName || '',
         contactPhone: store.contactPhone || '',
-        estimatedTravelMinutes: store.estimatedTravelMinutes,
         status: store.status === 'ACTIVE' ? '正常' : '停用',
-        createdAt: store.createdAt.toISOString().slice(0, 19).replace('T', ' '),
       };
+      
+      // 根据参数决定是否添加预估行程数据
+      if (includeEstimatedTime) {
+        rowData.estimatedTravelMinutes = store.estimatedTravelMinutes;
+      }
       
       if (showIsVirtualColumn) {
         rowData.isVirtual = store.isVirtual ? '是' : '否';

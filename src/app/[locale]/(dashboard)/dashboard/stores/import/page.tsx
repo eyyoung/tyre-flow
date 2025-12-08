@@ -53,6 +53,7 @@ interface PreviewStore {
   district: string;
   longitude: number | null;
   latitude: number | null;
+  estimatedTravelMinutes: number | null;  // 预估行程（分钟）
   isValid: boolean;
   errorMsg?: string;
 }
@@ -129,6 +130,8 @@ export default function StoreImportPage() {
       '所属区县': 'district',
       '经度': 'longitude',
       '纬度': 'latitude',
+      '预估行程': 'estimatedTravelMinutes',       // 预估行程（分钟）
+      '预估行程(分钟)': 'estimatedTravelMinutes', // 兼容导出格式
     };
 
     // 获取字段索引
@@ -166,6 +169,10 @@ export default function StoreImportPage() {
       const latitudeStr = values[fieldIndexMap['latitude']]?.trim() || '';
       const longitude = longitudeStr ? parseFloat(longitudeStr) : null;
       const latitude = latitudeStr ? parseFloat(latitudeStr) : null;
+      
+      // 解析预估行程
+      const estimatedTravelStr = values[fieldIndexMap['estimatedTravelMinutes']]?.trim() || '';
+      const estimatedTravelMinutes = estimatedTravelStr ? parseInt(estimatedTravelStr, 10) : null;
 
       // 验证数据
       const isValid = !!name && !!address;
@@ -185,6 +192,7 @@ export default function StoreImportPage() {
         district,
         longitude: longitude && !isNaN(longitude) ? longitude : null,
         latitude: latitude && !isNaN(latitude) ? latitude : null,
+        estimatedTravelMinutes: estimatedTravelMinutes && !isNaN(estimatedTravelMinutes) ? estimatedTravelMinutes : null,
         isValid,
         errorMsg,
       });
@@ -238,6 +246,7 @@ export default function StoreImportPage() {
             district: s.district || null,
             longitude: s.longitude,
             latitude: s.latitude,
+            estimatedTravelMinutes: s.estimatedTravelMinutes,
           })),
         }),
       });
@@ -355,6 +364,13 @@ export default function StoreImportPage() {
           <Text type="secondary">-</Text>
         )
       ),
+    },
+    {
+      title: t('stores.estimatedTravelMinutes'),
+      dataIndex: 'estimatedTravelMinutes',
+      key: 'estimatedTravelMinutes',
+      width: 100,
+      render: (v) => v !== null ? `${v} ${t('storeCleanup.minutes')}` : '-',
     },
     {
       title: t('common.status'),

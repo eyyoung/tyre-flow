@@ -242,6 +242,9 @@ export default function StoresPage() {
       if (values.hasEstimatedTime) {
         params.set('hasEstimatedTime', 'true');
       }
+      if (values.includeEstimatedTime !== undefined) {
+        params.set('includeEstimatedTime', values.includeEstimatedTime ? 'true' : 'false');
+      }
 
       const response = await fetch(`/api/stores/export?${params}`);
 
@@ -518,6 +521,7 @@ export default function StoresPage() {
                 isVirtual: 'false',
                 onlyActive: true,
                 hasEstimatedTime: true,
+                includeEstimatedTime: true,
               });
               setExportModalVisible(true);
             }}
@@ -772,6 +776,9 @@ export default function StoresPage() {
           </Form.Item>
           <Form.Item name="hasEstimatedTime" valuePropName="checked">
             <Checkbox>{t('stores.onlyHasEstimatedTime')}</Checkbox>
+          </Form.Item>
+          <Form.Item name="includeEstimatedTime" valuePropName="checked">
+            <Checkbox>{t('stores.includeEstimatedTime')}</Checkbox>
           </Form.Item>
         </Form>
       </Modal>

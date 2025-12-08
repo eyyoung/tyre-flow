@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
 
-// 旧格式（原有格式，现在也支持经纬度）
+// 旧格式（原有格式，现在也支持经纬度和预估行程）
 interface ImportStoreOld {
   name: string;
   businessStatus: string;
@@ -16,10 +16,12 @@ interface ImportStoreOld {
   // 新增支持经纬度直接导入
   longitude?: string | number | null;
   latitude?: string | number | null;
+  // 新增支持预估行程导入
+  estimatedTravelMinutes?: string | number | null;
 }
 
-// 新格式（stores.csv 格式，带经纬度）
-// CSV 表头: 序号,自我声明签署情况,企业名称,来源分类,统一社会信用代码,所属省份,所属城市,所属区县,法定代表人,注册地址,经度,纬度,邮政编码,电话,更多电话
+// 新格式（stores.csv 格式，带经纬度和预估行程）
+// CSV 表头: 序号,自我声明签署情况,企业名称,来源分类,统一社会信用代码,所属省份,所属城市,所属区县,法定代表人,注册地址,经度,纬度,邮政编码,电话,更多电话,预估行程(分钟)
 interface ImportStoreNew {
   序号?: string | number;
   自我声明签署情况?: string;
@@ -36,6 +38,8 @@ interface ImportStoreNew {
   邮政编码?: string;
   电话?: string;
   更多电话?: string;
+  预估行程?: string | number;
+  '预估行程(分钟)'?: string | number;
 }
 
 // 统一内部格式
@@ -51,6 +55,7 @@ interface ImportStore {
   district: string | null;
   longitude: number | null;
   latitude: number | null;
+  estimatedTravelMinutes: number | null;
 }
 
 // 检测并转换数据格式
@@ -72,10 +77,11 @@ function normalizeStoreData(store: ImportStoreOld | ImportStoreNew): ImportStore
       district: newStore.所属区县 || null,
       longitude: parseCoordinate(newStore.经度),
       latitude: parseCoordinate(newStore.纬度),
+      estimatedTravelMinutes: parseEstimatedTime(newStore.预估行程 || newStore['预估行程(分钟)']),
     };
   }
   
-  // 旧格式（也支持经纬度）
+  // 旧格式（也支持经纬度和预估行程）
   const oldStore = store as ImportStoreOld;
   return {
     name: oldStore.name || '',
@@ -89,6 +95,7 @@ function normalizeStoreData(store: ImportStoreOld | ImportStoreNew): ImportStore
     district: oldStore.district || null,
     longitude: parseCoordinate(oldStore.longitude),
     latitude: parseCoordinate(oldStore.latitude),
+    estimatedTravelMinutes: parseEstimatedTime(oldStore.estimatedTravelMinutes),
   };
 }
 
@@ -99,6 +106,15 @@ function parseCoordinate(value: string | number | null | undefined): number | nu
   }
   const num = typeof value === 'number' ? value : parseFloat(value);
   return isNaN(num) ? null : num;
+}
+
+// 解析预估行程时间
+function parseEstimatedTime(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const num = typeof value === 'number' ? value : parseInt(value, 10);
+  return isNaN(num) || num < 0 ? null : num;
 }
 
 // 清理地址中的重复省市区信息
@@ -275,7 +291,8 @@ export async function POST(request: NextRequest) {
           longitude: store.longitude,
           latitude: store.latitude,
           contactPhone: store.contactPhone || null,
-          estimatedTravelMinutes: generateEstimatedTravelMinutes(),
+          // 优先使用导入的预估行程，如果没有则使用默认值
+          estimatedTravelMinutes: store.estimatedTravelMinutes ?? generateEstimatedTravelMinutes(),
           status,
           collectionPointId,
           isVirtual: false, // 导入的门店不是虚拟门店

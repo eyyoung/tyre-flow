@@ -156,6 +156,7 @@
     "hasEstimatedTimeNo": "无预估行程 (=0)",
     "onlyHasEstimatedTime": "仅导出有预估行程的门店 (行程 > 0)",
     "onlyActiveStores": "仅导出正常状态的门店",
+    "includeEstimatedTime": "导出预估行程列",
     "resetGeocode": "重置坐标",
     "resetGeocodeConfirm": "确定要重新获取该门店的地理坐标和预估行程吗？",
     "resetGeocodeSuccess": "坐标重置成功",
