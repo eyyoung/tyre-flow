@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
       const status = searchParams.get('status') || '';
       const collectionPointId = searchParams.get('collectionPointId') || '';
       const isVirtual = searchParams.get('isVirtual');
+      const sortField = searchParams.get('sortField') || '';
+      const sortOrder = searchParams.get('sortOrder') || '';
 
       // 非管理员只能看到自己绑定的收集点下的门店
       let allowedCollectionPointIds: string[] | null = null;
@@ -47,6 +49,15 @@ export async function GET(request: NextRequest) {
         ],
       };
 
+      // 构建排序条件
+      type SortableFields = 'estimatedTravelMinutes' | 'createdAt' | 'code' | 'name';
+      const allowedSortFields: SortableFields[] = ['estimatedTravelMinutes', 'createdAt', 'code', 'name'];
+      let orderBy: { [key in SortableFields]?: 'asc' | 'desc' } = { createdAt: 'desc' };
+      
+      if (sortField && allowedSortFields.includes(sortField as SortableFields)) {
+        orderBy = { [sortField as SortableFields]: sortOrder === 'ascend' ? 'asc' : 'desc' };
+      }
+
       const [total, stores] = await Promise.all([
         prisma.store.count({ where }),
         prisma.store.findMany({
@@ -56,7 +67,7 @@ export async function GET(request: NextRequest) {
               select: { id: true, name: true, code: true },
             },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy,
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),

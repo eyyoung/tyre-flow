@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
   Button,
@@ -14,6 +14,7 @@ import {
   Row,
   Col,
   Tag,
+  Tooltip,
 } from 'antd';
 import {
   SearchOutlined,
@@ -21,16 +22,9 @@ import {
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import dayjs from 'dayjs';
-import dynamic from 'next/dynamic';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
-
-// 动态导入图表组件以避免 SSR 问题
-const Line = dynamic(
-  () => import('@ant-design/charts').then((mod) => mod.Line),
-  { ssr: false, loading: () => <Spin size="large" /> }
-);
 
 interface CollectionPoint {
   id: string;
@@ -38,13 +32,16 @@ interface CollectionPoint {
   name: string;
 }
 
-interface ChartDataPoint {
+interface TripRecord {
+  id: string;
   date: string;
   driverId: string;
   driverName: string;
+  loadingTimeMinutes: number;
+  unloadingTimeMinutes: number;
+  loadingTimeStr: string;
+  unloadingTimeStr: string;
   weight: number;
-  loadingTime: string;
-  unloadingTime: string;
 }
 
 interface DriverInfo {
@@ -61,11 +58,18 @@ const DRIVER_COLORS = [
   '#ffa940', '#bae637', '#597ef7', '#ffec3d', '#ff7a45',
 ];
 
+// 将分钟数转换为时间字符串
+function minutesToTimeStr(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
 export default function DriverAnalysisPage() {
   const t = useTranslations();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [tripRecords, setTripRecords] = useState<TripRecord[]>([]);
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
   const [selectedDriverIds, setSelectedDriverIds] = useState<Set<string>>(new Set());
@@ -73,7 +77,7 @@ export default function DriverAnalysisPage() {
   const [selectedCp, setSelectedCp] = useState<string>('');
   const [recordType, setRecordType] = useState<string>('collection');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
-    dayjs().subtract(30, 'day'),
+    dayjs().subtract(7, 'day'),
     dayjs(),
   ]);
 
@@ -119,11 +123,11 @@ export default function DriverAnalysisPage() {
       const result = await response.json();
 
       if (response.ok) {
-        setChartData(result.data);
+        setTripRecords(result.data);
         setDrivers(result.drivers);
-        // 默认只选中第一个司机
+        // 默认选中所有司机
         if (result.drivers.length > 0) {
-          setSelectedDriverIds(new Set([result.drivers[0].id]));
+          setSelectedDriverIds(new Set(result.drivers.map((d: DriverInfo) => d.id)));
         }
       } else {
         message.error(result.error || t('common.error'));
@@ -140,10 +144,7 @@ export default function DriverAnalysisPage() {
     setSelectedDriverIds((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(driverId)) {
-        // 至少保留一个司机被选中
-        if (newSet.size > 1) {
-          newSet.delete(driverId);
-        }
+        newSet.delete(driverId);
       } else {
         newSet.add(driverId);
       }
@@ -154,70 +155,54 @@ export default function DriverAnalysisPage() {
   // 全选/取消全选
   const toggleAllDrivers = () => {
     if (selectedDriverIds.size === drivers.length) {
-      // 如果全部选中，则只保留第一个
-      setSelectedDriverIds(new Set([drivers[0]?.id].filter(Boolean)));
+      // 如果全部选中，则清空
+      setSelectedDriverIds(new Set());
     } else {
       // 否则全选
       setSelectedDriverIds(new Set(drivers.map((d) => d.id)));
     }
   };
 
-  // 过滤后的图表数据
-  const filteredChartData = chartData.filter((d) => selectedDriverIds.has(d.driverId));
+  // 过滤后的行程数据
+  const filteredTripRecords = tripRecords.filter((d) => selectedDriverIds.has(d.driverId));
 
-  // 获取选中司机的颜色映射
-  const selectedDrivers = drivers.filter((d) => selectedDriverIds.has(d.id));
+  // 获取所有唯一日期
+  const uniqueDates = useMemo(() => {
+    const dates = [...new Set(filteredTripRecords.map((r) => r.date))];
+    return dates.sort();
+  }, [filteredTripRecords]);
 
-  // 图表配置
-  const chartConfig = {
-    data: filteredChartData,
-    xField: 'date',
-    yField: 'weight',
-    colorField: 'driverName',
-    smooth: true,
-    point: {
-      shapeField: 'circle',
-      sizeField: 4,
-    },
-    style: {
-      lineWidth: 2,
-    },
-    axis: {
-      x: {
-        title: t('ledgers.collectionDate'),
-        labelAutoRotate: true,
-      },
-      y: {
-        title: `${t('ledgers.loadingWeight')} (kg)`,
-        labelFormatter: (v: number) => `${v.toLocaleString()} kg`,
-      },
-    },
-    legend: false,
-    tooltip: {
-      title: (d: ChartDataPoint) => `${d.date} - ${d.driverName}`,
-      items: [
-        {
-          field: 'loadingTime',
-          name: t('ledgers.loadingTime'),
-        },
-        {
-          field: 'unloadingTime',
-          name: t('ledgers.unloadingTime'),
-        },
-      ],
-    },
-    scale: {
-      color: {
-        range: selectedDrivers.map((_, index) => {
-          const originalIndex = drivers.findIndex((d) => d.id === selectedDrivers[index]?.id);
-          return DRIVER_COLORS[originalIndex % DRIVER_COLORS.length];
-        }),
-      },
-    },
-    animate: {
-      enter: { type: 'fadeIn' },
-    },
-  };
+  // 获取司机颜色
+  const getDriverColor = useCallback((driverId: string) => {
+    const index = drivers.findIndex((d) => d.id === driverId);
+    return DRIVER_COLORS[index % DRIVER_COLORS.length];
+  }, [drivers]);
+
+  // 计算时间范围（找出所有行程的最早和最晚时间，留一些 padding）
+  const timeRange = useMemo(() => {
+    if (filteredTripRecords.length === 0) return { min: 0, max: 1440 };
+    
+    let minTime = Math.min(...filteredTripRecords.map((r) => r.loadingTimeMinutes));
+    let maxTime = Math.max(...filteredTripRecords.map((r) => r.unloadingTimeMinutes));
+    
+    // 增加 30 分钟的 padding
+    minTime = Math.max(0, minTime - 30);
+    maxTime = Math.min(1440, maxTime + 30);
+    
+    return { min: minTime, max: maxTime };
+  }, [filteredTripRecords]);
+
+  // 生成时间刻度
+  const timeLabels = useMemo(() => {
+    const labels: number[] = [];
+    // 每小时一个刻度
+    const startHour = Math.floor(timeRange.min / 60);
+    const endHour = Math.ceil(timeRange.max / 60);
+    for (let h = startHour; h <= endHour; h++) {
+      labels.push(h * 60);
+    }
+    return labels;
+  }, [timeRange]);
 
   return (
     <div>
@@ -283,7 +268,7 @@ export default function DriverAnalysisPage() {
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <Spin size="large" />
           </div>
-        ) : chartData.length > 0 ? (
+        ) : tripRecords.length > 0 ? (
           <>
             {/* 司机标签 */}
             <div style={{ marginBottom: 16 }}>
@@ -317,9 +302,165 @@ export default function DriverAnalysisPage() {
               </Space>
             </div>
             
-            {/* 图表 */}
-            <div style={{ height: 500 }}>
-              <Line {...chartConfig} />
+            {/* 时间线图表 */}
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: Math.max(800, uniqueDates.length * 120 + 80) }}>
+                {/* 图表区域 */}
+                <svg
+                  width="100%"
+                  height={500}
+                  viewBox={`0 0 ${Math.max(800, uniqueDates.length * 120 + 80)} 500`}
+                  preserveAspectRatio="xMinYMin meet"
+                >
+                  {/* Y轴时间刻度 */}
+                  <g className="y-axis">
+                    {timeLabels.map((minutes) => {
+                      const y = 40 + ((minutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420;
+                      return (
+                        <g key={minutes}>
+                          <line
+                            x1={60}
+                            y1={y}
+                            x2={Math.max(800, uniqueDates.length * 120 + 80) - 20}
+                            y2={y}
+                            stroke="#e8e8e8"
+                            strokeDasharray="4,4"
+                          />
+                          <text
+                            x={55}
+                            y={y + 4}
+                            textAnchor="end"
+                            fontSize={12}
+                            fill="#666"
+                          >
+                            {minutesToTimeStr(minutes)}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+
+                  {/* X轴日期标签 */}
+                  <g className="x-axis">
+                    {uniqueDates.map((date, index) => {
+                      const x = 80 + index * 120 + 50; // 每个日期列宽度120px，居中
+                      return (
+                        <text
+                          key={date}
+                          x={x}
+                          y={480}
+                          textAnchor="middle"
+                          fontSize={12}
+                          fill="#666"
+                        >
+                          {date.slice(5)} {/* 只显示 MM-DD */}
+                        </text>
+                      );
+                    })}
+                  </g>
+
+                  {/* 绘制每个日期列的行程线段 */}
+                  {uniqueDates.map((date, dateIndex) => {
+                    const dateRecords = filteredTripRecords.filter((r) => r.date === date);
+                    const columnX = 80 + dateIndex * 120;
+                    
+                    // 为同一天的不同司机分配不同的 x 偏移
+                    const driverOffsets = new Map<string, number>();
+                    const driversInDate = [...new Set(dateRecords.map((r) => r.driverId))];
+                    const offsetStep = 100 / (driversInDate.length + 1);
+                    driversInDate.forEach((dId, i) => {
+                      driverOffsets.set(dId, (i + 1) * offsetStep);
+                    });
+                    
+                    return (
+                      <g key={date} className="date-column">
+                        {/* 日期列背景 */}
+                        <rect
+                          x={columnX}
+                          y={40}
+                          width={100}
+                          height={420}
+                          fill={dateIndex % 2 === 0 ? '#fafafa' : '#fff'}
+                          stroke="#f0f0f0"
+                        />
+                        
+                        {/* 绘制行程线段 */}
+                        {dateRecords.map((record) => {
+                          const color = getDriverColor(record.driverId);
+                          const xOffset = driverOffsets.get(record.driverId) || 50;
+                          const x = columnX + xOffset;
+                          const y1 = 40 + ((record.loadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420;
+                          const y2 = 40 + ((record.unloadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420;
+                          
+                          return (
+                            <Tooltip
+                              key={record.id}
+                              title={
+                                <div>
+                                  <div><strong>{record.driverName}</strong></div>
+                                  <div>{t('ledgers.loadingTime')}: {record.loadingTimeStr}</div>
+                                  <div>{t('ledgers.unloadingTime')}: {record.unloadingTimeStr}</div>
+                                  <div>{t('ledgers.loadingWeight')}: {record.weight.toLocaleString()} kg</div>
+                                </div>
+                              }
+                            >
+                              <g style={{ cursor: 'pointer' }}>
+                                {/* 主线段 */}
+                                <line
+                                  x1={x}
+                                  y1={y1}
+                                  x2={x}
+                                  y2={y2}
+                                  stroke={color}
+                                  strokeWidth={6}
+                                  strokeLinecap="round"
+                                />
+                                {/* 起点圆点 */}
+                                <circle
+                                  cx={x}
+                                  cy={y1}
+                                  r={5}
+                                  fill={color}
+                                  stroke="#fff"
+                                  strokeWidth={1}
+                                />
+                                {/* 终点圆点 */}
+                                <circle
+                                  cx={x}
+                                  cy={y2}
+                                  r={5}
+                                  fill={color}
+                                  stroke="#fff"
+                                  strokeWidth={1}
+                                />
+                              </g>
+                            </Tooltip>
+                          );
+                        })}
+                      </g>
+                    );
+                  })}
+
+                  {/* Y轴标题 */}
+                  <text
+                    x={15}
+                    y={250}
+                    textAnchor="middle"
+                    fontSize={14}
+                    fill="#333"
+                    transform="rotate(-90, 15, 250)"
+                  >
+                    {t('ledgers.timeOfDay')}
+                  </text>
+                </svg>
+              </div>
+            </div>
+
+            {/* 图例说明 */}
+            <div style={{ marginTop: 16, padding: '12px', background: '#fafafa', borderRadius: 4 }}>
+              <Text type="secondary">
+                💡 提示：每条竖线代表一次行程，从装车时间到卸车时间。同一天内，如果同一司机的线段存在时间重叠，说明数据可能有问题。
+              </Text>
             </div>
           </>
         ) : (

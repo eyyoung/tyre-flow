@@ -155,7 +155,12 @@
     "hasEstimatedTimeYes": "Has estimated time (>0)",
     "hasEstimatedTimeNo": "No estimated time (=0)",
     "onlyHasEstimatedTime": "Only export stores with estimated time (time > 0)",
-    "onlyActiveStores": "Only export active stores"
+    "onlyActiveStores": "Only export active stores",
+    "resetGeocode": "Reset Coordinates",
+    "resetGeocodeConfirm": "Are you sure you want to re-fetch the coordinates and estimated travel time for this store?",
+    "resetGeocodeSuccess": "Coordinates reset successfully",
+    "resetGeocodeFailed": "Failed to reset coordinates",
+    "resettingGeocode": "Resetting coordinates..."
   },
   "vehicles": {
     "title": "Vehicle Management",
@@ -299,7 +304,8 @@
     "tripsPerVehiclePerDay": "Trips/Vehicle/Day",
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "Calculating suggestions...",
-    "selectDateFirst": "Please select date range first"
+    "selectDateFirst": "Please select date range first",
+    "timeOfDay": "Time"
   },
   "validation": {
     "required": "{field} is required",

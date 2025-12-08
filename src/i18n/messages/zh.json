@@ -155,7 +155,12 @@
     "hasEstimatedTimeYes": "有预估行程 (>0)",
     "hasEstimatedTimeNo": "无预估行程 (=0)",
     "onlyHasEstimatedTime": "仅导出有预估行程的门店 (行程 > 0)",
-    "onlyActiveStores": "仅导出正常状态的门店"
+    "onlyActiveStores": "仅导出正常状态的门店",
+    "resetGeocode": "重置坐标",
+    "resetGeocodeConfirm": "确定要重新获取该门店的地理坐标和预估行程吗？",
+    "resetGeocodeSuccess": "坐标重置成功",
+    "resetGeocodeFailed": "坐标重置失败",
+    "resettingGeocode": "正在重置坐标..."
   },
   "vehicles": {
     "title": "车辆管理",
@@ -299,7 +304,8 @@
     "tripsPerVehiclePerDay": "每车每日趟数",
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "正在计算建议值...",
-    "selectDateFirst": "请先选择时间范围"
+    "selectDateFirst": "请先选择时间范围",
+    "timeOfDay": "时间"
   },
   "validation": {
     "required": "{field}不能为空",

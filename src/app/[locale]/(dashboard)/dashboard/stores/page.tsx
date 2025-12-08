@@ -29,9 +29,10 @@ import {
   CarOutlined,
   EnvironmentOutlined,
   DownloadOutlined,
+  AimOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -89,6 +90,13 @@ export default function StoresPage() {
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [exportForm] = Form.useForm();
   const [exporting, setExporting] = useState(false);
+  
+  // 重置坐标相关状态
+  const [resettingGeocode, setResettingGeocode] = useState(false);
+  
+  // 排序相关状态
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<string>('');
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -113,6 +121,8 @@ export default function StoresPage() {
         status: statusFilter,
         collectionPointId: cpFilter,
         isVirtual: isVirtualFilter,
+        sortField,
+        sortOrder,
       });
 
       const response = await fetch(`/api/stores?${params}`);
@@ -129,7 +139,7 @@ export default function StoresPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, cpFilter, isVirtualFilter, t, message]);
+  }, [page, pageSize, search, statusFilter, cpFilter, isVirtualFilter, sortField, sortOrder, t, message]);
 
   useEffect(() => {
     fetchCollectionPoints();
@@ -149,6 +159,8 @@ export default function StoresPage() {
     setStatusFilter('');
     setCpFilter('');
     setIsVirtualFilter('');
+    setSortField('');
+    setSortOrder('');
     setPage(1);
   };
 
@@ -255,6 +267,86 @@ export default function StoresPage() {
     }
   };
 
+  // 重置地理坐标
+  const handleResetGeocode = async () => {
+    if (!editingItem) return;
+
+    setResettingGeocode(true);
+    try {
+      // 构造完整地址
+      const fullAddress = [
+        editingItem.province,
+        editingItem.city,
+        editingItem.district,
+        editingItem.address,
+      ].filter(Boolean).join('');
+
+      // 1. 调用地理编码 API
+      const geocodeResponse = await fetch('/api/stores/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stores: [{ id: editingItem.id, address: fullAddress }],
+        }),
+      });
+
+      const geocodeResult = await geocodeResponse.json();
+
+      if (!geocodeResponse.ok) {
+        message.error(geocodeResult.message || t('stores.resetGeocodeFailed'));
+        return;
+      }
+
+      const storeResult = geocodeResult.results?.[0];
+      if (!storeResult?.success) {
+        message.error(storeResult?.error || t('stores.resetGeocodeFailed'));
+        return;
+      }
+
+      // 2. 调用路径规划 API
+      const routeResponse = await fetch('/api/stores/route-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stores: [{
+            id: editingItem.id,
+            longitude: storeResult.longitude,
+            latitude: storeResult.latitude,
+          }],
+          collectionPointId: editingItem.collectionPoint.id,
+        }),
+      });
+
+      const routeResult = await routeResponse.json();
+
+      if (!routeResponse.ok) {
+        // 坐标成功但路径规划失败，仍然提示成功但显示警告
+        message.warning(routeResult.message || t('stores.resetGeocodeFailed'));
+      }
+
+      const routeStoreResult = routeResult.results?.[0];
+
+      // 更新 editingItem 显示新的坐标和行程
+      setEditingItem({
+        ...editingItem,
+        longitude: storeResult.longitude,
+        latitude: storeResult.latitude,
+        estimatedTravelMinutes: routeStoreResult?.success 
+          ? routeStoreResult.duration 
+          : editingItem.estimatedTravelMinutes,
+      });
+
+      message.success(t('stores.resetGeocodeSuccess'));
+      
+      // 刷新列表数据
+      fetchData();
+    } catch {
+      message.error(t('stores.resetGeocodeFailed'));
+    } finally {
+      setResettingGeocode(false);
+    }
+  };
+
   const columns: ColumnsType<Store> = [
     {
       title: t('stores.code'),
@@ -295,6 +387,8 @@ export default function StoresPage() {
       dataIndex: 'estimatedTravelMinutes',
       key: 'estimatedTravelMinutes',
       width: 120,
+      sorter: true,
+      sortOrder: sortField === 'estimatedTravelMinutes' ? (sortOrder as 'ascend' | 'descend') : undefined,
       render: (v) => (
         <span>
           <CarOutlined style={{ marginRight: 4 }} />
@@ -444,10 +538,27 @@ export default function StoresPage() {
             total,
             showSizeChanger: true,
             showTotal: (total) => t('common.total', { count: total }),
-            onChange: (page, pageSize) => {
-              setPage(page);
-              setPageSize(pageSize);
-            },
+          }}
+          onChange={(pagination, _, sorter) => {
+            // 处理分页
+            if (pagination.current !== page) {
+              setPage(pagination.current || 1);
+            }
+            if (pagination.pageSize !== pageSize) {
+              setPageSize(pagination.pageSize || 10);
+            }
+            
+            // 处理排序
+            const s = Array.isArray(sorter) ? sorter[0] : sorter;
+            const newSortField = s.field && s.order ? (s.field as string) : '';
+            const newSortOrder = s.order || '';
+            
+            // 只有排序变化时才重置页码
+            if (newSortField !== sortField || newSortOrder !== sortOrder) {
+              setSortField(newSortField);
+              setSortOrder(newSortOrder);
+              setPage(1);
+            }
           }}
         />
       </Card>
@@ -573,14 +684,31 @@ export default function StoresPage() {
               style={{ marginBottom: 24 }}
             >
               <Descriptions.Item label={t('storeCleanup.coordinates')} span={2}>
-                {editingItem.longitude && editingItem.latitude ? (
-                  <span style={{ color: '#52c41a' }}>
-                    <EnvironmentOutlined style={{ marginRight: 4 }} />
-                    {editingItem.longitude.toFixed(6)}, {editingItem.latitude.toFixed(6)}
-                  </span>
-                ) : (
-                  <span style={{ color: '#999' }}>-</span>
-                )}
+                <Space>
+                  {editingItem.longitude && editingItem.latitude ? (
+                    <span style={{ color: '#52c41a' }}>
+                      <EnvironmentOutlined style={{ marginRight: 4 }} />
+                      {editingItem.longitude.toFixed(6)}, {editingItem.latitude.toFixed(6)}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#999' }}>-</span>
+                  )}
+                  <Popconfirm
+                    title={t('stores.resetGeocodeConfirm')}
+                    onConfirm={handleResetGeocode}
+                    okText={t('common.confirm')}
+                    cancelText={t('common.cancel')}
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<AimOutlined />}
+                      loading={resettingGeocode}
+                    >
+                      {resettingGeocode ? t('stores.resettingGeocode') : t('stores.resetGeocode')}
+                    </Button>
+                  </Popconfirm>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label={t('stores.estimatedTravelMinutes')}>
                 <span>

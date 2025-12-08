@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 
-interface ChartDataPoint {
+interface TripRecord {
+  id: string;
   date: string;
   driverId: string;
   driverName: string;
+  loadingTimeMinutes: number;   // 分钟数 (0-1440)
+  unloadingTimeMinutes: number; // 分钟数 (0-1440)
+  loadingTimeStr: string;       // 格式化的时间字符串 HH:mm
+  unloadingTimeStr: string;     // 格式化的时间字符串 HH:mm
   weight: number;
-  loadingTime: string;  // 最早装车时间
-  unloadingTime: string; // 最晚卸车时间
 }
 
 // 格式化时间为 HH:mm（中国时区 UTC+8）
@@ -19,6 +22,18 @@ function formatTimeWithTimezone(date: Date): string {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+// 获取时间的分钟数（从午夜开始，中国时区）
+function getMinutesFromMidnight(date: Date): number {
+  const timeStr = date.toLocaleTimeString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 // 获取司机台账图表数据
@@ -50,11 +65,11 @@ export async function GET(request: NextRequest) {
     const endDateObj = new Date(endDate);
     endDateObj.setHours(23, 59, 59, 999);
 
-    const chartData: ChartDataPoint[] = [];
+    const tripRecords: TripRecord[] = [];
     const driversMap = new Map<string, { name: string; phone: string }>();
 
     if (recordType === 'collection') {
-      // 获取收集记录
+      // 获取收集记录 - 返回每条单独的记录
       const records = await prisma.collectionRecord.findMany({
         where: {
           vehicle: { collectionPointId },
@@ -76,62 +91,33 @@ export async function GET(request: NextRequest) {
         orderBy: { collectionDate: 'asc' },
       });
 
-      // 按日期和司机聚合数据
-      const aggregated = new Map<string, { 
-        weight: number; 
-        loadingTime: Date; 
-        unloadingTime: Date;
-      }>();
-      
       for (const record of records) {
         const dateStr = record.collectionDate.toISOString().slice(0, 10);
         const driverId = record.vehicle.id;
-        const key = `${dateStr}_${driverId}`;
-        
-        // 累加装车净重（已经是 kg）
-        const existing = aggregated.get(key);
-        
-        if (existing) {
-          existing.weight += record.loadingNetWeight;
-          // 更新最早装车时间和最晚卸车时间
-          if (record.loadingTime < existing.loadingTime) {
-            existing.loadingTime = record.loadingTime;
-          }
-          if (record.unloadingTime > existing.unloadingTime) {
-            existing.unloadingTime = record.unloadingTime;
-          }
-        } else {
-          aggregated.set(key, {
-            weight: record.loadingNetWeight,
-            loadingTime: record.loadingTime,
-            unloadingTime: record.unloadingTime,
-          });
-        }
+        const driverName = record.vehicle.driverName || record.vehicle.plateNumber;
         
         // 记录司机信息
         if (!driversMap.has(driverId)) {
           driversMap.set(driverId, {
-            name: record.vehicle.driverName || record.vehicle.plateNumber,
+            name: driverName,
             phone: record.vehicle.driverPhone || '',
           });
         }
-      }
 
-      // 转换为图表数据
-      for (const [key, data] of aggregated) {
-        const [date, driverId] = key.split('_');
-        const driver = driversMap.get(driverId);
-        chartData.push({
-          date,
+        tripRecords.push({
+          id: record.id,
+          date: dateStr,
           driverId,
-          driverName: driver ? `${driver.name}` : driverId,
-          weight: Math.round(data.weight),
-          loadingTime: formatTimeWithTimezone(data.loadingTime),
-          unloadingTime: formatTimeWithTimezone(data.unloadingTime),
+          driverName,
+          loadingTimeMinutes: getMinutesFromMidnight(record.loadingTime),
+          unloadingTimeMinutes: getMinutesFromMidnight(record.unloadingTime),
+          loadingTimeStr: formatTimeWithTimezone(record.loadingTime),
+          unloadingTimeStr: formatTimeWithTimezone(record.unloadingTime),
+          weight: Math.round(record.loadingNetWeight),
         });
       }
     } else {
-      // 获取转移记录
+      // 获取转移记录 - 返回每条单独的记录
       const records = await prisma.transferRecord.findMany({
         where: {
           vehicle: { collectionPointId },
@@ -153,64 +139,39 @@ export async function GET(request: NextRequest) {
         orderBy: { transferDate: 'asc' },
       });
 
-      // 按日期和司机聚合数据
-      const aggregated = new Map<string, { 
-        weight: number; 
-        loadingTime: Date; 
-        unloadingTime: Date;
-      }>();
-      
       for (const record of records) {
         const dateStr = record.transferDate.toISOString().slice(0, 10);
         const driverId = record.vehicle.id;
-        const key = `${dateStr}_${driverId}`;
-        
-        // 累加装车净重
-        const existing = aggregated.get(key);
-        
-        if (existing) {
-          existing.weight += record.loadingNetWeight;
-          // 更新最早装车时间和最晚卸车时间
-          if (record.loadingTime < existing.loadingTime) {
-            existing.loadingTime = record.loadingTime;
-          }
-          if (record.unloadingTime > existing.unloadingTime) {
-            existing.unloadingTime = record.unloadingTime;
-          }
-        } else {
-          aggregated.set(key, {
-            weight: record.loadingNetWeight,
-            loadingTime: record.loadingTime,
-            unloadingTime: record.unloadingTime,
-          });
-        }
+        const driverName = record.vehicle.driverName || record.vehicle.plateNumber;
         
         // 记录司机信息
         if (!driversMap.has(driverId)) {
           driversMap.set(driverId, {
-            name: record.vehicle.driverName || record.vehicle.plateNumber,
+            name: driverName,
             phone: record.vehicle.driverPhone || '',
           });
         }
-      }
 
-      // 转换为图表数据
-      for (const [key, data] of aggregated) {
-        const [date, driverId] = key.split('_');
-        const driver = driversMap.get(driverId);
-        chartData.push({
-          date,
+        tripRecords.push({
+          id: record.id,
+          date: dateStr,
           driverId,
-          driverName: driver ? `${driver.name}` : driverId,
-          weight: Math.round(data.weight),
-          loadingTime: formatTimeWithTimezone(data.loadingTime),
-          unloadingTime: formatTimeWithTimezone(data.unloadingTime),
+          driverName,
+          loadingTimeMinutes: getMinutesFromMidnight(record.loadingTime),
+          unloadingTimeMinutes: getMinutesFromMidnight(record.unloadingTime),
+          loadingTimeStr: formatTimeWithTimezone(record.loadingTime),
+          unloadingTimeStr: formatTimeWithTimezone(record.unloadingTime),
+          weight: Math.round(record.loadingNetWeight),
         });
       }
     }
 
-    // 按日期排序
-    chartData.sort((a, b) => a.date.localeCompare(b.date));
+    // 按日期和装车时间排序
+    tripRecords.sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      return a.loadingTimeMinutes - b.loadingTimeMinutes;
+    });
 
     // 获取所有司机列表
     const drivers = Array.from(driversMap.entries()).map(([id, info]) => ({
@@ -220,7 +181,7 @@ export async function GET(request: NextRequest) {
     }));
 
     return NextResponse.json({
-      data: chartData,
+      data: tripRecords,
       drivers,
       dateRange: {
         start: startDate,
