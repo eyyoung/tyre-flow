@@ -30,13 +30,6 @@ interface CollectionRecordData {
   loss: number;
 }
 
-interface StoreCollectionPlan {
-  storeId: string;
-  estimatedTravelMinutes: number;
-  collectionDays: number[];
-  weightPerCollection: number;
-}
-
 interface TimeSlot {
   departureTime: Date;
   arrivalTime: Date;
@@ -107,9 +100,11 @@ async function getConfig(): Promise<GeneratorConfig> {
   return {
     tireWeightKg: parseFloat(configMap.get('tire_weight_kg') || '10'),
     collectionTireLimit: parseInt(configMap.get('collection_tire_limit') || '200'),
+    // 收集间隔保持配置化：默认 7-15 天
     collectionIntervalMin: parseInt(configMap.get('collection_interval_min') || configMap.get('collection_interval_days') || '7'),
     collectionIntervalMax: parseInt(configMap.get('collection_interval_max') || '15'),
-    coldStoreRatio: parseFloat(configMap.get('cold_store_ratio') || '0.1'),
+    // 降低冷门门店比例：从 10% 降为 5%，让更多门店参与收集
+    coldStoreRatio: parseFloat(configMap.get('cold_store_ratio') || '0.05'),
     lossRatioMin: parseFloat(configMap.get('loss_ratio_min') || '0.001'),
     lossRatioMax: parseFloat(configMap.get('loss_ratio_max') || '0.005'),
   };
@@ -143,17 +138,20 @@ function generateCollectionTripTimes(
   departureTime: Date,
   estimatedTravelMinutes: number
 ): { arrivalTime: Date; returnTime: Date } {
-  const travelVariance = randomBetween(-10, 30);
+  // 减少行程时间波动：从 -10~30 分钟改为 -5~15 分钟
+  const travelVariance = randomBetween(-5, 15);
   const actualOutboundMinutes = Math.max(10, estimatedTravelMinutes + travelVariance);
   
   const arrivalTime = new Date(departureTime.getTime() + actualOutboundMinutes * 60 * 1000);
   
+  // 装卸时间保持原有范围：10-30 分钟
   const collectionMinutes = randomBetween(10, 30);
   
-  const returnVariance = randomBetween(-10, 30);
+  const returnVariance = randomBetween(-5, 15);
   const actualReturnMinutes = Math.max(10, estimatedTravelMinutes + returnVariance);
   
-  const restMinutes = randomBetween(10, 20);
+  // 减少休息时间：从 10-20 分钟改为 5-10 分钟
+  const restMinutes = randomBetween(5, 10);
   
   const totalMinutes = actualOutboundMinutes + collectionMinutes + actualReturnMinutes + restMinutes;
   const returnTime = new Date(departureTime.getTime() + totalMinutes * 60 * 1000);
@@ -166,121 +164,109 @@ function generateRecordNo(prefix: string, index: number, date: Date): string {
   return `${prefix}-${dateStr}-${String(index).padStart(5, '0')}`;
 }
 
-function generateStoreCollectionPlans(
+/**
+ * 生成每日收集任务列表
+ * 
+ * 算法思路：
+ * 1. 根据目标吨数计算需要的总趟数
+ * 2. 将趟数均匀分配到每一天
+ * 3. 每天的趟数尽量均匀分配给各个车辆
+ * 4. 确保最终总重量接近目标（±10%）
+ */
+function generateDailyCollectionTasks(
   stores: StoreInfo[],
   targetWeightKg: number,
-  daysInMonth: number,
-  config: GeneratorConfig
-): StoreCollectionPlan[] {
-  const plans: StoreCollectionPlan[] = [];
+  totalDays: number,
+  vehicleCount: number,
+  config: GeneratorConfig,
+  maxVehicleLoad: number
+): Array<{ storeId: string; estimatedTravelMinutes: number; dayOffset: number; targetWeight: number }> {
+  const tasks: Array<{ storeId: string; estimatedTravelMinutes: number; dayOffset: number; targetWeight: number }> = [];
   
-  // 最小单次收集重量阈值 (kg)
-  const MIN_WEIGHT_PER_COLLECTION = 200;
+  // 单次收集重量范围：车辆最大载重的 30%~90%（更真实的范围）
+  const MIN_WEIGHT_PER_COLLECTION = Math.max(500, maxVehicleLoad * 0.3);
+  const MAX_WEIGHT_PER_COLLECTION = maxVehicleLoad * 0.9;
   
+  // 平均每次收集重量（取中间值）
+  const avgWeightPerTrip = (MIN_WEIGHT_PER_COLLECTION + MAX_WEIGHT_PER_COLLECTION) / 2;
+  
+  // 计算需要的总趟数（根据目标吨数）
+  const totalTripsNeeded = Math.ceil(targetWeightKg / avgWeightPerTrip);
+  
+  // 每天需要的趟数（均匀分配）
+  const baseTripsPerDay = Math.floor(totalTripsNeeded / totalDays);
+  const extraTrips = totalTripsNeeded % totalDays; // 余数分配到前几天
+  
+  // 打乱门店顺序
   const shuffledStores = [...stores].sort(() => Math.random() - 0.5);
+  
+  // 冷门门店：5% 的门店收集频率降低
   const coldStoreCount = Math.floor(stores.length * config.coldStoreRatio);
-  const coldStores = new Set(shuffledStores.slice(0, coldStoreCount).map(s => s.id));
+  const coldStoreIds = new Set(shuffledStores.slice(0, coldStoreCount).map(s => s.id));
   
-  const activeStores = stores.filter(s => !coldStores.has(s.id));
+  // 活跃门店（排除冷门店）
+  const activeStores = shuffledStores.filter(s => !coldStoreIds.has(s.id));
   
-  const avgInterval = (config.collectionIntervalMin + config.collectionIntervalMax) / 2;
-  const avgCollectionsPerStore = Math.ceil(daysInMonth / avgInterval);
-  
-  // 平均每次收集重量 800 kg
-  const avgWeightPerCollection = 800;
-  const totalCollections = Math.ceil(targetWeightKg / avgWeightPerCollection);
-  const neededActiveStores = Math.min(
-    activeStores.length,
-    Math.ceil(totalCollections / avgCollectionsPerStore)
-  );
-  
-  const participatingStores = activeStores.slice(0, neededActiveStores);
-  
-  let remainingWeightKg = targetWeightKg;
-  
-  for (const store of participatingStores) {
-    // 如果剩余重量不足最小阈值，不再分配新门店
-    if (remainingWeightKg < MIN_WEIGHT_PER_COLLECTION) break;
-    
-    const collectionDays: number[] = [];
-    let currentDay = randomBetween(1, Math.min(5, daysInMonth));
-    
-    while (currentDay <= daysInMonth) {
-      collectionDays.push(currentDay);
-      const interval = randomBetween(config.collectionIntervalMin, config.collectionIntervalMax);
-      currentDay += interval;
-    }
-    
-    if (collectionDays.length === 0) continue;
-    
-    // 每次收集 300-2000 kg
-    const idealWeightPerCollection = randomFloatBetween(300, 2000, 0);
-    const idealTotalWeight = idealWeightPerCollection * collectionDays.length;
-    
-    // 计算实际分配重量
-    let storeTargetWeight = Math.min(remainingWeightKg, idealTotalWeight);
-    let weightPerCollection = storeTargetWeight / collectionDays.length;
-    
-    // 如果每次收集重量太小，减少收集天数以确保每次重量合理
-    let actualCollectionDays = [...collectionDays];
-    while (weightPerCollection < MIN_WEIGHT_PER_COLLECTION && actualCollectionDays.length > 1) {
-      // 随机移除一个收集日
-      const removeIndex = randomBetween(0, actualCollectionDays.length - 1);
-      actualCollectionDays.splice(removeIndex, 1);
-      weightPerCollection = storeTargetWeight / actualCollectionDays.length;
-    }
-    
-    // 如果只剩一天但重量仍不足阈值，使用所有剩余重量（至少 MIN_WEIGHT_PER_COLLECTION）
-    if (actualCollectionDays.length === 1 && weightPerCollection < MIN_WEIGHT_PER_COLLECTION) {
-      weightPerCollection = Math.min(remainingWeightKg, idealWeightPerCollection);
-      storeTargetWeight = weightPerCollection;
-    }
-    
-    plans.push({
-      storeId: store.id,
-      estimatedTravelMinutes: store.estimatedTravelMinutes,
-      collectionDays: actualCollectionDays,
-      weightPerCollection,
-    });
-    
-    remainingWeightKg -= storeTargetWeight;
+  if (activeStores.length === 0) {
+    throw new Error('没有足够的活跃门店');
   }
   
-  // 处理冷门门店
-  if (remainingWeightKg >= MIN_WEIGHT_PER_COLLECTION && coldStoreCount > 0) {
-    const coldStoreList = shuffledStores.slice(0, coldStoreCount);
-    const coldParticipants = coldStoreList.slice(0, Math.ceil(coldStoreCount * 0.3));
+  let taskIndex = 0;
+  
+  // 为每一天生成任务
+  for (let dayOffset = 0; dayOffset < totalDays; dayOffset++) {
+    // 这一天需要的任务数量（前 extraTrips 天多分配 1 趟）
+    const tasksForDay = baseTripsPerDay + (dayOffset < extraTrips ? 1 : 0);
     
-    for (const store of coldParticipants) {
-      if (remainingWeightKg < MIN_WEIGHT_PER_COLLECTION) break;
+    // 检查是否超过车辆运力限制（每车最多12趟）
+    const maxTasksPerDay = vehicleCount * 12;
+    const actualTasksForDay = Math.min(tasksForDay, maxTasksPerDay);
+    
+    // 轮询分配给各个门店
+    for (let i = 0; i < actualTasksForDay; i++) {
+      // 轮询选择门店，确保均匀分配
+      const storeIndex = taskIndex % activeStores.length;
+      const store = activeStores[storeIndex];
+      taskIndex++;
       
-      const collectionDay = randomBetween(10, daysInMonth - 5);
-      // 冷门门店每次收集 200-800 kg，但不能低于最小阈值
-      const weight = Math.max(
+      // 每次收集重量在范围内随机波动
+      const weight = randomFloatBetween(
         MIN_WEIGHT_PER_COLLECTION,
-        Math.min(remainingWeightKg, randomFloatBetween(200, 800, 0))
+        MAX_WEIGHT_PER_COLLECTION,
+        0
       );
       
-      plans.push({
+      tasks.push({
         storeId: store.id,
         estimatedTravelMinutes: store.estimatedTravelMinutes,
-        collectionDays: [collectionDay],
-        weightPerCollection: weight,
+        dayOffset,
+        targetWeight: weight,
       });
-      
-      remainingWeightKg -= weight;
     }
   }
   
-  // 如果还有少量剩余重量，合并到已有计划的最后一个门店
-  if (remainingWeightKg > 0 && plans.length > 0) {
-    const lastPlan = plans[plans.length - 1];
-    // 将剩余重量平均分配到该门店的所有收集日
-    const additionalPerDay = remainingWeightKg / lastPlan.collectionDays.length;
-    lastPlan.weightPerCollection += additionalPerDay;
+  // 处理冷门门店：每个冷门店在整个周期内只收集 1-2 次
+  const coldStores = shuffledStores.filter(s => coldStoreIds.has(s.id));
+  for (const store of coldStores) {
+    // 随机选 1-2 天
+    const collectionCount = randomBetween(1, 2);
+    for (let i = 0; i < collectionCount; i++) {
+      const dayOffset = randomBetween(0, totalDays - 1);
+      const weight = randomFloatBetween(MIN_WEIGHT_PER_COLLECTION, MAX_WEIGHT_PER_COLLECTION * 0.6, 0);
+      
+      tasks.push({
+        storeId: store.id,
+        estimatedTravelMinutes: store.estimatedTravelMinutes,
+        dayOffset,
+        targetWeight: weight,
+      });
+    }
   }
   
-  return plans;
+  // 按日期排序
+  tasks.sort((a, b) => a.dayOffset - b.dayOffset);
+  
+  return tasks;
 }
 
 function assignCollectionVehicle(
@@ -291,8 +277,9 @@ function assignCollectionVehicle(
   day: number,
   estimatedTravelMinutes: number
 ): { vehicle: typeof vehicles[0]; departureTime: Date; arrivalTime: Date; returnTime: Date } | null {
-  const startHour = 8;
-  const endHour = 18;
+  // 延长工作时间：从 8-18 改为 6-20，增加 4 小时工作窗口
+  const startHour = 6;
+  const endHour = 20;
   
   const sortedVehicles = [...vehicles].sort((a, b) => {
     const countA = scheduler.getTripCountForDay(a.id, year, month, day);
@@ -301,7 +288,8 @@ function assignCollectionVehicle(
   });
   
   for (const vehicle of sortedVehicles) {
-    if (scheduler.getTripCountForDay(vehicle.id, year, month, day) >= 8) {
+    // 增加每日最大趟数：从 8 趟改为 12 趟
+    if (scheduler.getTripCountForDay(vehicle.id, year, month, day) >= 12) {
       continue;
     }
     
@@ -311,7 +299,8 @@ function assignCollectionVehicle(
       continue;
     }
     
-    const randomOffset = randomBetween(0, 20) * 60 * 1000;
+    // 减少随机等待时间：从 0-20 分钟改为 0-10 分钟，让行程更紧凑
+    const randomOffset = randomBetween(0, 10) * 60 * 1000;
     const departureTime = new Date(earliestTime.getTime() + randomOffset);
     
     if (departureTime.getHours() >= endHour) {
@@ -374,31 +363,47 @@ export async function generateLedgerData(
   const collectionRecords: CollectionRecordData[] = [];
   const collectionScheduler = new VehicleScheduler();
 
-  const storePlans = generateStoreCollectionPlans(stores, targetTonnage, totalDays, config);
+  // 获取收集车辆的最大载重（取所有收集车辆中的最大值）
+  const maxVehicleLoad = Math.max(...collectionVehicles.map(v => v.maxLoad));
   
-  const allCollectionTasks: Array<{
-    storeId: string;
-    estimatedTravelMinutes: number;
-    dayOffset: number;
-    targetWeight: number;
-  }> = [];
+  // 生成任务列表（只是分配门店和日期，不指定具体重量）
+  const allCollectionTasks = generateDailyCollectionTasks(
+    stores,
+    targetTonnage,
+    totalDays,
+    collectionVehicles.length,
+    config,
+    maxVehicleLoad
+  );
   
-  for (const plan of storePlans) {
-    for (const day of plan.collectionDays) {
-      allCollectionTasks.push({
-        storeId: plan.storeId,
-        estimatedTravelMinutes: plan.estimatedTravelMinutes,
-        dayOffset: day - 1, // 转换为从0开始的偏移量
-        targetWeight: plan.weightPerCollection,
-      });
-    }
-  }
-  
-  allCollectionTasks.sort((a, b) => a.dayOffset - b.dayOffset);
-  
+  // ========== 动态调整算法 ==========
+  // 跟踪累计重量，动态调整每次收集量，确保最终接近目标
+  let accumulatedWeight = 0;
   let collectionIndex = 0;
+  let successfulTasks = 0;
   
-  for (const task of allCollectionTasks) {
+  // 重量范围
+  const MIN_WEIGHT = Math.max(500, maxVehicleLoad * 0.25);
+  const MAX_WEIGHT = maxVehicleLoad * 0.95;
+  const MIN_TIRE_COUNT = 30;
+  
+  for (let taskIndex = 0; taskIndex < allCollectionTasks.length; taskIndex++) {
+    const task = allCollectionTasks[taskIndex];
+    
+    // 计算剩余目标和剩余任务
+    const remainingTarget = targetTonnage - accumulatedWeight;
+    const remainingTasks = allCollectionTasks.length - taskIndex;
+    
+    // 如果已经达到或超过目标的 99%，停止生成
+    if (accumulatedWeight >= targetTonnage * 0.99) {
+      break;
+    }
+    
+    // 如果剩余目标很小（不足一趟的最小量），停止
+    if (remainingTarget < MIN_WEIGHT * 0.5) {
+      break;
+    }
+    
     const targetDate = getDateFromRange(startDate, task.dayOffset);
     const year = targetDate.getFullYear();
     const month = targetDate.getMonth() + 1;
@@ -419,23 +424,29 @@ export async function generateLedgerData(
     
     const { vehicle, departureTime, arrivalTime, returnTime } = assignment;
     
-    // 最小轮胎数量（确保每次收集有合理数量，避免出现1-2条的异常数据）
-    const MIN_TIRE_COUNT = 20;
+    // ========== 动态计算这一趟的目标重量 ==========
+    // 理想重量 = 剩余目标 / 剩余任务数
+    const idealWeight = remainingTarget / Math.max(1, remainingTasks);
     
-    // task.targetWeight 现在是 kg
-    const actualWeightKg = task.targetWeight * randomFloatBetween(0.8, 1.2);
-    const tireCount = Math.max(MIN_TIRE_COUNT, Math.round(actualWeightKg / config.tireWeightKg));
+    // 在理想值附近随机波动（±20%），但不超过边界
+    let targetWeight = idealWeight * randomFloatBetween(0.8, 1.2);
+    targetWeight = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, targetWeight));
     
-    // vehicle.maxLoad 现在是 kg，确保至少能装 MIN_TIRE_COUNT 个轮胎
-    const maxTires = Math.max(MIN_TIRE_COUNT, Math.floor(vehicle.maxLoad / config.tireWeightKg));
-    const actualTireCount = Math.min(tireCount, maxTires, config.collectionTireLimit);
+    // 如果接近目标（剩余 < 5趟的量），减小波动范围，更精确控制
+    if (remainingTasks <= 5) {
+      targetWeight = Math.min(targetWeight, remainingTarget * 0.9);
+    }
     
-    // 重量单位：kg
-    // 给轮胎重量添加随机波动（±10%），模拟真实世界中每个轮胎重量的差异
-    const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
+    // 根据重量计算轮胎数量
+    const maxTiresByVehicle = Math.floor(vehicle.maxLoad / config.tireWeightKg);
+    const tireCount = Math.round(targetWeight / config.tireWeightKg);
+    const actualTireCount = Math.max(MIN_TIRE_COUNT, Math.min(tireCount, maxTiresByVehicle));
+    
+    // 给轮胎重量添加随机波动（±8%）
+    const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.92, 1.08);
     const loadingNetWeight = parseFloat((actualTireCount * avgTireWeight).toFixed(2));
     
-    // 生成折损：卸车净重 = 装车净重 - 折损，模拟运输过程中的轻微损耗
+    // 生成折损
     const lossRatio = randomFloatBetween(config.lossRatioMin, config.lossRatioMax, 5);
     const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
     const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
@@ -456,6 +467,10 @@ export async function generateLedgerData(
       unloadingNetWeight,
       loss,
     });
+    
+    // 累计重量
+    accumulatedWeight += loadingNetWeight;
+    successfulTasks++;
   }
 
   return { collectionRecords };

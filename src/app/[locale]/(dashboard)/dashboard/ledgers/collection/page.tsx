@@ -102,17 +102,15 @@ interface TonnageEstimate {
   minTonnage: number;
   maxTonnage: number;
   storeCount: number;
-  activeStoreCount: number;
   vehicleCount: number;
   totalDays: number;
   avgTravelMinutes: number;
   tripsPerVehiclePerDay: number;
-  bottleneck: 'store' | 'vehicle';
+  avgWeightPerTrip?: number;
   warning?: string;
-  details: {
-    storeMaxCapacityKg: number;
+  details?: {
+    maxVehicleLoadKg: number;
     vehicleMaxCapacityKg: number;
-    effectiveMaxCapacityKg: number;
   };
 }
 
@@ -698,24 +696,15 @@ export default function CollectionLedgerPage() {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                     <Space size={12}>
-                      <span style={{ color: '#64748b', fontSize: 13 }}>{t('ledgers.suggestedTonnageRange')}</span>
+                      <span style={{ color: '#64748b', fontSize: 13 }}>建议最大吨数</span>
                       <span style={{ fontSize: 20, fontWeight: 600, color: '#0369a1' }}>
-                        {tonnageEstimate.minTonnage} ~ {tonnageEstimate.maxTonnage}
+                        ≤ {tonnageEstimate.maxTonnage}
                       </span>
                       <span style={{ color: '#64748b', fontSize: 13 }}>吨</span>
                     </Space>
-                    <Tooltip
-                      title={
-                        tonnageEstimate.bottleneck === 'store'
-                          ? t('ledgers.tonnageBottleneckStore')
-                          : t('ledgers.tonnageBottleneckVehicle')
-                      }
-                    >
-                      <Tag
-                        color={tonnageEstimate.bottleneck === 'store' ? 'orange' : 'blue'}
-                        style={{ margin: 0, cursor: 'help' }}
-                      >
-                        {tonnageEstimate.bottleneck === 'store' ? '门店限制' : '车辆限制'}
+                    <Tooltip title="动态算法可精确控制到目标 ±2%">
+                      <Tag color="green" style={{ margin: 0, cursor: 'help' }}>
+                        智能分配
                       </Tag>
                     </Tooltip>
                   </div>
@@ -727,10 +716,10 @@ export default function CollectionLedgerPage() {
                       borderTop: '1px dashed #cbd5e1',
                     }}
                   >
-                    <Tooltip title="活跃门店数（排除冷门店）">
+                    <Tooltip title="可用门店数量">
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, cursor: 'help' }}>
                         <span style={{ color: '#94a3b8', fontSize: 12 }}>门店</span>
-                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.activeStoreCount}</span>
+                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.storeCount}</span>
                       </div>
                     </Tooltip>
                     <Tooltip title="收集车辆数量">
@@ -775,7 +764,7 @@ export default function CollectionLedgerPage() {
               <Space.Compact>
                 <InputNumber
                   min={0.1}
-                  max={1000}
+                  max={99999}
                   step={0.1}
                   style={{ width: 160 }}
                   status={
