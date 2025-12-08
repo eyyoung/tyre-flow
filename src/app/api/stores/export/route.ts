@@ -79,20 +79,21 @@ export async function GET(request: NextRequest) {
     // 设置列（当筛选非虚拟门店时，不显示"是否虚拟"列）
     const showIsVirtualColumn = isVirtual !== 'false';
     
+    // 表头使用与导入兼容的名称，便于导出后重新导入
     const columns: Partial<ExcelJS.Column>[] = [
       { header: '门店编码', key: 'code', width: 20 },
-      { header: '门店名称', key: 'name', width: 30 },
+      { header: '企业名称', key: 'name', width: 30 },              // 兼容导入
       { header: '收集点', key: 'collectionPointName', width: 15 },
-      { header: '统一社会信用代码', key: 'businessLicense', width: 22 },
-      { header: '法人代表', key: 'legalPerson', width: 12 },
-      { header: '省份', key: 'province', width: 10 },
-      { header: '城市', key: 'city', width: 10 },
-      { header: '区县', key: 'district', width: 10 },
-      { header: '详细地址', key: 'address', width: 40 },
-      { header: '经度', key: 'longitude', width: 12 },
-      { header: '纬度', key: 'latitude', width: 12 },
+      { header: '统一社会信用代码', key: 'businessLicense', width: 22 },  // 兼容导入
+      { header: '法定代表人', key: 'legalPerson', width: 12 },     // 兼容导入
+      { header: '所属省份', key: 'province', width: 10 },          // 兼容导入
+      { header: '所属城市', key: 'city', width: 10 },              // 兼容导入
+      { header: '所属区县', key: 'district', width: 10 },          // 兼容导入
+      { header: '注册地址', key: 'address', width: 40 },           // 兼容导入
+      { header: '经度', key: 'longitude', width: 12 },             // 兼容导入
+      { header: '纬度', key: 'latitude', width: 12 },              // 兼容导入
       { header: '联系人', key: 'contactName', width: 12 },
-      { header: '联系电话', key: 'contactPhone', width: 15 },
+      { header: '电话', key: 'contactPhone', width: 15 },          // 兼容导入
     ];
     
     // 根据参数决定是否添加预估行程列
