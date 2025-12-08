@@ -1,23 +1,30 @@
 import prisma from './db';
 
-// 中国时区偏移量（UTC+8 = 8小时 = 480分钟）
-const CHINA_TIMEZONE_OFFSET = 8 * 60;
-
 /**
- * 创建指定日期时间的 Date 对象，使用中国时区（Asia/Shanghai）
- * 返回的 Date 对象内部是 UTC 时间，但表示的是中国当地时间
+ * 将本地时间转换为中国时区时间存储
+ * 
+ * 问题背景：服务器可能运行在 UTC 时区，而我们生成的时间是基于服务器本地时区的。
+ * 例如：服务器在 UTC，我们创建了 06:00 的本地时间，存入数据库后，
+ * 前端以北京时间显示时会变成 14:00（UTC 06:00 + 8小时）。
+ * 
+ * 解决方案：在保存前，将时间调整为"看起来像"中国时间的 UTC 时间。
+ * 即：把 06:00 的本地时间转换为 UTC 22:00（前一天），这样前端显示时就是 06:00 北京时间。
  */
-function createDateInChinaTimezone(year: number, month: number, day: number, hour: number, minute: number = 0, second: number = 0): Date {
-  // 先创建一个本地时间的 Date 对象
-  const localDate = new Date(year, month - 1, day, hour, minute, second);
-  // 获取本地时区偏移量（分钟）
-  const localOffset = localDate.getTimezoneOffset();
-  // 计算需要调整的偏移量（从本地时区转换到中国时区）
-  // getTimezoneOffset() 返回的是 UTC 时间减去本地时间的分钟数
-  // 例如：UTC+8 返回 -480，UTC 返回 0
-  const offsetDiff = localOffset + CHINA_TIMEZONE_OFFSET;
-  // 调整时间
-  return new Date(localDate.getTime() + offsetDiff * 60 * 1000);
+function adjustToChineseTimezone(date: Date): Date {
+  // 获取服务器本地时区偏移量（分钟）
+  // getTimezoneOffset() 返回 UTC - 本地时间的分钟数
+  // UTC 时区返回 0，UTC+8 返回 -480
+  const localOffset = date.getTimezoneOffset();
+  
+  // 中国时区偏移量：UTC+8 = -480 分钟
+  const chinaOffset = -480;
+  
+  // 计算需要调整的时间差（分钟）
+  // 如果服务器在 UTC（偏移 0），需要减去 480 分钟（8小时）
+  // 如果服务器已经在 UTC+8（偏移 -480），不需要调整
+  const adjustment = (localOffset - chinaOffset) * 60 * 1000;
+  
+  return new Date(date.getTime() - adjustment);
 }
 
 interface GeneratorConfig {
@@ -56,21 +63,10 @@ interface TimeSlot {
   returnTime: Date;
 }
 
-/**
- * 格式化日期为中国时区的日期字符串 (YYYY-MM-DD)
- */
 function formatLocalDate(date: Date): string {
-  // 使用 Intl.DateTimeFormat 确保使用中国时区
-  const formatter = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = formatter.formatToParts(date);
-  const year = parts.find(p => p.type === 'year')?.value;
-  const month = parts.find(p => p.type === 'month')?.value;
-  const day = parts.find(p => p.type === 'day')?.value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -86,8 +82,7 @@ class VehicleScheduler {
     ).sort((a, b) => a.returnTime.getTime() - b.returnTime.getTime());
 
     if (todaySlots.length === 0) {
-      // 使用中国时区创建日期
-      return createDateInChinaTimezone(year, month, day, minStartHour);
+      return new Date(year, month - 1, day, minStartHour, 0, 0);
     }
 
     const lastSlot = todaySlots[todaySlots.length - 1];
@@ -309,9 +304,9 @@ function assignCollectionVehicle(
   day: number,
   estimatedTravelMinutes: number
 ): { vehicle: typeof vehicles[0]; departureTime: Date; arrivalTime: Date; returnTime: Date } | null {
-  // 延长工作时间：从 8-18 改为 6-20，增加 4 小时工作窗口
-  const startHour = 6;
-  const endHour = 20;
+  // 司机工作时间：8:00-18:00
+  const startHour = 8;
+  const endHour = 18;
   
   const sortedVehicles = [...vehicles].sort((a, b) => {
     const countA = scheduler.getTripCountForDay(a.id, year, month, day);
@@ -483,8 +478,7 @@ export async function generateLedgerData(
     const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
     const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
     
-    // 使用中国时区创建收集日期（00:00:00）
-    const collectionDate = createDateInChinaTimezone(year, month, day, 0);
+    const collectionDate = new Date(year, month - 1, day);
     
     collectionScheduler.book(vehicle.id, departureTime, arrivalTime, returnTime);
     
@@ -548,8 +542,15 @@ export async function executeLedgerTask(taskId: string): Promise<LedgerGeneratio
       task.targetTonnage // 单位: kg
     );
 
+    // 在保存前调整时间为中国时区
     await prisma.collectionRecord.createMany({
-      data: collectionRecords.map(r => ({ ...r, taskId })),
+      data: collectionRecords.map(r => ({
+        ...r,
+        taskId,
+        collectionDate: adjustToChineseTimezone(r.collectionDate),
+        loadingTime: adjustToChineseTimezone(r.loadingTime),
+        unloadingTime: adjustToChineseTimezone(r.unloadingTime),
+      })),
     });
 
     // 所有重量单位为 kg

@@ -9,7 +9,7 @@ import { withAuth } from '@/lib/auth';
  * 
  * 1. 基于车辆运力计算最大产能：
  *    - 每辆车每天最多 12 趟
- *    - 工作时间 14 小时 (6:00-20:00)
+ *    - 工作时间 10 小时 (8:00-18:00)
  *    - 单次行程时间 = 往返行程 + 装卸(20分钟) + 休息(7.5分钟)
  *    - 每趟平均收集重量 = 车辆最大载重 * 60%
  *    - 车辆最大运力 = 车辆数 * 每天趟数 * 总天数 * 每趟平均重量
@@ -82,8 +82,8 @@ export async function GET(request: NextRequest) {
       // ===== 基于车辆的最大运力 =====
       // 单次行程时间 = 往返行程 + 装卸时间(20分钟平均) + 休息时间(7.5分钟平均)
       const singleTripMinutes = avgTravelMinutes * 2 + 27.5;
-      // 每天工作时间 840 分钟 (14小时: 6:00-20:00)
-      const workMinutesPerDay = 840;
+      // 每天工作时间 600 分钟 (10小时: 8:00-18:00)
+      const workMinutesPerDay = 600;
       // 每辆车每天实际趟数，最多12趟
       const tripsPerVehiclePerDay = Math.min(12, Math.floor(workMinutesPerDay / singleTripMinutes));
       // 车辆最大运力
