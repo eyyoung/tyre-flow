@@ -93,7 +93,7 @@ export default function VehiclesPage() {
       }
     };
     fetchCollectionPoints();
-    return () => controller.abort();
+    return () => controller.abort('Component unmounted');
   }, []);
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
@@ -128,7 +128,7 @@ export default function VehiclesPage() {
   useEffect(() => {
     const controller = new AbortController();
     fetchData(controller.signal);
-    return () => controller.abort();
+    return () => controller.abort('Component unmounted');
   }, [fetchData]);
 
   const handleSearch = () => {
