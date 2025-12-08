@@ -1,5 +1,25 @@
 import prisma from './db';
 
+// 中国时区偏移量（UTC+8 = 8小时 = 480分钟）
+const CHINA_TIMEZONE_OFFSET = 8 * 60;
+
+/**
+ * 创建指定日期时间的 Date 对象，使用中国时区（Asia/Shanghai）
+ * 返回的 Date 对象内部是 UTC 时间，但表示的是中国当地时间
+ */
+function createDateInChinaTimezone(year: number, month: number, day: number, hour: number, minute: number = 0, second: number = 0): Date {
+  // 先创建一个本地时间的 Date 对象
+  const localDate = new Date(year, month - 1, day, hour, minute, second);
+  // 获取本地时区偏移量（分钟）
+  const localOffset = localDate.getTimezoneOffset();
+  // 计算需要调整的偏移量（从本地时区转换到中国时区）
+  // getTimezoneOffset() 返回的是 UTC 时间减去本地时间的分钟数
+  // 例如：UTC+8 返回 -480，UTC 返回 0
+  const offsetDiff = localOffset + CHINA_TIMEZONE_OFFSET;
+  // 调整时间
+  return new Date(localDate.getTime() + offsetDiff * 60 * 1000);
+}
+
 interface GeneratorConfig {
   tireWeightKg: number;
   collectionTireLimit: number;
@@ -36,10 +56,21 @@ interface TimeSlot {
   returnTime: Date;
 }
 
+/**
+ * 格式化日期为中国时区的日期字符串 (YYYY-MM-DD)
+ */
 function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  // 使用 Intl.DateTimeFormat 确保使用中国时区
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
   return `${year}-${month}-${day}`;
 }
 
@@ -55,7 +86,8 @@ class VehicleScheduler {
     ).sort((a, b) => a.returnTime.getTime() - b.returnTime.getTime());
 
     if (todaySlots.length === 0) {
-      return new Date(year, month - 1, day, minStartHour, 0, 0);
+      // 使用中国时区创建日期
+      return createDateInChinaTimezone(year, month, day, minStartHour);
     }
 
     const lastSlot = todaySlots[todaySlots.length - 1];
@@ -451,7 +483,8 @@ export async function generateLedgerData(
     const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
     const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
     
-    const collectionDate = new Date(year, month - 1, day);
+    // 使用中国时区创建收集日期（00:00:00）
+    const collectionDate = createDateInChinaTimezone(year, month, day, 0);
     
     collectionScheduler.book(vehicle.id, departureTime, arrivalTime, returnTime);
     
