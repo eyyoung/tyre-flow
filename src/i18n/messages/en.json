@@ -324,6 +324,7 @@
     "geocodeFailed": "Address cannot be converted to coordinates",
     "networkError": "Network request failed",
     "showOnlyFailed": "Failed Only",
+    "showPendingAndFailed": "Pending/Failed",
     "showAll": "Show All",
     "noStores": "No Store Data",
     "noStoresDesc": "No imported non-virtual stores found for this collection point. Please import store data first",
@@ -334,7 +335,10 @@
     "minutes": "min",
     "routePending": "Pending",
     "geocodingProgress": "Geocoding...",
-    "routePlanningProgress": "Route planning..."
+    "routePlanningProgress": "Route planning...",
+    "allGeocoded": "All Geocoded",
+    "allGeocodedMessage": "All stores have coordinates",
+    "allGeocodedDesc": "All stores already have coordinate data (imported with lat/lng). You can directly proceed to route planning."
   },
   "storeImport": {
     "title": "Store Data Import",
@@ -345,7 +349,7 @@
     "step3": "Import Complete",
     "step3Desc": "View import results",
     "uploadTip": "Supported File Format",
-    "uploadTipDesc": "Supports CSV format enterprise data exported from platforms like AiQiCha. The system will automatically recognize fields such as company name, legal representative, address, and unified social credit code. Estimated travel time will use random data (10-120 minutes).",
+    "uploadTipDesc": "Supports two CSV formats: 1) Enterprise data from platforms like AiQiCha (with business status); 2) Store data with coordinates (with category). The system will automatically recognize company name, legal representative, address, unified social credit code, coordinates, etc.",
     "selectCollectionPoint": "Target Collection Point",
     "selectCollectionPointPlaceholder": "Select collection point for data import",
     "uploadText": "Click or drag file to upload",
@@ -367,7 +371,8 @@
     "failedCount": "Import Failed",
     "errorDetails": "Error Details",
     "moreErrors": "{count} more errors...",
-    "businessStatus": "Business Status"
+    "businessStatus": "Business Status",
+    "category": "Category"
   }
 }
 

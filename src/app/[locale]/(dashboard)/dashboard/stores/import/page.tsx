@@ -42,7 +42,8 @@ interface CollectionPoint {
 interface PreviewStore {
   key: string;
   name: string;
-  businessStatus: string;
+  businessStatus: string;  // 经营状态：开业/停业/注销等
+  category: string;        // 来源分类：机动车回收拆解等
   legalPerson: string;
   phone: string;
   businessLicense: string;
@@ -50,6 +51,8 @@ interface PreviewStore {
   province: string;
   city: string;
   district: string;
+  longitude: number | null;
+  latitude: number | null;
   isValid: boolean;
   errorMsg?: string;
 }
@@ -115,7 +118,8 @@ export default function StoreImportPage() {
     // 定义字段映射
     const fieldMap: Record<string, string> = {
       '企业名称': 'name',
-      '经营状态': 'businessStatus',
+      '经营状态': 'businessStatus',    // 爱企查格式：开业/停业/注销等
+      '来源分类': 'category',          // stores.csv 格式：机动车回收拆解等（非经营状态）
       '法定代表人': 'legalPerson',
       '电话': 'phone',
       '统一社会信用代码': 'businessLicense',
@@ -123,6 +127,8 @@ export default function StoreImportPage() {
       '所属省份': 'province',
       '所属城市': 'city',
       '所属区县': 'district',
+      '经度': 'longitude',
+      '纬度': 'latitude',
     };
 
     // 获取字段索引
@@ -145,7 +151,8 @@ export default function StoreImportPage() {
       const name = values[fieldIndexMap['name']]?.trim() || '';
       if (!name) continue;
 
-      const businessStatus = values[fieldIndexMap['businessStatus']]?.trim() || '';
+      const businessStatus = values[fieldIndexMap['businessStatus']]?.trim() || '';  // 经营状态
+      const category = values[fieldIndexMap['category']]?.trim() || '';              // 来源分类
       const legalPerson = values[fieldIndexMap['legalPerson']]?.trim() || '';
       const phone = values[fieldIndexMap['phone']]?.trim() || '';
       const businessLicense = values[fieldIndexMap['businessLicense']]?.trim() || '';
@@ -153,6 +160,12 @@ export default function StoreImportPage() {
       const province = values[fieldIndexMap['province']]?.trim() || '';
       const city = values[fieldIndexMap['city']]?.trim() || '';
       const district = values[fieldIndexMap['district']]?.trim() || '';
+      
+      // 解析经纬度
+      const longitudeStr = values[fieldIndexMap['longitude']]?.trim() || '';
+      const latitudeStr = values[fieldIndexMap['latitude']]?.trim() || '';
+      const longitude = longitudeStr ? parseFloat(longitudeStr) : null;
+      const latitude = latitudeStr ? parseFloat(latitudeStr) : null;
 
       // 验证数据
       const isValid = !!name && !!address;
@@ -162,6 +175,7 @@ export default function StoreImportPage() {
         key: `${i}-${name}`,
         name,
         businessStatus,
+        category,
         legalPerson,
         phone,
         businessLicense,
@@ -169,6 +183,8 @@ export default function StoreImportPage() {
         province,
         city,
         district,
+        longitude: longitude && !isNaN(longitude) ? longitude : null,
+        latitude: latitude && !isNaN(latitude) ? latitude : null,
         isValid,
         errorMsg,
       });
@@ -220,6 +236,8 @@ export default function StoreImportPage() {
             province: s.province || null,
             city: s.city || null,
             district: s.district || null,
+            longitude: s.longitude,
+            latitude: s.latitude,
           })),
         }),
       });
@@ -263,9 +281,19 @@ export default function StoreImportPage() {
       dataIndex: 'businessStatus',
       key: 'businessStatus',
       width: 80,
-      render: (v) => (
-        <Tag color={v === '开业' ? 'success' : 'default'}>{v || '-'}</Tag>
-      ),
+      render: (v) => {
+        if (!v) return <Text type="secondary">-</Text>;
+        const color = v === '开业' ? 'success' : (v === '停业' || v === '注销' || v === '吊销') ? 'error' : 'default';
+        return <Tag color={color}>{v}</Tag>;
+      },
+    },
+    {
+      title: t('storeImport.category'),
+      dataIndex: 'category',
+      key: 'category',
+      width: 120,
+      ellipsis: true,
+      render: (v) => v || '-',
     },
     {
       title: t('stores.legalPerson'),
@@ -313,6 +341,20 @@ export default function StoreImportPage() {
       dataIndex: 'district',
       key: 'district',
       width: 80,
+    },
+    {
+      title: t('storeCleanup.coordinates'),
+      key: 'coordinates',
+      width: 180,
+      render: (_, record) => (
+        record.longitude && record.latitude ? (
+          <Text type="success">
+            {record.longitude.toFixed(6)}, {record.latitude.toFixed(6)}
+          </Text>
+        ) : (
+          <Text type="secondary">-</Text>
+        )
+      ),
     },
     {
       title: t('common.status'),
@@ -434,7 +476,7 @@ export default function StoreImportPage() {
               columns={columns}
               dataSource={previewData}
               rowKey="key"
-              scroll={{ x: 1600, y: 400 }}
+              scroll={{ x: 1920, y: 400 }}
               pagination={{
                 pageSize: 50,
                 showTotal: (total) => t('common.total', { count: total }),

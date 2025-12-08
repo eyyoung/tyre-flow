@@ -2,6 +2,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
 
+// 旧格式（原有格式，现在也支持经纬度）
+interface ImportStoreOld {
+  name: string;
+  businessStatus: string;
+  legalPerson: string | null;
+  contactPhone: string | null;
+  businessLicense: string | null;
+  address: string;
+  province: string | null;
+  city: string | null;
+  district: string | null;
+  // 新增支持经纬度直接导入
+  longitude?: string | number | null;
+  latitude?: string | number | null;
+}
+
+// 新格式（stores.csv 格式，带经纬度）
+// CSV 表头: 序号,自我声明签署情况,企业名称,来源分类,统一社会信用代码,所属省份,所属城市,所属区县,法定代表人,注册地址,经度,纬度,邮政编码,电话,更多电话
+interface ImportStoreNew {
+  序号?: string | number;
+  自我声明签署情况?: string;
+  企业名称: string;
+  来源分类?: string;
+  统一社会信用代码?: string;
+  所属省份?: string;
+  所属城市?: string;
+  所属区县?: string;
+  法定代表人?: string;
+  注册地址: string;
+  经度?: string | number;
+  纬度?: string | number;
+  邮政编码?: string;
+  电话?: string;
+  更多电话?: string;
+}
+
+// 统一内部格式
 interface ImportStore {
   name: string;
   businessStatus: string;
@@ -12,6 +49,56 @@ interface ImportStore {
   province: string | null;
   city: string | null;
   district: string | null;
+  longitude: number | null;
+  latitude: number | null;
+}
+
+// 检测并转换数据格式
+function normalizeStoreData(store: ImportStoreOld | ImportStoreNew): ImportStore {
+  // 检测是否为新格式（stores.csv 格式）
+  if ('企业名称' in store || '注册地址' in store) {
+    const newStore = store as ImportStoreNew;
+    const phones = [newStore.电话, newStore.更多电话].filter(Boolean).join(',');
+    
+    return {
+      name: newStore.企业名称 || '',
+      businessStatus: newStore.来源分类 || '开业', // 默认为开业
+      legalPerson: newStore.法定代表人 || null,
+      contactPhone: phones || null,
+      businessLicense: newStore.统一社会信用代码 || null,
+      address: newStore.注册地址 || '',
+      province: newStore.所属省份 || null,
+      city: newStore.所属城市 || null,
+      district: newStore.所属区县 || null,
+      longitude: parseCoordinate(newStore.经度),
+      latitude: parseCoordinate(newStore.纬度),
+    };
+  }
+  
+  // 旧格式（也支持经纬度）
+  const oldStore = store as ImportStoreOld;
+  return {
+    name: oldStore.name || '',
+    businessStatus: oldStore.businessStatus || '开业',
+    legalPerson: oldStore.legalPerson || null,
+    contactPhone: oldStore.contactPhone || null,
+    businessLicense: oldStore.businessLicense || null,
+    address: oldStore.address || '',
+    province: oldStore.province || null,
+    city: oldStore.city || null,
+    district: oldStore.district || null,
+    longitude: parseCoordinate(oldStore.longitude),
+    latitude: parseCoordinate(oldStore.latitude),
+  };
+}
+
+// 解析坐标值
+function parseCoordinate(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const num = typeof value === 'number' ? value : parseFloat(value);
+  return isNaN(num) ? null : num;
 }
 
 // 生成门店编码
@@ -21,9 +108,8 @@ function generateStoreCode(collectionPointCode: string, index: number): string {
   return `${collectionPointCode}-IMP${timestamp}${indexStr}`;
 }
 
-// 生成随机预估距离（10-120分钟）
 function generateEstimatedTravelMinutes(): number {
-  return Math.floor(Math.random() * 111) + 10; // 10 to 120 minutes
+  return 0; 
 }
 
 // 批量导入门店
@@ -35,10 +121,13 @@ export async function POST(request: NextRequest) {
 
     try {
       const body = await request.json();
-      const { collectionPointId, stores } = body as {
+      const { collectionPointId, stores: rawStores } = body as {
         collectionPointId: string;
-        stores: ImportStore[];
+        stores: (ImportStoreOld | ImportStoreNew)[];
       };
+      
+      // 统一转换所有门店数据格式
+      const stores: ImportStore[] = rawStores.map(normalizeStoreData);
 
       // 验证收集点
       if (!collectionPointId) {
@@ -104,6 +193,8 @@ export async function POST(request: NextRequest) {
         province: string | null;
         city: string | null;
         district: string | null;
+        longitude: number | null;
+        latitude: number | null;
         contactPhone: string | null;
         estimatedTravelMinutes: number;
         status: 'ACTIVE' | 'DISABLED';
@@ -140,8 +231,12 @@ export async function POST(request: NextRequest) {
         }
         existingStoreSet.add(storeKey);
 
-        // 确定状态：开业=ACTIVE，其他=DISABLED
-        const status = store.businessStatus === '开业' ? 'ACTIVE' : 'DISABLED';
+        // 确定状态：
+        // - "开业" 或默认值 "开业" -> ACTIVE
+        // - "停业"/"注销"/"吊销" 等 -> DISABLED
+        // - 对于新格式（stores.csv），来源分类不是经营状态，默认为 ACTIVE
+        const disabledStatuses = ['停业', '注销', '吊销', '歇业', '迁出'];
+        const status = disabledStatuses.includes(store.businessStatus) ? 'DISABLED' : 'ACTIVE';
 
         storesToCreate.push({
           code: generateStoreCode(collectionPoint.code, storesToCreate.length),
@@ -152,6 +247,8 @@ export async function POST(request: NextRequest) {
           province: store.province || null,
           city: store.city || null,
           district: store.district || null,
+          longitude: store.longitude,
+          latitude: store.latitude,
           contactPhone: store.contactPhone || null,
           estimatedTravelMinutes: generateEstimatedTravelMinutes(),
           status,

@@ -84,7 +84,7 @@ export default function StoreCleanupPage() {
   const [geocoding, setGeocoding] = useState(false);
   const [routePlanning, setRoutePlanning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [showOnlyFailed, setShowOnlyFailed] = useState(false);
+  const [hideSuccess, setHideSuccess] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // 获取收集点列表
@@ -355,9 +355,14 @@ export default function StoreCleanupPage() {
     disabled: stores.filter(s => s.status === 'DISABLED').length,
   };
 
+  // 是否所有门店都已经有坐标（无需编码）
+  const allGeocoded = stats.total > 0 && stats.pending === 0 && stats.failed === 0;
+  // 是否可以进行路径规划（有成功编码的门店）
+  const canRoutePlan = stats.success > 0;
+
   // 过滤显示的数据
-  const displayStores = showOnlyFailed
-    ? stores.filter(s => s.geocodeStatus === 'failed')
+  const displayStores = hideSuccess
+    ? stores.filter(s => s.geocodeStatus === 'failed' || s.geocodeStatus === 'pending')
     : stores;
 
   // 表格列
@@ -512,16 +517,16 @@ export default function StoreCleanupPage() {
                   icon={<EnvironmentOutlined />}
                   onClick={handleGeocode}
                   loading={geocoding}
-                  disabled={stats.pending === 0 && stats.failed === 0 || routePlanning}
+                  disabled={allGeocoded || routePlanning}
                 >
-                  {t('storeCleanup.startGeocode')}
+                  {allGeocoded ? t('storeCleanup.allGeocoded') : t('storeCleanup.startGeocode')}
                 </Button>
                 <Button
                   type="primary"
                   icon={<CarOutlined />}
                   onClick={handleRoutePlan}
                   loading={routePlanning}
-                  disabled={stats.success === 0 || geocoding}
+                  disabled={!canRoutePlan || geocoding}
                 >
                   {t('storeCleanup.startRoutePlan')}
                 </Button>
@@ -539,9 +544,9 @@ export default function StoreCleanupPage() {
                   </Button>
                 </Popconfirm>
                 <Switch
-                  checked={showOnlyFailed}
-                  onChange={setShowOnlyFailed}
-                  checkedChildren={t('storeCleanup.showOnlyFailed')}
+                  checked={hideSuccess}
+                  onChange={setHideSuccess}
+                  checkedChildren={t('storeCleanup.showPendingAndFailed')}
                   unCheckedChildren={t('storeCleanup.showAll')}
                 />
               </Space>
@@ -554,6 +559,17 @@ export default function StoreCleanupPage() {
             percent={progress}
             status="active"
             format={() => geocoding ? t('storeCleanup.geocodingProgress') : t('storeCleanup.routePlanningProgress')}
+            style={{ marginBottom: 24 }}
+          />
+        )}
+
+        {allGeocoded && !geocoding && !routePlanning && (
+          <Alert
+            message={t('storeCleanup.allGeocodedMessage')}
+            description={t('storeCleanup.allGeocodedDesc')}
+            type="success"
+            showIcon
+            icon={<CheckCircleOutlined />}
             style={{ marginBottom: 24 }}
           />
         )}

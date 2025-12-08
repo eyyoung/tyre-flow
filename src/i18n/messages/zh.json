@@ -324,6 +324,7 @@
     "geocodeFailed": "地址无法转换为坐标",
     "networkError": "网络请求失败",
     "showOnlyFailed": "仅显示失败",
+    "showPendingAndFailed": "待处理/失败",
     "showAll": "显示全部",
     "noStores": "没有门店数据",
     "noStoresDesc": "该收集点下没有导入的非虚拟门店数据，请先导入门店数据",
@@ -334,7 +335,10 @@
     "minutes": "分钟",
     "routePending": "待规划",
     "geocodingProgress": "坐标转换中...",
-    "routePlanningProgress": "路径规划中..."
+    "routePlanningProgress": "路径规划中...",
+    "allGeocoded": "已全部编码",
+    "allGeocodedMessage": "所有门店均已有坐标",
+    "allGeocodedDesc": "所有门店在导入时已包含经纬度坐标，无需进行地理编码。可直接进行路径规划。"
   },
   "storeImport": {
     "title": "门店数据导入",
@@ -345,7 +349,7 @@
     "step3": "导入完成",
     "step3Desc": "查看导入结果",
     "uploadTip": "支持的文件格式",
-    "uploadTipDesc": "支持导入爱企查等平台导出的CSV格式企业数据，系统将自动识别企业名称、法人、地址、统一社会信用代码等字段。预估行程距离将使用随机数据（10-120分钟）。",
+    "uploadTipDesc": "支持导入两种CSV格式：1) 爱企查等平台导出的企业数据（含经营状态）；2) 带经纬度坐标的门店数据（含来源分类）。系统将自动识别企业名称、法人、地址、统一社会信用代码、经纬度等字段。",
     "selectCollectionPoint": "目标收集点",
     "selectCollectionPointPlaceholder": "请选择要导入数据的收集点",
     "uploadText": "点击或拖拽文件到此处上传",
@@ -367,7 +371,8 @@
     "failedCount": "导入失败",
     "errorDetails": "错误详情",
     "moreErrors": "还有 {count} 条错误...",
-    "businessStatus": "经营状态"
+    "businessStatus": "经营状态",
+    "category": "来源分类"
   }
 }
 

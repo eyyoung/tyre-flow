@@ -97,7 +97,7 @@ model Store {
   latitude               Float?
   contactName            String?
   contactPhone           String?
-  estimatedTravelMinutes Int         @default(30) // 到收集点的预估行程时间（分钟）
+  estimatedTravelMinutes Int         @default(0) // 到收集点的预估行程时间（分钟）
   status                 StoreStatus @default(ACTIVE)
   disabledAt             DateTime?
   disabledReason         String?

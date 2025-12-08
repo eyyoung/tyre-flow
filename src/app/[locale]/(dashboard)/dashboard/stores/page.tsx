@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   App,
+  Descriptions,
 } from 'antd';
 import {
   PlusOutlined,
@@ -25,6 +26,7 @@ import {
   ReloadOutlined,
   ShopOutlined,
   CarOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -42,6 +44,8 @@ interface Store {
   province: string | null;
   city: string | null;
   district: string | null;
+  longitude: number | null;
+  latitude: number | null;
   contactName: string | null;
   contactPhone: string | null;
   estimatedTravelMinutes: number;
@@ -391,7 +395,6 @@ export default function StoresPage() {
         onCancel={() => setModalVisible(false)}
         width={700}
         destroyOnHidden
-        forceRender
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
@@ -497,6 +500,36 @@ export default function StoresPage() {
               </Form.Item>
             </Col>
           </Row>
+          {editingItem && (
+            <Descriptions
+              bordered
+              size="small"
+              column={2}
+              style={{ marginBottom: 24 }}
+            >
+              <Descriptions.Item label={t('storeCleanup.coordinates')} span={2}>
+                {editingItem.longitude && editingItem.latitude ? (
+                  <span style={{ color: '#52c41a' }}>
+                    <EnvironmentOutlined style={{ marginRight: 4 }} />
+                    {editingItem.longitude.toFixed(6)}, {editingItem.latitude.toFixed(6)}
+                  </span>
+                ) : (
+                  <span style={{ color: '#999' }}>-</span>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('stores.estimatedTravelMinutes')}>
+                <span>
+                  <CarOutlined style={{ marginRight: 4 }} />
+                  {editingItem.estimatedTravelMinutes} {t('storeCleanup.minutes')}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('stores.isVirtual')}>
+                <Tag color={editingItem.isVirtual ? 'orange' : 'blue'}>
+                  {editingItem.isVirtual ? t('common.yes') : t('common.no')}
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
+          )}
           {editingItem && (
             <Form.Item name="status" label={t('common.status')}>
               <Select
