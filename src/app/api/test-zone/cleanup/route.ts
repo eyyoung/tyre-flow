@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const body = await request.json();
-      const { type, collectionPointId } = body;
+      const { type, collectionPointId, includeNonVirtual } = body;
 
       if (!type || !['stores', 'vehicles', 'ledgers'].includes(type)) {
         return NextResponse.json(
@@ -24,10 +24,11 @@ export async function POST(request: NextRequest) {
 
       switch (type) {
         case 'stores': {
-          // 清理门店数据（只清理虚拟门店）
-          const where = collectionPointId
-            ? { collectionPointId, isVirtual: true }
-            : { isVirtual: true };
+          // 清理门店数据
+          // 如果 includeNonVirtual 为 true，则清理所有门店；否则只清理虚拟门店
+          const where = includeNonVirtual
+            ? (collectionPointId ? { collectionPointId } : {})
+            : (collectionPointId ? { collectionPointId, isVirtual: true } : { isVirtual: true });
           
           const result = await prisma.store.deleteMany({ where });
           count = result.count;

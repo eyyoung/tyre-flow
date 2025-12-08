@@ -144,7 +144,16 @@
     "generateCount": "生成数量",
     "generateCountHint": "每个收集点生成的门店数量（1000-4000）",
     "generating": "正在生成门店...",
-    "generateSuccess": "成功生成 {count} 家门店"
+    "generateSuccess": "成功生成 {count} 家门店",
+    "exportExcel": "导出 Excel",
+    "export": "导出",
+    "allCollectionPoints": "全部收集点",
+    "allStatus": "全部状态",
+    "hasEstimatedTime": "预估行程",
+    "hasEstimatedTimeYes": "有预估行程 (>0)",
+    "hasEstimatedTimeNo": "无预估行程 (=0)",
+    "onlyHasEstimatedTime": "仅导出有预估行程的门店 (行程 > 0)",
+    "onlyActiveStores": "仅导出正常状态的门店"
   },
   "vehicles": {
     "title": "车辆管理",
@@ -202,7 +211,9 @@
     "generating": "正在生成...",
     "generateStoresSuccess": "成功生成 {count} 家门店",
     "generateVehiclesSuccess": "成功生成 {count} 辆车辆",
-    "selectCollectionPoint": "请选择收集点"
+    "selectCollectionPoint": "请选择收集点",
+    "includeNonVirtual": "同时清理非虚拟门店（导入的真实数据）",
+    "includeNonVirtualWarning": "⚠️ 勾选后将清理所有门店数据，包括导入的真实门店数据！"
   },
   "ledgers": {
     "title": "台账管理",
@@ -315,6 +326,7 @@
     "totalStores": "门店总数",
     "geocodeFailedCount": "编码失败",
     "disabledCount": "已停用",
+    "routePendingCount": "待路径规划",
     "noStoresNeedGeocode": "没有需要进行地理编码的门店",
     "geocodeComplete": "地理编码处理完成",
     "markAsDisabled": "标记为停用 ({count})",

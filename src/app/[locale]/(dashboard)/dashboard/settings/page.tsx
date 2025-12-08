@@ -18,6 +18,7 @@ import {
   Col,
   Statistic,
   Progress,
+  Checkbox,
 } from 'antd';
 import {
   SettingOutlined,
@@ -142,6 +143,56 @@ export default function SettingsPage() {
       vehicles: t('menu.vehicles'),
       ledgers: t('menu.ledgers'),
     };
+
+    // 门店清理需要额外选项
+    if (type === 'stores') {
+      let includeNonVirtual = false;
+      modal.confirm({
+        title: t('settings.dataCleanup'),
+        icon: <ExclamationCircleOutlined />,
+        content: (
+          <div>
+            <p>{t('settings.cleanupConfirm', { type: typeNames[type] })}</p>
+            <Checkbox
+              onChange={(e) => {
+                includeNonVirtual = e.target.checked;
+              }}
+            >
+              {t('settings.includeNonVirtual')}
+            </Checkbox>
+            <p style={{ color: '#ff4d4f', fontSize: 12, marginTop: 8 }}>
+              {t('settings.includeNonVirtualWarning')}
+            </p>
+          </div>
+        ),
+        okText: t('common.confirm'),
+        okType: 'danger',
+        cancelText: t('common.cancel'),
+        onOk: async () => {
+          setCleaning(true);
+          try {
+            const response = await fetch('/api/test-zone/cleanup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type, includeNonVirtual }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+              message.success(t('settings.cleanupSuccess', { count: result.count }));
+            } else {
+              message.error(result.message || t('common.error'));
+            }
+          } catch {
+            message.error(t('common.error'));
+          } finally {
+            setCleaning(false);
+          }
+        },
+      });
+      return;
+    }
 
     modal.confirm({
       title: t('settings.dataCleanup'),

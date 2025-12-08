@@ -268,12 +268,20 @@ export default function StoreCleanupPage() {
 
   // 执行路径规划
   const handleRoutePlan = async () => {
-    const successStores = stores.filter(s => s.geocodeStatus === 'success' && s.longitude && s.latitude);
+    // 只选择待规划的门店（有坐标但行程为0）
+    const pendingRoutePlanStores = stores.filter(
+      s => s.geocodeStatus === 'success' && 
+           s.longitude && 
+           s.latitude && 
+           s.estimatedTravelMinutes === 0
+    );
     
-    if (successStores.length === 0) {
+    if (pendingRoutePlanStores.length === 0) {
       message.info(t('storeCleanup.noStoresNeedRoutePlan'));
       return;
     }
+    
+    const successStores = pendingRoutePlanStores;
 
     setRoutePlanning(true);
     setProgress(0);
@@ -353,12 +361,19 @@ export default function StoreCleanupPage() {
     failed: stores.filter(s => s.geocodeStatus === 'failed').length,
     pending: stores.filter(s => s.geocodeStatus === 'pending').length,
     disabled: stores.filter(s => s.status === 'DISABLED').length,
+    // 待路径规划：已有坐标但行程为0的门店
+    routePending: stores.filter(s => 
+      s.geocodeStatus === 'success' && 
+      s.longitude && 
+      s.latitude && 
+      s.estimatedTravelMinutes === 0
+    ).length,
   };
 
   // 是否所有门店都已经有坐标（无需编码）
   const allGeocoded = stats.total > 0 && stats.pending === 0 && stats.failed === 0;
-  // 是否可以进行路径规划（有成功编码的门店）
-  const canRoutePlan = stats.success > 0;
+  // 是否可以进行路径规划（有待规划的门店）
+  const canRoutePlan = stats.routePending > 0;
 
   // 过滤显示的数据
   const displayStores = hideSuccess
@@ -612,6 +627,16 @@ export default function StoreCleanupPage() {
                     value={stats.pending}
                     valueStyle={{ color: '#faad14' }}
                     prefix={<SyncOutlined />}
+                  />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card size="small">
+                  <Statistic
+                    title={t('storeCleanup.routePendingCount')}
+                    value={stats.routePending}
+                    valueStyle={{ color: '#1890ff' }}
+                    prefix={<CarOutlined />}
                   />
                 </Card>
               </Col>

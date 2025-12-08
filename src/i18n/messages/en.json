@@ -144,7 +144,16 @@
     "generateCount": "Generate Count",
     "generateCountHint": "Number of stores to generate per collection point (1000-4000)",
     "generating": "Generating stores...",
-    "generateSuccess": "Successfully generated {count} stores"
+    "generateSuccess": "Successfully generated {count} stores",
+    "exportExcel": "Export Excel",
+    "export": "Export",
+    "allCollectionPoints": "All Collection Points",
+    "allStatus": "All Status",
+    "hasEstimatedTime": "Estimated Time",
+    "hasEstimatedTimeYes": "Has estimated time (>0)",
+    "hasEstimatedTimeNo": "No estimated time (=0)",
+    "onlyHasEstimatedTime": "Only export stores with estimated time (time > 0)",
+    "onlyActiveStores": "Only export active stores"
   },
   "vehicles": {
     "title": "Vehicle Management",
@@ -202,7 +211,9 @@
     "generating": "Generating...",
     "generateStoresSuccess": "Successfully generated {count} stores",
     "generateVehiclesSuccess": "Successfully generated {count} vehicles",
-    "selectCollectionPoint": "Please select a collection point"
+    "selectCollectionPoint": "Please select a collection point",
+    "includeNonVirtual": "Also cleanup non-virtual stores (imported real data)",
+    "includeNonVirtualWarning": "⚠️ When checked, all store data will be cleaned including imported real store data!"
   },
   "ledgers": {
     "title": "Ledger Management",
@@ -315,6 +326,7 @@
     "totalStores": "Total Stores",
     "geocodeFailedCount": "Failed",
     "disabledCount": "Disabled",
+    "routePendingCount": "Route Pending",
     "noStoresNeedGeocode": "No stores need geocoding",
     "geocodeComplete": "Geocoding completed",
     "markAsDisabled": "Mark as Disabled ({count})",

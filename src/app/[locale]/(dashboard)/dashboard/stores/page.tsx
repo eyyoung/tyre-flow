@@ -17,6 +17,7 @@ import {
   Col,
   App,
   Descriptions,
+  Checkbox,
 } from 'antd';
 import {
   PlusOutlined,
@@ -27,6 +28,7 @@ import {
   ShopOutlined,
   CarOutlined,
   EnvironmentOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -82,6 +84,11 @@ export default function StoresPage() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Store | null>(null);
   const [form] = Form.useForm();
+  
+  // 导出相关状态
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportForm] = Form.useForm();
+  const [exporting, setExporting] = useState(false);
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -201,6 +208,50 @@ export default function StoresPage() {
       }
     } catch {
       // 表单验证失败
+    }
+  };
+
+  // 导出 Excel
+  const handleExport = async () => {
+    try {
+      const values = await exportForm.validateFields();
+      setExporting(true);
+
+      const params = new URLSearchParams();
+      if (values.collectionPointId) {
+        params.set('collectionPointId', values.collectionPointId);
+      }
+      if (values.onlyActive) {
+        params.set('status', 'ACTIVE');
+      }
+      if (values.isVirtual !== undefined && values.isVirtual !== '') {
+        params.set('isVirtual', values.isVirtual);
+      }
+      if (values.hasEstimatedTime) {
+        params.set('hasEstimatedTime', 'true');
+      }
+
+      const response = await fetch(`/api/stores/export?${params}`);
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `门店列表_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setExportModalVisible(false);
+        message.success(t('common.success'));
+      } else {
+        message.error(t('common.error'));
+      }
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -364,6 +415,20 @@ export default function StoresPage() {
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             {t('stores.addStore')}
+          </Button>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => {
+              exportForm.resetFields();
+              exportForm.setFieldsValue({
+                isVirtual: 'false',
+                onlyActive: true,
+                hasEstimatedTime: true,
+              });
+              setExportModalVisible(true);
+            }}
+          >
+            {t('stores.exportExcel')}
           </Button>
         </Space>
 
@@ -540,6 +605,46 @@ export default function StoresPage() {
               />
             </Form.Item>
           )}
+        </Form>
+      </Modal>
+
+      {/* 导出 Excel 弹窗 */}
+      <Modal
+        title={t('stores.exportExcel')}
+        open={exportModalVisible}
+        onOk={handleExport}
+        onCancel={() => setExportModalVisible(false)}
+        confirmLoading={exporting}
+        okText={t('stores.export')}
+        width={500}
+      >
+        <Form form={exportForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="collectionPointId" label={t('stores.collectionPoint')}>
+            <Select
+              placeholder={t('stores.allCollectionPoints')}
+              allowClear
+              options={collectionPoints.map((cp) => ({
+                value: cp.id,
+                label: cp.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="isVirtual" label={t('stores.isVirtual')}>
+            <Select
+              placeholder={t('common.all')}
+              allowClear
+              options={[
+                { value: 'true', label: t('common.yes') },
+                { value: 'false', label: t('common.no') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="onlyActive" valuePropName="checked">
+            <Checkbox>{t('stores.onlyActiveStores')}</Checkbox>
+          </Form.Item>
+          <Form.Item name="hasEstimatedTime" valuePropName="checked">
+            <Checkbox>{t('stores.onlyHasEstimatedTime')}</Checkbox>
+          </Form.Item>
         </Form>
       </Modal>
     </div>

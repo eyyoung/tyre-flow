@@ -101,6 +101,31 @@ function parseCoordinate(value: string | number | null | undefined): number | nu
   return isNaN(num) ? null : num;
 }
 
+// 清理地址中的重复省市区信息
+// 如果详细地址已经包含省市区信息，则将 province/city/district 设为 null，避免二次拼接
+function cleanupAddressFields(store: ImportStore): ImportStore {
+  const { address, province, city, district } = store;
+  
+  if (!address) return store;
+  
+  // 检查地址是否已经包含省市区信息
+  const hasProvince = province && address.includes(province);
+  const hasCity = city && address.includes(city);
+  const hasDistrict = district && address.includes(district);
+  
+  // 如果地址已经包含省市区信息，则清除这些字段避免重复
+  if (hasProvince || hasCity || hasDistrict) {
+    return {
+      ...store,
+      province: hasProvince ? null : province,
+      city: hasCity ? null : city,
+      district: hasDistrict ? null : district,
+    };
+  }
+  
+  return store;
+}
+
 // 生成门店编码
 function generateStoreCode(collectionPointCode: string, index: number): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -126,8 +151,8 @@ export async function POST(request: NextRequest) {
         stores: (ImportStoreOld | ImportStoreNew)[];
       };
       
-      // 统一转换所有门店数据格式
-      const stores: ImportStore[] = rawStores.map(normalizeStoreData);
+      // 统一转换所有门店数据格式，并清理重复的省市区信息
+      const stores: ImportStore[] = rawStores.map(normalizeStoreData).map(cleanupAddressFields);
 
       // 验证收集点
       if (!collectionPointId) {
