@@ -276,7 +276,17 @@
     "selectRecordTypeRequired": "Please select a record type",
     "loadingWeight": "Loading Weight",
     "queryChart": "Query Chart",
-    "noDataForChart": "No data available, please adjust query conditions"
+    "noDataForChart": "No data available, please adjust query conditions",
+    "suggestedTonnage": "Suggested Target Tonnage",
+    "suggestedTonnageRange": "Suggested Range",
+    "tonnageBottleneckStore": "Store capacity limited",
+    "tonnageBottleneckVehicle": "Vehicle capacity limited",
+    "activeStoreCount": "Active Stores",
+    "avgTravelMinutes": "Avg. Travel",
+    "tripsPerVehiclePerDay": "Trips/Vehicle/Day",
+    "tonnageWarning": "⚠️ {warning}",
+    "loadingEstimate": "Calculating suggestions...",
+    "selectDateFirst": "Please select date range first"
   },
   "validation": {
     "required": "{field} is required",

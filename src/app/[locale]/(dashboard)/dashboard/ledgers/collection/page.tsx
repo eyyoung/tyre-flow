@@ -22,6 +22,8 @@ import {
   Statistic,
   Row,
   Col,
+  Alert,
+  Tooltip,
 } from 'antd';
 import {
   PlusOutlined,
@@ -32,6 +34,7 @@ import {
   FileTextOutlined,
   EyeOutlined,
   CheckCircleOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -95,6 +98,24 @@ interface GenerationSummary {
   vehiclesCount: number;
 }
 
+interface TonnageEstimate {
+  minTonnage: number;
+  maxTonnage: number;
+  storeCount: number;
+  activeStoreCount: number;
+  vehicleCount: number;
+  totalDays: number;
+  avgTravelMinutes: number;
+  tripsPerVehiclePerDay: number;
+  bottleneck: 'store' | 'vehicle';
+  warning?: string;
+  details: {
+    storeMaxCapacityKg: number;
+    vehicleMaxCapacityKg: number;
+    effectiveMaxCapacityKg: number;
+  };
+}
+
 export default function CollectionLedgerPage() {
   const t = useTranslations();
   const { message } = App.useApp();
@@ -118,6 +139,8 @@ export default function CollectionLedgerPage() {
   const [creating, setCreating] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
+  const [tonnageEstimate, setTonnageEstimate] = useState<TonnageEstimate | null>(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
 
   const fetchCollectionPoints = useCallback(async () => {
     try {
@@ -128,6 +151,36 @@ export default function CollectionLedgerPage() {
       }
     } catch {
       // ignore
+    }
+  }, []);
+
+  // 获取建议吨数区间
+  const fetchTonnageEstimate = useCallback(async (collectionPointId: string, dateRange: [dayjs.Dayjs, dayjs.Dayjs]) => {
+    if (!collectionPointId || !dateRange || dateRange.length !== 2) {
+      setTonnageEstimate(null);
+      return;
+    }
+
+    setEstimateLoading(true);
+    try {
+      const params = new URLSearchParams({
+        collectionPointId,
+        startDate: dateRange[0].format('YYYY-MM-DD'),
+        endDate: dateRange[1].format('YYYY-MM-DD'),
+      });
+
+      const response = await fetch(`/api/ledgers/estimate?${params}`);
+      const result = await response.json();
+
+      if (response.ok) {
+        setTonnageEstimate(result.data);
+      } else {
+        setTonnageEstimate(null);
+      }
+    } catch {
+      setTonnageEstimate(null);
+    } finally {
+      setEstimateLoading(false);
     }
   }, []);
 
@@ -188,10 +241,19 @@ export default function CollectionLedgerPage() {
   const handleModalAfterOpenChange = (open: boolean) => {
     if (open) {
       // 使用独立的 dayjs 实例避免循环引用警告
+      const defaultDateRange: [dayjs.Dayjs, dayjs.Dayjs] = [dayjs().startOf('month'), dayjs().endOf('month')];
       form.setFieldsValue({
-        dateRange: [dayjs().startOf('month'), dayjs().endOf('month')],
+        dateRange: defaultDateRange,
         targetTonnage: 10, // 默认目标重量 10 吨
       });
+      // 如果已选择了收集点，则获取建议吨数
+      const collectionPointId = form.getFieldValue('collectionPointId');
+      if (collectionPointId) {
+        fetchTonnageEstimate(collectionPointId, defaultDateRange);
+      }
+    } else {
+      // 关闭时重置建议值
+      setTonnageEstimate(null);
     }
   };
 
@@ -580,6 +642,14 @@ export default function CollectionLedgerPage() {
                   value: cp.id,
                   label: cp.name,
                 }))}
+                onChange={(value) => {
+                  const dateRange = form.getFieldValue('dateRange');
+                  if (value && dateRange) {
+                    fetchTonnageEstimate(value, dateRange);
+                  } else {
+                    setTonnageEstimate(null);
+                  }
+                }}
               />
             </Form.Item>
             <Form.Item
@@ -587,15 +657,135 @@ export default function CollectionLedgerPage() {
               label={t('ledgers.dateRange')}
               rules={[{ required: true, message: '请选择时间范围' }]}
             >
-              <RangePicker style={{ width: '100%' }} />
+              <RangePicker
+                style={{ width: '100%' }}
+                onChange={(dates) => {
+                  const collectionPointId = form.getFieldValue('collectionPointId');
+                  if (collectionPointId && dates && dates.length === 2) {
+                    fetchTonnageEstimate(collectionPointId, dates as [dayjs.Dayjs, dayjs.Dayjs]);
+                  } else {
+                    setTonnageEstimate(null);
+                  }
+                }}
+              />
             </Form.Item>
+
+            {/* 建议吨数区间显示 */}
+            {estimateLoading && (
+              <div style={{ marginBottom: 16, textAlign: 'center', color: '#999' }}>
+                <Spin size="small" style={{ marginRight: 8 }} />
+                {t('ledgers.loadingEstimate')}
+              </div>
+            )}
+
+            {tonnageEstimate && !estimateLoading && (
+              tonnageEstimate.warning ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message={t('ledgers.tonnageWarning', { warning: tonnageEstimate.warning })}
+                />
+              ) : (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: '12px 16px',
+                    background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+                    borderRadius: 8,
+                    border: '1px solid #bae6fd',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <Space size={12}>
+                      <span style={{ color: '#64748b', fontSize: 13 }}>{t('ledgers.suggestedTonnageRange')}</span>
+                      <span style={{ fontSize: 20, fontWeight: 600, color: '#0369a1' }}>
+                        {tonnageEstimate.minTonnage} ~ {tonnageEstimate.maxTonnage}
+                      </span>
+                      <span style={{ color: '#64748b', fontSize: 13 }}>吨</span>
+                    </Space>
+                    <Tooltip
+                      title={
+                        tonnageEstimate.bottleneck === 'store'
+                          ? t('ledgers.tonnageBottleneckStore')
+                          : t('ledgers.tonnageBottleneckVehicle')
+                      }
+                    >
+                      <Tag
+                        color={tonnageEstimate.bottleneck === 'store' ? 'orange' : 'blue'}
+                        style={{ margin: 0, cursor: 'help' }}
+                      >
+                        {tonnageEstimate.bottleneck === 'store' ? '门店限制' : '车辆限制'}
+                      </Tag>
+                    </Tooltip>
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 24,
+                      paddingTop: 10,
+                      borderTop: '1px dashed #cbd5e1',
+                    }}
+                  >
+                    <Tooltip title="活跃门店数（排除冷门店）">
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, cursor: 'help' }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>门店</span>
+                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.activeStoreCount}</span>
+                      </div>
+                    </Tooltip>
+                    <Tooltip title="收集车辆数量">
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, cursor: 'help' }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>车辆</span>
+                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.vehicleCount}</span>
+                      </div>
+                    </Tooltip>
+                    <Tooltip title="门店到收集点的平均行程时间">
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, cursor: 'help' }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>行程</span>
+                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.avgTravelMinutes}</span>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>分钟</span>
+                      </div>
+                    </Tooltip>
+                    <Tooltip title="根据平均行程估算的每车每日趟数">
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, cursor: 'help' }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>每车/日</span>
+                        <span style={{ color: '#334155', fontWeight: 500 }}>{tonnageEstimate.tripsPerVehiclePerDay}</span>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>趟</span>
+                      </div>
+                    </Tooltip>
+                  </div>
+                </div>
+              )
+            )}
+
             <Form.Item
               name="targetTonnage"
-              label={t('ledgers.targetWeight')}
+              label={
+                <Space>
+                  {t('ledgers.targetWeight')}
+                  {tonnageEstimate && !tonnageEstimate.warning && (
+                    <Tooltip title={`建议设置在 ${tonnageEstimate.minTonnage}~${tonnageEstimate.maxTonnage} t 之间，以确保较高的完成率`}>
+                      <InfoCircleOutlined style={{ color: '#1890ff' }} />
+                    </Tooltip>
+                  )}
+                </Space>
+              }
               rules={[{ required: true }]}
             >
               <Space.Compact>
-                <InputNumber min={0.1} max={1000} step={0.1} style={{ width: 160 }} />
+                <InputNumber
+                  min={0.1}
+                  max={1000}
+                  step={0.1}
+                  style={{ width: 160 }}
+                  status={
+                    tonnageEstimate &&
+                    !tonnageEstimate.warning &&
+                    form.getFieldValue('targetTonnage') > tonnageEstimate.maxTonnage
+                      ? 'warning'
+                      : undefined
+                  }
+                />
                 <Button disabled style={{ pointerEvents: 'none' }}>t (吨)</Button>
               </Space.Compact>
             </Form.Item>

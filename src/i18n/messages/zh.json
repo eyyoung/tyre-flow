@@ -276,7 +276,17 @@
     "selectRecordTypeRequired": "请选择记录类型",
     "loadingWeight": "装车重量",
     "queryChart": "查询图表",
-    "noDataForChart": "暂无数据，请调整查询条件"
+    "noDataForChart": "暂无数据，请调整查询条件",
+    "suggestedTonnage": "建议目标吨数",
+    "suggestedTonnageRange": "建议区间",
+    "tonnageBottleneckStore": "门店产能限制",
+    "tonnageBottleneckVehicle": "车辆运力限制",
+    "activeStoreCount": "活跃门店",
+    "avgTravelMinutes": "平均行程",
+    "tripsPerVehiclePerDay": "每车每日趟数",
+    "tonnageWarning": "⚠️ {warning}",
+    "loadingEstimate": "正在计算建议值...",
+    "selectDateFirst": "请先选择时间范围"
   },
   "validation": {
     "required": "{field}不能为空",
