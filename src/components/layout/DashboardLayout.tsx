@@ -143,11 +143,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/vehicles",
       icon: <CarOutlined />,
-      label: (
-        <Link href={`/${currentLocale}/dashboard/vehicles`}>
-          {t("menu.vehicles")}
-        </Link>
-      ),
+      label: t("menu.vehicles"),
+      children: [
+        {
+          key: "/dashboard/vehicles/list",
+          icon: <UnorderedListOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/vehicles`}>
+              {t("menu.vehicleList")}
+            </Link>
+          ),
+        },
+        {
+          key: "/dashboard/vehicles/import",
+          icon: <ImportOutlined />,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/vehicles/import`}>
+              {t("menu.vehicleImport")}
+            </Link>
+          ),
+        },
+      ],
     },
     {
       key: "/dashboard/ledgers",
@@ -225,6 +241,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     // 门店列表页特殊处理：/dashboard/stores 映射到 /dashboard/stores/list
     if (currentPath === "/dashboard/stores") {
       return "/dashboard/stores/list";
+    }
+
+    // 车辆列表页特殊处理：/dashboard/vehicles 映射到 /dashboard/vehicles/list
+    if (currentPath === "/dashboard/vehicles") {
+      return "/dashboard/vehicles/list";
     }
 
     // 精确匹配优先
