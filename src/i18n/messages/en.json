@@ -313,7 +313,7 @@
   "storeCleanup": {
     "title": "Store Data Cleanup",
     "description": "Address Geocoding",
-    "descriptionDetail": "Convert store addresses to coordinates using Amap geocoding service. Stores that fail to convert can be marked as disabled. Please configure the Amap API Key (AMAP_API_KEY) in system settings or environment variables first.",
+    "descriptionDetail": "Convert store addresses to coordinates using Amap geocoding service. Stores that fail to convert can be marked as disabled. Route planning will be processed automatically in the background (checks every minute). Please configure the Amap API Key (AMAP_API_KEY) in system settings or environment variables first.",
     "selectCollectionPoint": "Select Collection Point",
     "selectCollectionPointPlaceholder": "Select collection point to cleanup data",
     "startGeocode": "Start Geocoding",
@@ -326,7 +326,7 @@
     "totalStores": "Total Stores",
     "geocodeFailedCount": "Failed",
     "disabledCount": "Disabled",
-    "routePendingCount": "Route Pending",
+    "routePendingCount": "Route Pending(Auto)",
     "noStoresNeedGeocode": "No stores need geocoding",
     "geocodeComplete": "Geocoding completed",
     "markAsDisabled": "Mark as Disabled ({count})",

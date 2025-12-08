@@ -348,7 +348,7 @@ export async function generateLedgerData(
   const config = await getConfig();
   const totalDays = getDaysInRange(startDate, endDate);
 
-  const [stores, collectionVehicles] = await Promise.all([
+  const [allStores, collectionVehicles] = await Promise.all([
     prisma.store.findMany({
       where: { collectionPointId, status: 'ACTIVE' },
       select: { id: true, code: true, name: true, estimatedTravelMinutes: true },
@@ -359,8 +359,13 @@ export async function generateLedgerData(
     }),
   ]);
 
+  // 过滤掉预估时间为 0 或没有预估时间的门店
+  const stores = allStores.filter(
+    (store) => store.estimatedTravelMinutes && store.estimatedTravelMinutes > 0
+  );
+
   if (stores.length === 0) {
-    throw new Error('该收集点没有可用的门店');
+    throw new Error('该收集点没有可用的门店（所有门店预估时间为空或为0）');
   }
   if (collectionVehicles.length === 0) {
     throw new Error('该收集点没有可用的收集车辆');

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Table,
@@ -66,14 +66,6 @@ interface GeocodeResult {
   error?: string;
 }
 
-interface RoutePlanResult {
-  storeId: string;
-  success: boolean;
-  duration?: number;
-  distance?: number;
-  error?: string;
-}
-
 export default function StoreCleanupPage() {
   const t = useTranslations();
   const { message, modal } = App.useApp();
@@ -82,7 +74,6 @@ export default function StoreCleanupPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
-  const [routePlanning, setRoutePlanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hideSuccess, setHideSuccess] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -143,6 +134,65 @@ export default function StoreCleanupPage() {
       setStores([]);
     }
   }, [selectedCollectionPoint, fetchStores]);
+
+  // 自动刷新：当有待路径规划的门店时，每 5 秒刷新一次数据
+  const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    // 清除之前的定时器
+    if (autoRefreshRef.current) {
+      clearInterval(autoRefreshRef.current);
+      autoRefreshRef.current = null;
+    }
+
+    if (!selectedCollectionPoint) return;
+
+    // 静默刷新函数
+    const silentRefresh = async () => {
+      try {
+        const res = await fetch(`/api/stores?${new URLSearchParams({
+          collectionPointId: selectedCollectionPoint,
+          pageSize: '9999',
+          isVirtual: 'false',
+        })}`);
+        const result = await res.json();
+        if (result.data) {
+          const storesWithStatus = result.data.map((store: Store) => ({
+            ...store,
+            geocodeStatus: store.longitude && store.latitude ? 'success' : 'pending',
+          }));
+          
+          // 检查是否还有待规划的门店
+          const stillPending = storesWithStatus.some((s: Store) => 
+            s.geocodeStatus === 'success' && 
+            s.longitude && 
+            s.latitude && 
+            s.estimatedTravelMinutes === 0
+          );
+          
+          setStores(storesWithStatus);
+          
+          // 如果没有待规划的了，停止自动刷新
+          if (!stillPending && autoRefreshRef.current) {
+            clearInterval(autoRefreshRef.current);
+            autoRefreshRef.current = null;
+          }
+        }
+      } catch {
+        // 静默失败
+      }
+    };
+
+    // 设置定时器，每 5 秒刷新一次
+    autoRefreshRef.current = setInterval(silentRefresh, 5000);
+
+    return () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+        autoRefreshRef.current = null;
+      }
+    };
+  }, [selectedCollectionPoint]);
 
   // 执行地理编码
   const handleGeocode = async () => {
@@ -266,94 +316,6 @@ export default function StoreCleanupPage() {
     }
   };
 
-  // 执行路径规划
-  const handleRoutePlan = async () => {
-    // 只选择待规划的门店（有坐标但行程为0）
-    const pendingRoutePlanStores = stores.filter(
-      s => s.geocodeStatus === 'success' && 
-           s.longitude && 
-           s.latitude && 
-           s.estimatedTravelMinutes === 0
-    );
-    
-    if (pendingRoutePlanStores.length === 0) {
-      message.info(t('storeCleanup.noStoresNeedRoutePlan'));
-      return;
-    }
-    
-    const successStores = pendingRoutePlanStores;
-
-    setRoutePlanning(true);
-    setProgress(0);
-
-    const batchSize = 5; // 每批处理5个
-    const batches = [];
-    for (let i = 0; i < successStores.length; i += batchSize) {
-      batches.push(successStores.slice(i, i + batchSize));
-    }
-
-    let processedCount = 0;
-    const updatedStores = [...stores];
-
-    for (const batch of batches) {
-      try {
-        const response = await fetch('/api/stores/route-plan', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            collectionPointId: selectedCollectionPoint,
-            stores: batch.map(s => ({
-              id: s.id,
-              longitude: s.longitude,
-              latitude: s.latitude,
-            })),
-          }),
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-          // 更新门店状态
-          result.results.forEach((r: RoutePlanResult) => {
-            const index = updatedStores.findIndex(s => s.id === r.storeId);
-            if (index !== -1) {
-              updatedStores[index] = {
-                ...updatedStores[index],
-                routeStatus: r.success ? 'success' : 'failed',
-                estimatedTravelMinutes: r.duration || updatedStores[index].estimatedTravelMinutes,
-                routeError: r.error,
-              };
-            }
-          });
-        }
-      } catch {
-        // 标记当前批次为失败
-        batch.forEach(store => {
-          const index = updatedStores.findIndex(s => s.id === store.id);
-          if (index !== -1) {
-            updatedStores[index] = {
-              ...updatedStores[index],
-              routeStatus: 'failed',
-              routeError: t('storeCleanup.networkError'),
-            };
-          }
-        });
-      }
-
-      processedCount += batch.length;
-      setProgress(Math.round((processedCount / successStores.length) * 100));
-      setStores([...updatedStores]);
-
-      // 添加延迟，避免请求过快
-      if (batches.indexOf(batch) < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-
-    setRoutePlanning(false);
-    message.success(t('storeCleanup.routePlanComplete'));
-  };
-
   // 统计数据
   const stats = {
     total: stores.length,
@@ -372,8 +334,6 @@ export default function StoreCleanupPage() {
 
   // 是否所有门店都已经有坐标（无需编码）
   const allGeocoded = stats.total > 0 && stats.pending === 0 && stats.failed === 0;
-  // 是否可以进行路径规划（有待规划的门店）
-  const canRoutePlan = stats.routePending > 0;
 
   // 过滤显示的数据
   const displayStores = hideSuccess
@@ -532,18 +492,9 @@ export default function StoreCleanupPage() {
                   icon={<EnvironmentOutlined />}
                   onClick={handleGeocode}
                   loading={geocoding}
-                  disabled={allGeocoded || routePlanning}
+                  disabled={allGeocoded}
                 >
                   {allGeocoded ? t('storeCleanup.allGeocoded') : t('storeCleanup.startGeocode')}
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<CarOutlined />}
-                  onClick={handleRoutePlan}
-                  loading={routePlanning}
-                  disabled={!canRoutePlan || geocoding}
-                >
-                  {t('storeCleanup.startRoutePlan')}
                 </Button>
                 <Popconfirm
                   title={t('storeCleanup.markDisabledConfirm')}
@@ -569,16 +520,16 @@ export default function StoreCleanupPage() {
           </Col>
         </Row>
 
-        {(geocoding || routePlanning) && (
+        {geocoding && (
           <Progress
             percent={progress}
             status="active"
-            format={() => geocoding ? t('storeCleanup.geocodingProgress') : t('storeCleanup.routePlanningProgress')}
+            format={() => t('storeCleanup.geocodingProgress')}
             style={{ marginBottom: 24 }}
           />
         )}
 
-        {allGeocoded && !geocoding && !routePlanning && (
+        {allGeocoded && !geocoding && (
           <Alert
             message={t('storeCleanup.allGeocodedMessage')}
             description={t('storeCleanup.allGeocodedDesc')}
@@ -636,7 +587,7 @@ export default function StoreCleanupPage() {
                     title={t('storeCleanup.routePendingCount')}
                     value={stats.routePending}
                     valueStyle={{ color: '#1890ff' }}
-                    prefix={<CarOutlined />}
+                    prefix={stats.routePending > 0 ? <SyncOutlined spin /> : <CarOutlined />}
                   />
                 </Card>
               </Col>

@@ -313,7 +313,7 @@
   "storeCleanup": {
     "title": "门店数据清理",
     "description": "地址坐标转换",
-    "descriptionDetail": "通过高德地图地理编码服务，将门店地址转换为经纬度坐标。转换失败的门店可以标记为停用状态。请先在系统设置或环境变量中配置高德地图 API Key（AMAP_API_KEY）。",
+    "descriptionDetail": "通过高德地图地理编码服务，将门店地址转换为经纬度坐标。转换失败的门店可以标记为停用状态。路径规划将在后台自动进行（每分钟检测一次）。请先在系统设置或环境变量中配置高德地图 API Key（AMAP_API_KEY）。",
     "selectCollectionPoint": "选择收集点",
     "selectCollectionPointPlaceholder": "请选择要清理数据的收集点",
     "startGeocode": "开始地理编码",
@@ -326,7 +326,7 @@
     "totalStores": "门店总数",
     "geocodeFailedCount": "编码失败",
     "disabledCount": "已停用",
-    "routePendingCount": "待路径规划",
+    "routePendingCount": "待路径规划(自动)",
     "noStoresNeedGeocode": "没有需要进行地理编码的门店",
     "geocodeComplete": "地理编码处理完成",
     "markAsDisabled": "标记为停用 ({count})",
