@@ -1,5 +1,5 @@
-import prisma from './db';
-import { adjustToChineseTimezone } from './timezone';
+import prisma from "./db";
+import { adjustToChineseTimezone } from "./timezone";
 
 interface GeneratorConfig {
   tireWeightKg: number;
@@ -10,10 +10,10 @@ interface GeneratorConfig {
   lossRatioMin: number;
   lossRatioMax: number;
   // 新增配置项
-  minStopsPerTrip: number;       // 每趟最少停靠门店数
-  maxStopsPerTrip: number;       // 每趟最多停靠门店数
-  overloadRatio: number;         // 允许超载比例 (如 1.15 表示允许超载15%)
-  overloadProbability: number;   // 超载概率 (0-1)
+  minStopsPerTrip: number; // 每趟最少停靠门店数
+  maxStopsPerTrip: number; // 每趟最多停靠门店数
+  overloadRatio: number; // 允许超载比例 (如 1.15 表示允许超载15%)
+  overloadProbability: number; // 超载概率 (0-1)
 }
 
 interface StoreInfo {
@@ -31,7 +31,7 @@ interface CollectionRecordData {
   vehicleId: string;
   collectionDate: Date;
   loadingTime: Date;
-  unloadingTime: Date | null;  // 只有最后一站才有卸车时间
+  unloadingTime: Date | null; // 只有最后一站才有卸车时间
   tireCount: number;
   loadingNetWeight: number;
   unloadingNetWeight: number;
@@ -56,11 +56,11 @@ interface StopInfo {
 // 多站点行程
 interface MultiStopTrip {
   vehicleId: string;
-  departureTime: Date;        // 从收集点出发时间
-  returnTime: Date;           // 返回收集点时间
-  stops: StopInfo[];          // 各门店停靠信息
-  totalWeight: number;        // 总收集重量
-  totalTireCount: number;     // 总轮胎数
+  departureTime: Date; // 从收集点出发时间
+  returnTime: Date; // 返回收集点时间
+  stops: StopInfo[]; // 各门店停靠信息
+  totalWeight: number; // 总收集重量
+  totalTireCount: number; // 总轮胎数
 }
 
 // 收集点信息（包含坐标）
@@ -72,8 +72,8 @@ interface CollectionPointInfo {
 
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -226,11 +226,17 @@ class VehicleScheduler {
     // 2. 前一天出发但返回时间在当天的行程（跨天行程）
     const relevantSlots = slots.filter((slot) => {
       // 当天出发
-      if (slot.departureTime >= targetDayStart && slot.departureTime <= targetDayEnd) {
+      if (
+        slot.departureTime >= targetDayStart &&
+        slot.departureTime <= targetDayEnd
+      ) {
         return true;
       }
       // 跨天：前一天出发，但返回时间延伸到当天
-      if (slot.departureTime < targetDayStart && slot.returnTime > targetDayStart) {
+      if (
+        slot.departureTime < targetDayStart &&
+        slot.returnTime > targetDayStart
+      ) {
         return true;
       }
       return false;
@@ -241,7 +247,9 @@ class VehicleScheduler {
     }
 
     // 找出最晚的返回时间
-    const latestReturnTime = Math.max(...relevantSlots.map((s) => s.returnTime.getTime()));
+    const latestReturnTime = Math.max(
+      ...relevantSlots.map((s) => s.returnTime.getTime())
+    );
     const latestReturn = new Date(latestReturnTime);
 
     // 如果最晚返回时间在工作开始时间之前，返回工作开始时间
@@ -268,9 +276,7 @@ class VehicleScheduler {
       // 2. 新行程的返回时间在已有行程进行中
       // 3. 新行程完全包含已有行程
       // 4. 新行程在已有行程返回之前出发（关键检查）
-      if (
-        departureTime < slot.returnTime && returnTime > slot.departureTime
-      ) {
+      if (departureTime < slot.returnTime && returnTime > slot.departureTime) {
         return true;
       }
     }
@@ -289,7 +295,9 @@ class VehicleScheduler {
     if (!this.schedules.has(vehicleId)) {
       this.schedules.set(vehicleId, []);
     }
-    this.schedules.get(vehicleId)!.push({ departureTime, arrivalTime, returnTime });
+    this.schedules
+      .get(vehicleId)!
+      .push({ departureTime, arrivalTime, returnTime });
   }
 
   /**
@@ -302,7 +310,9 @@ class VehicleScheduler {
     day: number
   ): number {
     const slots = this.schedules.get(vehicleId) || [];
-    const targetDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const targetDateStr = `${year}-${String(month).padStart(2, "0")}-${String(
+      day
+    ).padStart(2, "0")}`;
     return slots.filter(
       (slot) => formatLocalDate(slot.departureTime) === targetDateStr
     ).length;
@@ -314,29 +324,29 @@ async function getConfig(): Promise<GeneratorConfig> {
   const configMap = new Map(configs.map((c) => [c.key, c.value]));
 
   return {
-    tireWeightKg: parseFloat(configMap.get('tire_weight_kg') || '10'),
+    tireWeightKg: parseFloat(configMap.get("tire_weight_kg") || "10"),
     collectionTireLimit: parseInt(
-      configMap.get('collection_tire_limit') || '200'
+      configMap.get("collection_tire_limit") || "200"
     ),
     // 收集间隔保持配置化：默认 7-15 天
     collectionIntervalMin: parseInt(
-      configMap.get('collection_interval_min') ||
-        configMap.get('collection_interval_days') ||
-        '7'
+      configMap.get("collection_interval_min") ||
+        configMap.get("collection_interval_days") ||
+        "7"
     ),
     collectionIntervalMax: parseInt(
-      configMap.get('collection_interval_max') || '15'
+      configMap.get("collection_interval_max") || "15"
     ),
     // 降低冷门门店比例：从 10% 降为 5%，让更多门店参与收集
-    coldStoreRatio: parseFloat(configMap.get('cold_store_ratio') || '0.05'),
-    lossRatioMin: parseFloat(configMap.get('loss_ratio_min') || '0.001'),
-    lossRatioMax: parseFloat(configMap.get('loss_ratio_max') || '0.005'),
+    coldStoreRatio: parseFloat(configMap.get("cold_store_ratio") || "0.05"),
+    lossRatioMin: parseFloat(configMap.get("loss_ratio_min") || "0.001"),
+    lossRatioMax: parseFloat(configMap.get("loss_ratio_max") || "0.005"),
     // 多站点配置
-    minStopsPerTrip: parseInt(configMap.get('min_stops_per_trip') || '2'),
-    maxStopsPerTrip: parseInt(configMap.get('max_stops_per_trip') || '5'),
-    overloadRatio: parseFloat(configMap.get('overload_ratio') || '1.12'),
+    minStopsPerTrip: parseInt(configMap.get("min_stops_per_trip") || "2"),
+    maxStopsPerTrip: parseInt(configMap.get("max_stops_per_trip") || "5"),
+    overloadRatio: parseFloat(configMap.get("overload_ratio") || "1.12"),
     overloadProbability: parseFloat(
-      configMap.get('overload_probability') || '0.3'
+      configMap.get("overload_probability") || "0.3"
     ),
   };
 }
@@ -366,21 +376,21 @@ function getDateFromRange(startDate: Date, dayOffset: number): Date {
 }
 
 function generateRecordNo(prefix: string, index: number, date: Date): string {
-  const dateStr = formatLocalDate(date).replace(/-/g, '');
-  return `${prefix}-${dateStr}-${String(index).padStart(5, '0')}`;
+  const dateStr = formatLocalDate(date).replace(/-/g, "");
+  return `${prefix}-${dateStr}-${String(index).padStart(5, "0")}`;
 }
 
 /**
  * 生成多站点行程
  * 车辆从收集点出发，访问多个门店后返回
- * 
+ *
  * 超载控制逻辑：
  * 1. 在行程开始时确定本次行程的最大载重（允许超载时为 maxLoad * overloadRatio）
  * 2. 每站收集前检查剩余容量，确保不会导致沿途超载
  * 3. 如果剩余容量不足最小收集量，提前结束行程
  */
 function generateMultiStopTrip(
-  vehicle: { id: string; maxLoad: number },
+  vehicle: { id: string; maxLoad: number; tareWeight: number },
   stores: StoreInfo[],
   collectionPoint: CollectionPointInfo,
   storeSelector: StoreSelector,
@@ -389,14 +399,19 @@ function generateMultiStopTrip(
   targetWeight: number
 ): MultiStopTrip | null {
   // 决定本次行程访问的门店数量
-  const plannedStopsCount = randomBetween(config.minStopsPerTrip, config.maxStopsPerTrip);
+  const plannedStopsCount = randomBetween(
+    config.minStopsPerTrip,
+    config.maxStopsPerTrip
+  );
 
   // 决定是否允许超载
   const allowOverload = Math.random() < config.overloadProbability;
+  // 净重上限
+  const netWeightLimit = vehicle.maxLoad - vehicle.tareWeight;
   // 本次行程的硬性载重上限
   const maxLoadForTrip = allowOverload
-    ? vehicle.maxLoad * config.overloadRatio
-    : vehicle.maxLoad * randomFloatBetween(0.85, 0.98);
+    ? netWeightLimit * config.overloadRatio
+    : netWeightLimit * randomFloatBetween(0.85, 0.98);
 
   // 实际目标重量（不超过最大载重）
   const actualTargetWeight = Math.min(targetWeight, maxLoadForTrip);
@@ -416,7 +431,7 @@ function generateMultiStopTrip(
     // ======== 沿途超载检查 ========
     // 计算当前剩余容量（基于硬性载重上限）
     const remainingCapacity = maxLoadForTrip - accumulatedWeight;
-    
+
     // 如果剩余容量不足最小收集量，提前结束行程
     if (remainingCapacity < minWeightPerStop) {
       break;
@@ -463,7 +478,7 @@ function generateMultiStopTrip(
     // ======== 计算本站收集量（确保不超载） ========
     const remainingStops = plannedStopsCount - i;
     const remainingTargetWeight = actualTargetWeight - accumulatedWeight;
-    
+
     // 根据剩余目标和剩余站点计算本站理想收集量
     let idealWeight: number;
     if (remainingStops === 1) {
@@ -477,10 +492,10 @@ function generateMultiStopTrip(
 
     // 确保不超过剩余容量（硬性限制）
     let stopWeight = Math.min(idealWeight, remainingCapacity);
-    
+
     // 确保最小收集量
     stopWeight = Math.max(minWeightPerStop, stopWeight);
-    
+
     // 最终再次确保不超载
     stopWeight = Math.min(stopWeight, remainingCapacity);
 
@@ -491,10 +506,12 @@ function generateMultiStopTrip(
     // 给轮胎重量添加随机波动（±5%，减小波动防止超载）
     const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.95, 1.05);
     let actualWeight = parseFloat((actualTireCount * avgTireWeight).toFixed(2));
-    
+
     // 最终超载保护：确保累积重量不超过上限
     if (accumulatedWeight + actualWeight > maxLoadForTrip) {
-      actualWeight = parseFloat((maxLoadForTrip - accumulatedWeight).toFixed(2));
+      actualWeight = parseFloat(
+        (maxLoadForTrip - accumulatedWeight).toFixed(2)
+      );
       // 如果调整后的重量太小，跳过这一站
       if (actualWeight < minWeightPerStop) {
         break;
@@ -561,7 +578,10 @@ function generateMultiStopTrip(
 
   // 添加返程时间波动和卸货休息时间
   const returnVariance = randomBetween(-3, 10);
-  const actualReturnMinutes = Math.max(10, returnTravelMinutes + returnVariance);
+  const actualReturnMinutes = Math.max(
+    10,
+    returnTravelMinutes + returnVariance
+  );
   const unloadAndRestMinutes = randomBetween(15, 30); // 卸货 + 休息
 
   const returnTime = new Date(
@@ -583,7 +603,12 @@ function generateMultiStopTrip(
  * 分配车辆并生成多站点行程
  */
 function assignVehicleAndGenerateTrip(
-  vehicles: Array<{ id: string; plateNumber: string; maxLoad: number }>,
+  vehicles: Array<{
+    id: string;
+    plateNumber: string;
+    maxLoad: number;
+    tareWeight: number;
+  }>,
   scheduler: VehicleScheduler,
   stores: StoreInfo[],
   collectionPoint: CollectionPointInfo,
@@ -656,7 +681,9 @@ function assignVehicleAndGenerateTrip(
     }
 
     // 检查时间冲突
-    if (scheduler.hasConflict(vehicle.id, trip.departureTime, trip.returnTime)) {
+    if (
+      scheduler.hasConflict(vehicle.id, trip.departureTime, trip.returnTime)
+    ) {
       continue;
     }
 
@@ -686,7 +713,7 @@ export async function generateLedgerData(
 
   const [allStores, collectionVehicles, collectionPoint] = await Promise.all([
     prisma.store.findMany({
-      where: { collectionPointId, status: 'ACTIVE' },
+      where: { collectionPointId, status: "ACTIVE" },
       select: {
         id: true,
         code: true,
@@ -697,8 +724,8 @@ export async function generateLedgerData(
       },
     }),
     prisma.vehicle.findMany({
-      where: { collectionPointId, type: 'COLLECTION', status: 'ACTIVE' },
-      select: { id: true, plateNumber: true, maxLoad: true },
+      where: { collectionPointId, type: "COLLECTION", status: "ACTIVE" },
+      select: { id: true, plateNumber: true, maxLoad: true, tareWeight: true },
     }),
     prisma.collectionPoint.findUnique({
       where: { id: collectionPointId },
@@ -707,7 +734,7 @@ export async function generateLedgerData(
   ]);
 
   if (!collectionPoint) {
-    throw new Error('收集点不存在');
+    throw new Error("收集点不存在");
   }
 
   // 过滤掉预估时间为 0 或没有预估时间的门店
@@ -716,10 +743,10 @@ export async function generateLedgerData(
   );
 
   if (stores.length === 0) {
-    throw new Error('该收集点没有可用的门店（所有门店预估时间为空或为0）');
+    throw new Error("该收集点没有可用的门店（所有门店预估时间为空或为0）");
   }
   if (collectionVehicles.length === 0) {
-    throw new Error('该收集点没有可用的收集车辆');
+    throw new Error("该收集点没有可用的收集车辆");
   }
 
   const collectionRecords: CollectionRecordData[] = [];
@@ -769,10 +796,14 @@ export async function generateLedgerData(
         remainingDays * (actualTripsForDay / (tripIndex + 1));
 
       // 本次行程目标重量
-      let tripTargetWeight = remainingTarget / Math.max(1, remainingTripsEstimate);
+      let tripTargetWeight =
+        remainingTarget / Math.max(1, remainingTripsEstimate);
       tripTargetWeight = Math.max(
         avgVehicleLoad * 0.5,
-        Math.min(tripTargetWeight * randomFloatBetween(0.9, 1.1), avgVehicleLoad)
+        Math.min(
+          tripTargetWeight * randomFloatBetween(0.9, 1.1),
+          avgVehicleLoad
+        )
       );
 
       // 分配车辆并生成多站点行程
@@ -817,12 +848,12 @@ export async function generateLedgerData(
         const unloadingNetWeight = parseFloat((stop.weight - loss).toFixed(2));
 
         collectionRecords.push({
-          recordNo: generateRecordNo('CR', ++collectionIndex, collectionDate),
+          recordNo: generateRecordNo("CR", ++collectionIndex, collectionDate),
           storeId: stop.storeId,
           vehicleId: trip.vehicleId,
           collectionDate,
-          loadingTime: stop.arrivalTime,                        // 装车时间：到达门店的时间
-          unloadingTime: isLastStop ? trip.returnTime : null,   // 卸车时间：只有最后一站才有
+          loadingTime: stop.arrivalTime, // 装车时间：到达门店的时间
+          unloadingTime: isLastStop ? trip.returnTime : null, // 卸车时间：只有最后一站才有
           tireCount: stop.tireCount,
           loadingNetWeight: stop.weight,
           unloadingNetWeight,
@@ -863,13 +894,13 @@ export async function executeLedgerTask(
   });
 
   if (!task) {
-    throw new Error('任务不存在');
+    throw new Error("任务不存在");
   }
 
   try {
     await prisma.ledgerTask.update({
       where: { id: taskId },
-      data: { status: 'PROCESSING', startedAt: new Date() },
+      data: { status: "PROCESSING", startedAt: new Date() },
     });
 
     await prisma.collectionRecord.deleteMany({ where: { taskId } });
@@ -893,7 +924,9 @@ export async function executeLedgerTask(
           collectionDate: adjustToChineseTimezone(r.collectionDate),
           loadingTime: adjustToChineseTimezone(r.loadingTime),
           // unloadingTime 只有最后一站才有
-          ...(unloadingTime && { unloadingTime: adjustToChineseTimezone(unloadingTime) }),
+          ...(unloadingTime && {
+            unloadingTime: adjustToChineseTimezone(unloadingTime),
+          }),
         };
       }),
     });
@@ -909,12 +942,13 @@ export async function executeLedgerTask(
     );
     const totalLoss = collectionRecords.reduce((sum, r) => sum + r.loss, 0);
     const storesCount = new Set(collectionRecords.map((r) => r.storeId)).size;
-    const vehiclesCount = new Set(collectionRecords.map((r) => r.vehicleId)).size;
+    const vehiclesCount = new Set(collectionRecords.map((r) => r.vehicleId))
+      .size;
 
     await prisma.ledgerTask.update({
       where: { id: taskId },
       data: {
-        status: 'COMPLETED',
+        status: "COMPLETED",
         completedAt: new Date(),
         actualTonnage: parseFloat(totalLoadingWeight.toFixed(2)),
         unloadingTonnage: parseFloat(totalUnloadingWeight.toFixed(2)),
@@ -934,8 +968,8 @@ export async function executeLedgerTask(
     await prisma.ledgerTask.update({
       where: { id: taskId },
       data: {
-        status: 'FAILED',
-        errorMessage: error instanceof Error ? error.message : '未知错误',
+        status: "FAILED",
+        errorMessage: error instanceof Error ? error.message : "未知错误",
       },
     });
     throw error;
