@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
-import { formatDateCN, formatTimeCN } from '@/lib/timezone';
+import { formatDateCN } from '@/lib/timezone';
 import ExcelJS from 'exceljs';
 
 interface RouteParams {
@@ -62,8 +62,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           storeAddress: '门店地址',
           vehiclePlate: '车牌号',
           tireCount: '轮胎条数',
-          loadingTime: '装车时间',
-          unloadingTime: '卸车时间',
           loadingNetWeight: '装车净重（kg）',
           unloadingNetWeight: '卸车净重（kg）',
           loss: '折损（kg）',
@@ -93,8 +91,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           storeAddress: 'Store Address',
           vehiclePlate: 'Vehicle Plate',
           tireCount: 'Tire Count',
-          loadingTime: 'Loading Time',
-          unloadingTime: 'Unloading Time',
           loadingNetWeight: 'Loading Net Weight (kg)',
           unloadingNetWeight: 'Unloading Net Weight (kg)',
           loss: 'Loss (kg)',
@@ -158,8 +154,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         collectionSheet.columns = [
           { header: l.recordNo, key: 'recordNo', width: 25 },
           { header: l.date, key: 'date', width: 15 },
-          { header: l.loadingTime, key: 'loadingTime', width: 12 },
-          { header: l.unloadingTime, key: 'unloadingTime', width: 12 },
           { header: l.storeCode, key: 'storeCode', width: 20 },
           { header: l.storeName, key: 'storeName', width: 30 },
           { header: l.storeAddress, key: 'storeAddress', width: 40 },
@@ -182,8 +176,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           const row = collectionSheet.addRow({
             recordNo: record.recordNo,
             date: formatDateCN(record.collectionDate),
-            loadingTime: formatTimeCN(record.loadingTime),
-            unloadingTime: formatTimeCN(record.unloadingTime),
             storeCode: record.store.code,
             storeName: record.store.name,
             storeAddress: record.store.address,
