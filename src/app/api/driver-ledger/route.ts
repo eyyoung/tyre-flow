@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       recordNo: string;
       date: Date;
       loadingTime: Date;
-      unloadingTime: Date;
+      unloadingTime: Date | null;
       type: 'collection';
       driverName: string;
       driverPhone: string;
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       recordNo: string;
       date: Date;
       loadingTime: Date;
-      unloadingTime: Date;
+      unloadingTime: Date | null;
       type: 'transfer';
       driverName: string;
       driverPhone: string;
