@@ -111,10 +111,48 @@ function estimateTravelTime(distanceKm: number): number {
 /**
  * LRU + 距离加权的门店选择器
  * 结合最近最少使用原则和地理距离，选择下一个要访问的门店
+ *
+ * 访问历史是全局的：
+ * - 同一天内，已访问的门店不会被再次访问（不同司机/车辆也不行）
+ * - 访问历史基于日期，越久没访问的门店优先级越高
  */
 class StoreSelector {
-  private visitHistory: Map<string, number> = new Map(); // storeId -> 最后访问时间戳
-  private visitCounter: number = 0;
+  // storeId -> 最后访问日期（格式：YYYY-MM-DD）
+  private visitHistory: Map<string, string> = new Map();
+  // 当天已访问的门店集合（日期 -> 门店ID集合）
+  private dailyVisits: Map<string, Set<string>> = new Map();
+  // 生成开始日期，用于计算 LRU 得分
+  private startDate: Date;
+
+  constructor(startDate: Date) {
+    this.startDate = startDate;
+  }
+
+  /**
+   * 获取日期字符串
+   */
+  private getDateStr(date: Date): string {
+    return formatLocalDate(date);
+  }
+
+  /**
+   * 计算两个日期之间的天数差
+   */
+  private daysBetween(date1: string, date2: string): number {
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    const diffTime = Math.abs(d2.getTime() - d1.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * 检查门店当天是否已被访问
+   */
+  isVisitedToday(storeId: string, currentDate: Date): boolean {
+    const dateStr = this.getDateStr(currentDate);
+    const todayVisits = this.dailyVisits.get(dateStr);
+    return todayVisits?.has(storeId) ?? false;
+  }
 
   /**
    * 选择下一个要访问的门店
@@ -122,27 +160,49 @@ class StoreSelector {
    * @param currentLat 当前位置纬度
    * @param currentLon 当前位置经度
    * @param excludeIds 本次行程已访问的门店ID（排除）
-   * @param weightFactor 距离权重因子 (0-1)，越大越倾向于选择近的门店
+   * @param currentDate 当前日期
+   * @param isFirstStop 是否为第一个停靠点（第一个停靠点优先考虑访问历史）
    */
   selectNextStore(
     availableStores: StoreInfo[],
     currentLat: number | null,
     currentLon: number | null,
     excludeIds: Set<string>,
-    weightFactor: number = 0.6
+    currentDate: Date,
+    isFirstStop: boolean = false
   ): StoreInfo | null {
-    // 过滤掉本次行程已访问的门店
-    const candidates = availableStores.filter((s) => !excludeIds.has(s.id));
+    const dateStr = this.getDateStr(currentDate);
+
+    // 过滤掉：1) 本次行程已访问的门店  2) 当天已被其他车辆访问的门店
+    const candidates = availableStores.filter((s) => {
+      if (excludeIds.has(s.id)) return false;
+      if (this.isVisitedToday(s.id, currentDate)) return false;
+      return true;
+    });
 
     if (candidates.length === 0) {
       return null;
     }
 
+    // 距离权重因子：
+    // - 第一个停靠点：0.15（85% 权重给访问历史，优先选择最久未访问的门店）
+    // - 后续停靠点：0.7（70% 权重给距离，优先选择近的门店以优化路线）
+    const distanceWeight = isFirstStop ? 0.15 : 0.7;
+
     // 计算每个门店的得分
     const scored = candidates.map((store) => {
       // LRU 得分：越久没访问，得分越高
-      const lastVisit = this.visitHistory.get(store.id) || 0;
-      const lruScore = 1 - lastVisit / (this.visitCounter + 1);
+      const lastVisitDate = this.visitHistory.get(store.id);
+      let lruScore: number;
+      if (!lastVisitDate) {
+        // 从未访问过，给最高分
+        lruScore = 1.0;
+      } else {
+        // 根据距离上次访问的天数计算得分
+        // 假设 30 天以上没访问就满分
+        const daysSinceVisit = this.daysBetween(lastVisitDate, dateStr);
+        lruScore = Math.min(1.0, daysSinceVisit / 30);
+      }
 
       // 距离得分：越近，得分越高
       let distanceScore = 0.5; // 默认中等得分（无坐标时）
@@ -166,10 +226,10 @@ class StoreSelector {
       // 再加一点随机因素 (±10%)
       const randomFactor = 0.9 + Math.random() * 0.2;
       const score =
-        (weightFactor * distanceScore + (1 - weightFactor) * lruScore) *
+        (distanceWeight * distanceScore + (1 - distanceWeight) * lruScore) *
         randomFactor;
 
-      return { store, score };
+      return { store, score, lruScore, distanceScore };
     });
 
     // 按得分排序并选择（加入一些随机性，不总是选最高分的）
@@ -185,20 +245,34 @@ class StoreSelector {
   }
 
   /**
-   * 记录门店访问
+   * 记录门店访问（全局记录）
+   * @param storeId 门店ID
+   * @param visitDate 访问日期
    */
-  recordVisit(storeId: string): void {
-    this.visitCounter++;
-    this.visitHistory.set(storeId, this.visitCounter);
+  recordVisit(storeId: string, visitDate: Date): void {
+    const dateStr = this.getDateStr(visitDate);
+
+    // 更新最后访问日期
+    this.visitHistory.set(storeId, dateStr);
+
+    // 记录当天访问
+    if (!this.dailyVisits.has(dateStr)) {
+      this.dailyVisits.set(dateStr, new Set());
+    }
+    this.dailyVisits.get(dateStr)!.add(storeId);
   }
 
   /**
    * 获取门店的 LRU 优先级（用于排序）
    * 返回值越大，表示越久没访问
    */
-  getLruPriority(storeId: string): number {
-    const lastVisit = this.visitHistory.get(storeId) || 0;
-    return this.visitCounter - lastVisit;
+  getLruPriority(storeId: string, currentDate: Date): number {
+    const dateStr = this.getDateStr(currentDate);
+    const lastVisitDate = this.visitHistory.get(storeId);
+    if (!lastVisitDate) {
+      return 999; // 从未访问过，最高优先级
+    }
+    return this.daysBetween(lastVisitDate, dateStr);
   }
 }
 
@@ -403,7 +477,8 @@ function generateMultiStopTrip(
   storeSelector: StoreSelector,
   config: GeneratorConfig,
   departureTime: Date,
-  targetWeight: number
+  targetWeight: number,
+  collectionDate: Date
 ): MultiStopTrip | null {
   // 决定本次行程访问的门店数量
   const plannedStopsCount = randomBetween(
@@ -445,12 +520,15 @@ function generateMultiStopTrip(
     }
 
     // 选择下一个门店
+    // 第一个停靠点优先考虑访问历史，后续停靠点综合考虑距离
+    const isFirstStop = i === 0;
     const store = storeSelector.selectNextStore(
       stores,
       currentLat,
       currentLon,
       visitedIds,
-      0.6 // 距离权重
+      collectionDate,
+      isFirstStop
     );
 
     if (!store) {
@@ -540,7 +618,7 @@ function generateMultiStopTrip(
 
     // 更新状态
     visitedIds.add(store.id);
-    storeSelector.recordVisit(store.id);
+    storeSelector.recordVisit(store.id, collectionDate);
     currentTime = departureTimeFromStop;
     currentLat = store.latitude;
     currentLon = store.longitude;
@@ -623,7 +701,8 @@ function assignVehicleAndGenerateTrip(
   year: number,
   month: number,
   day: number,
-  targetWeight: number
+  targetWeight: number,
+  collectionDate: Date
 ): MultiStopTrip | null {
   // 司机工作时间：8:00-18:00
   const startHour = 8;
@@ -672,7 +751,8 @@ function assignVehicleAndGenerateTrip(
       storeSelector,
       config,
       departureTime,
-      targetWeight
+      targetWeight,
+      collectionDate
     );
 
     if (!trip) {
@@ -757,7 +837,7 @@ export async function generateLedgerData(
 
   const collectionRecords: CollectionRecordData[] = [];
   const scheduler = new VehicleScheduler();
-  const storeSelector = new StoreSelector();
+  const storeSelector = new StoreSelector(startDate);
 
   // 获取收集车辆的平均载重
   const avgVehicleLoad =
@@ -823,7 +903,8 @@ export async function generateLedgerData(
         year,
         month,
         day,
-        tripTargetWeight
+        tripTargetWeight,
+        collectionDate
       );
 
       if (!trip) {
