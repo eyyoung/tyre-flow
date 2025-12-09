@@ -525,7 +525,7 @@ export default function CollectionLedgerPage() {
       dataIndex: 'unloadingTime',
       key: 'unloadingTime',
       width: 90,
-      render: (v) => dayjs(v).format('HH:mm'),
+      render: (v) => v ? dayjs(v).format('HH:mm') : '-',
     },
     { title: t('stores.code'), dataIndex: ['store', 'code'], key: 'storeCode', width: 160, ellipsis: true },
     { title: t('stores.name'), dataIndex: ['store', 'name'], key: 'storeName', width: 180, ellipsis: true },

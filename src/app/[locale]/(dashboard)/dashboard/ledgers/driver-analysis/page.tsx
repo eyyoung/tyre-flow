@@ -38,9 +38,9 @@ interface TripRecord {
   driverId: string;
   driverName: string;
   loadingTimeMinutes: number;
-  unloadingTimeMinutes: number;
+  unloadingTimeMinutes: number | null;  // null 表示中间站点无卸车
   loadingTimeStr: string;
-  unloadingTimeStr: string;
+  unloadingTimeStr: string;             // '-' 表示无卸车时间
   weight: number;
 }
 
@@ -183,7 +183,9 @@ export default function DriverAnalysisPage() {
     if (filteredTripRecords.length === 0) return { min: 0, max: 1440 };
     
     let minTime = Math.min(...filteredTripRecords.map((r) => r.loadingTimeMinutes));
-    let maxTime = Math.max(...filteredTripRecords.map((r) => r.unloadingTimeMinutes));
+    // 过滤掉 null 的 unloadingTimeMinutes，用 loadingTimeMinutes 作为备选
+    const unloadingTimes = filteredTripRecords.map((r) => r.unloadingTimeMinutes ?? r.loadingTimeMinutes);
+    let maxTime = Math.max(...unloadingTimes);
     
     // 增加 30 分钟的 padding
     minTime = Math.max(0, minTime - 30);
@@ -390,7 +392,11 @@ export default function DriverAnalysisPage() {
                           const xOffset = driverOffsets.get(record.driverId) || 50;
                           const x = columnX + xOffset;
                           const y1 = 40 + ((record.loadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420;
-                          const y2 = 40 + ((record.unloadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420;
+                          // 如果没有卸车时间，只显示装车点
+                          const hasUnloadingTime = record.unloadingTimeMinutes !== null;
+                          const y2 = hasUnloadingTime 
+                            ? 40 + ((record.unloadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420
+                            : y1;
                           
                           return (
                             <Tooltip
@@ -405,34 +411,38 @@ export default function DriverAnalysisPage() {
                               }
                             >
                               <g style={{ cursor: 'pointer' }}>
-                                {/* 主线段 */}
-                                <line
-                                  x1={x}
-                                  y1={y1}
-                                  x2={x}
-                                  y2={y2}
-                                  stroke={color}
-                                  strokeWidth={6}
-                                  strokeLinecap="round"
-                                />
-                                {/* 起点圆点 */}
+                                {/* 主线段（只有有卸车时间才显示） */}
+                                {hasUnloadingTime && (
+                                  <line
+                                    x1={x}
+                                    y1={y1}
+                                    x2={x}
+                                    y2={y2}
+                                    stroke={color}
+                                    strokeWidth={6}
+                                    strokeLinecap="round"
+                                  />
+                                )}
+                                {/* 起点圆点（装车点） */}
                                 <circle
                                   cx={x}
                                   cy={y1}
                                   r={5}
-                                  fill={color}
-                                  stroke="#fff"
-                                  strokeWidth={1}
+                                  fill={hasUnloadingTime ? color : '#fff'}
+                                  stroke={color}
+                                  strokeWidth={hasUnloadingTime ? 1 : 2}
                                 />
-                                {/* 终点圆点 */}
-                                <circle
-                                  cx={x}
-                                  cy={y2}
-                                  r={5}
-                                  fill={color}
-                                  stroke="#fff"
-                                  strokeWidth={1}
-                                />
+                                {/* 终点圆点（卸车点，只有有卸车时间才显示） */}
+                                {hasUnloadingTime && (
+                                  <circle
+                                    cx={x}
+                                    cy={y2}
+                                    r={5}
+                                    fill={color}
+                                    stroke="#fff"
+                                    strokeWidth={1}
+                                  />
+                                )}
                               </g>
                             </Tooltip>
                           );

@@ -247,7 +247,7 @@ export default function DriverLedgerPage() {
       dataIndex: 'unloadingTime',
       key: 'unloadingTime',
       width: 90,
-      render: (v) => dayjs(v).format('HH:mm'),
+      render: (v) => v ? dayjs(v).format('HH:mm') : '-',
     },
     {
       title: t('ledgers.driverName'),

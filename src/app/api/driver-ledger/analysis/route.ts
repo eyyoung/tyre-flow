@@ -6,10 +6,10 @@ interface TripRecord {
   date: string;
   driverId: string;
   driverName: string;
-  loadingTimeMinutes: number;   // 分钟数 (0-1440)
-  unloadingTimeMinutes: number; // 分钟数 (0-1440)
-  loadingTimeStr: string;       // 格式化的时间字符串 HH:mm
-  unloadingTimeStr: string;     // 格式化的时间字符串 HH:mm
+  loadingTimeMinutes: number;        // 分钟数 (0-1440)
+  unloadingTimeMinutes: number | null; // 分钟数 (0-1440)，null 表示中间站点无卸车
+  loadingTimeStr: string;            // 格式化的时间字符串 HH:mm
+  unloadingTimeStr: string;          // 格式化的时间字符串 HH:mm 或 '-'
   weight: number;
 }
 
@@ -110,9 +110,9 @@ export async function GET(request: NextRequest) {
           driverId,
           driverName,
           loadingTimeMinutes: getMinutesFromMidnight(record.loadingTime),
-          unloadingTimeMinutes: getMinutesFromMidnight(record.unloadingTime),
+          unloadingTimeMinutes: record.unloadingTime ? getMinutesFromMidnight(record.unloadingTime) : null,
           loadingTimeStr: formatTimeWithTimezone(record.loadingTime),
-          unloadingTimeStr: formatTimeWithTimezone(record.unloadingTime),
+          unloadingTimeStr: record.unloadingTime ? formatTimeWithTimezone(record.unloadingTime) : '-',
           weight: Math.round(record.loadingNetWeight),
         });
       }

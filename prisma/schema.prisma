@@ -236,7 +236,7 @@ model CollectionRecord {
   vehicle            Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   collectionDate     DateTime   // 收集日期
   loadingTime        DateTime   // 装车时间（精确到分）
-  unloadingTime      DateTime   // 卸车时间（精确到分）
+  unloadingTime      DateTime?  // 卸车时间（精确到分），只有最后一站才有
   tireCount          Int        // 轮胎条数
   loadingNetWeight   Float      // 装车净重（吨）
   unloadingNetWeight Float      // 卸车净重（吨）
