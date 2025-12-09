@@ -142,6 +142,39 @@ export default function StoreImportPage() {
     return TIRE_RELATED_KEYWORDS.some((keyword) => name.includes(keyword));
   };
 
+  // 解析CSV行（正确处理引号内的逗号）
+  const parseCSVLine = (line: string): string[] => {
+    const values: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          // 双引号转义：两个连续双引号表示一个双引号
+          current += '"';
+          i++; // 跳过下一个引号
+        } else {
+          // 切换引号状态
+          inQuotes = !inQuotes;
+        }
+      } else if (char === "," && !inQuotes) {
+        // 字段分隔符（不在引号内）
+        values.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    // 添加最后一个字段
+    values.push(current.trim());
+
+    return values;
+  };
+
   // 解析CSV文件
   const parseCSV = (text: string): PreviewStore[] => {
     const lines = text.split("\n");
@@ -155,7 +188,7 @@ export default function StoreImportPage() {
       const line = lines[i].trim();
       if (line.includes("企业名称")) {
         headerIndex = i;
-        headers = line.split(",");
+        headers = parseCSVLine(line);
         break;
       }
     }
@@ -199,8 +232,8 @@ export default function StoreImportPage() {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // 简单CSV解析（不处理引号内的逗号）
-      const values = line.split(",");
+      // 使用正确的CSV解析（处理引号内的逗号）
+      const values = parseCSVLine(line);
 
       const rawName = values[fieldIndexMap["name"]]?.trim() || "";
       if (!rawName) continue;

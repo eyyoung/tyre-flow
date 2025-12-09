@@ -28,7 +28,8 @@
     "no": "No",
     "all": "All",
     "noData": "No data",
-    "total": "Total {count} items"
+    "total": "Total {count} items",
+    "selectAtLeastOne": "Please select at least one item"
   },
   "status": {
     "active": "Active",
@@ -167,7 +168,10 @@
     "resetGeocodeConfirm": "Are you sure you want to re-fetch the coordinates and estimated travel time for this store?",
     "resetGeocodeSuccess": "Coordinates reset successfully",
     "resetGeocodeFailed": "Failed to reset coordinates",
-    "resettingGeocode": "Resetting coordinates..."
+    "resettingGeocode": "Resetting coordinates...",
+    "batchDisable": "Batch Disable",
+    "batchDisableConfirm": "Are you sure you want to disable the selected {count} stores?",
+    "batchDisableSuccess": "Successfully disabled {count} stores"
   },
   "vehicles": {
     "title": "Vehicle Management",

@@ -28,7 +28,8 @@
     "no": "否",
     "all": "全部",
     "noData": "暂无数据",
-    "total": "共 {count} 条"
+    "total": "共 {count} 条",
+    "selectAtLeastOne": "请至少选择一项"
   },
   "status": {
     "active": "正常",
@@ -167,7 +168,10 @@
     "resetGeocodeConfirm": "确定要重新获取该门店的地理坐标和预估行程吗？",
     "resetGeocodeSuccess": "坐标重置成功",
     "resetGeocodeFailed": "坐标重置失败",
-    "resettingGeocode": "正在重置坐标..."
+    "resettingGeocode": "正在重置坐标...",
+    "batchDisable": "批量停用",
+    "batchDisableConfirm": "确定要停用选中的 {count} 家门店吗？",
+    "batchDisableSuccess": "成功停用 {count} 家门店"
   },
   "vehicles": {
     "title": "车辆管理",

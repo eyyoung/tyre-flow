@@ -10,8 +10,15 @@ export async function GET(request: NextRequest) {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
       const pageSize = parseInt(searchParams.get('pageSize') || '10');
-      const status = searchParams.get('status') || '';
+      const statusParam = searchParams.get('status') || '';
       const collectionPointId = searchParams.get('collectionPointId') || '';
+
+      // 验证 status 是否为有效的 TaskStatus 枚举值
+      const validStatuses = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'] as const;
+      type TaskStatus = (typeof validStatuses)[number];
+      const status: TaskStatus | null = validStatuses.includes(statusParam as TaskStatus)
+        ? (statusParam as TaskStatus)
+        : null;
 
       // 非管理员只能看到自己绑定的收集点的任务
       let allowedCollectionPointIds: string[] | null = null;
@@ -25,7 +32,7 @@ export async function GET(request: NextRequest) {
 
       const where = {
         AND: [
-          status ? { status: status as 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' } : {},
+          status ? { status } : {},
           collectionPointId ? { collectionPointId } : {},
           allowedCollectionPointIds
             ? { collectionPointId: { in: allowedCollectionPointIds } }

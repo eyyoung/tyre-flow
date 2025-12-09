@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 添加延迟避免超过QPS限制（高德免费API限制3QPS，保守设置约1.5QPS）
-        await new Promise(resolve => setTimeout(resolve, 700));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       return NextResponse.json({ results });

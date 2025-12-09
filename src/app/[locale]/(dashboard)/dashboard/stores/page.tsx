@@ -30,6 +30,7 @@ import {
   EnvironmentOutlined,
   DownloadOutlined,
   AimOutlined,
+  StopOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType, TableProps } from 'antd/es/table';
@@ -97,6 +98,10 @@ export default function StoresPage() {
   // 排序相关状态
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<string>('');
+  
+  // 批量操作相关状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [batchDisabling, setBatchDisabling] = useState(false);
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -350,6 +355,40 @@ export default function StoresPage() {
     }
   };
 
+  // 批量停用
+  const handleBatchDisable = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning(t('common.selectAtLeastOne'));
+      return;
+    }
+
+    setBatchDisabling(true);
+    try {
+      const response = await fetch('/api/stores/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'disable',
+          ids: selectedRowKeys,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        message.success(t('stores.batchDisableSuccess', { count: result.count }));
+        setSelectedRowKeys([]);
+        fetchData();
+      } else {
+        message.error(result.message || t('common.error'));
+      }
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setBatchDisabling(false);
+    }
+  };
+
   const columns: ColumnsType<Store> = [
     {
       title: t('stores.code'),
@@ -529,6 +568,24 @@ export default function StoresPage() {
           >
             {t('stores.exportExcel')}
           </Button>
+          <Popconfirm
+            title={t('stores.batchDisableConfirm', { count: selectedRowKeys.length })}
+            onConfirm={handleBatchDisable}
+            okText={t('common.confirm')}
+            cancelText={t('common.cancel')}
+            disabled={selectedRowKeys.length === 0}
+            destroyOnHidden
+          >
+            <Button
+              danger
+              icon={<StopOutlined />}
+              disabled={selectedRowKeys.length === 0}
+              loading={batchDisabling}
+            >
+              {t('stores.batchDisable')}
+              {selectedRowKeys.length > 0 && ` (${selectedRowKeys.length})`}
+            </Button>
+          </Popconfirm>
         </Space>
 
         <Table
@@ -537,6 +594,24 @@ export default function StoresPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1600 }}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+            getCheckboxProps: (record) => ({
+              disabled: record.status === 'DISABLED',
+            }),
+          }}
+          onRow={(record) => ({
+            onClick: () => {
+              if (record.status === 'DISABLED') return;
+              const key = record.id;
+              const newKeys = selectedRowKeys.includes(key)
+                ? selectedRowKeys.filter((k) => k !== key)
+                : [...selectedRowKeys, key];
+              setSelectedRowKeys(newKeys);
+            },
+            style: { cursor: record.status === 'DISABLED' ? 'not-allowed' : 'pointer' },
+          })}
           pagination={{
             current: page,
             pageSize,
