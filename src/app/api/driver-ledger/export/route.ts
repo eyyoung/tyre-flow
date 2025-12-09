@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       recordNo: string;
       date: Date;
       loadingTime: Date;
-      unloadingTime: Date;
+      unloadingTime: Date | null;
       driverName: string;
       driverPhone: string;
       vehiclePlate: string;
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       recordNo: string;
       date: Date;
       loadingTime: Date;
-      unloadingTime: Date;
+      unloadingTime: Date | null;
       driverName: string;
       driverPhone: string;
       vehiclePlate: string;
@@ -208,7 +208,7 @@ export async function GET(request: NextRequest) {
           recordNo: record.recordNo,
           date: formatDateCN(record.date),
           loadingTime: formatTimeCN(record.loadingTime),
-          unloadingTime: formatTimeCN(record.unloadingTime),
+          unloadingTime: record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,
@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
           recordNo: record.recordNo,
           date: formatDateCN(record.date),
           loadingTime: formatTimeCN(record.loadingTime),
-          unloadingTime: formatTimeCN(record.unloadingTime),
+          unloadingTime: record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,
