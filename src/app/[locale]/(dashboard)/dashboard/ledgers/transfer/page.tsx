@@ -448,6 +448,7 @@ export default function TransferLedgerPage() {
             onConfirm={() => handleDelete(record.id)}
             okText={t('common.confirm')}
             cancelText={t('common.cancel')}
+            destroyOnHidden
           >
             <Button
               type="link"

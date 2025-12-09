@@ -490,6 +490,7 @@ export default function CollectionLedgerPage() {
             onConfirm={() => handleDelete(record.id)}
             okText={t('common.confirm')}
             cancelText={t('common.cancel')}
+            destroyOnHidden
           >
             <Button
               type="link"

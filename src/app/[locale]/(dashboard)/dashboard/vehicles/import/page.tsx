@@ -198,7 +198,7 @@ export default function VehicleImportPage() {
       const tareWeightVarianceStr = values[fieldIndexMap['tareWeightVariance']]?.trim() || '';
       const maxLoadStr = values[fieldIndexMap['maxLoad']]?.trim() || '';
       
-      const tareWeight = parseFloat(tareWeightStr) || (type === 'COLLECTION' ? 2.5 : 15.0);
+      const tareWeight = parseFloat(tareWeightStr) || (type === 'COLLECTION' ? 2.0 : 15.0);
       const tareWeightVariance = parseFloat(tareWeightVarianceStr) || 0.05;
       const maxLoad = parseFloat(maxLoadStr) || (type === 'COLLECTION' ? 4.0 : 33.0);
       

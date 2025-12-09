@@ -399,7 +399,8 @@
     "errorDetails": "错误详情",
     "moreErrors": "还有 {count} 条错误...",
     "businessStatus": "经营状态",
-    "category": "来源分类"
+    "category": "来源分类",
+    "filteredSummary": "已过滤：{lengthCount} 条名称过短，{keywordCount} 条与轮胎业务无关"
   },
   "vehicleImport": {
     "title": "车辆数据导入",

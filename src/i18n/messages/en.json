@@ -399,7 +399,8 @@
     "errorDetails": "Error Details",
     "moreErrors": "{count} more errors...",
     "businessStatus": "Business Status",
-    "category": "Category"
+    "category": "Category",
+    "filteredSummary": "Filtered: {lengthCount} short names, {keywordCount} unrelated to tire business"
   },
   "vehicleImport": {
     "title": "Vehicle Data Import",

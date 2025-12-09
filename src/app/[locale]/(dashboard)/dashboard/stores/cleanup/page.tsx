@@ -500,6 +500,7 @@ export default function StoreCleanupPage() {
                   title={t('storeCleanup.markDisabledConfirm')}
                   onConfirm={handleMarkAsDisabled}
                   disabled={selectedRowKeys.length === 0}
+                  destroyOnHidden
                 >
                   <Button
                     danger

@@ -334,6 +334,7 @@ export default function VehiclesPage() {
             onConfirm={() => handleDelete(record.id)}
             okText={t("common.confirm")}
             cancelText={t("common.cancel")}
+            destroyOnHidden
           >
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
