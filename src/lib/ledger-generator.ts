@@ -113,19 +113,21 @@ function estimateTravelTime(distanceKm: number): number {
  * 结合最近最少使用原则和地理距离，选择下一个要访问的门店
  *
  * 访问历史是全局的：
- * - 同一天内，已访问的门店不会被再次访问（不同司机/车辆也不行）
+ * - 门店访问后，需间隔随机天数（minInterval ~ maxInterval）才能再次访问
  * - 访问历史基于日期，越久没访问的门店优先级越高
  */
 class StoreSelector {
-  // storeId -> 最后访问日期（格式：YYYY-MM-DD）
-  private visitHistory: Map<string, string> = new Map();
-  // 当天已访问的门店集合（日期 -> 门店ID集合）
-  private dailyVisits: Map<string, Set<string>> = new Map();
-  // 生成开始日期，用于计算 LRU 得分
-  private startDate: Date;
+  // storeId -> 下次可访问日期（格式：YYYY-MM-DD）
+  private nextAvailableDate: Map<string, string> = new Map();
+  // storeId -> 上次访问日期（用于计算 LRU 得分）
+  private lastVisitDate: Map<string, string> = new Map();
+  // 访问间隔范围
+  private minIntervalDays: number;
+  private maxIntervalDays: number;
 
-  constructor(startDate: Date) {
-    this.startDate = startDate;
+  constructor(minIntervalDays: number, maxIntervalDays: number) {
+    this.minIntervalDays = minIntervalDays;
+    this.maxIntervalDays = maxIntervalDays;
   }
 
   /**
@@ -136,22 +138,49 @@ class StoreSelector {
   }
 
   /**
-   * 计算两个日期之间的天数差
+   * 计算两个日期之间的天数差（date2 - date1）
+   * 返回正数表示 date2 在 date1 之后
    */
   private daysBetween(date1: string, date2: string): number {
     const d1 = new Date(date1);
     const d2 = new Date(date2);
-    const diffTime = Math.abs(d2.getTime() - d1.getTime());
+    const diffTime = d2.getTime() - d1.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
 
   /**
-   * 检查门店当天是否已被访问
+   * 添加天数到日期
    */
-  isVisitedToday(storeId: string, currentDate: Date): boolean {
-    const dateStr = this.getDateStr(currentDate);
-    const todayVisits = this.dailyVisits.get(dateStr);
-    return todayVisits?.has(storeId) ?? false;
+  private addDays(dateStr: string, days: number): string {
+    const date = new Date(dateStr);
+    date.setDate(date.getDate() + days);
+    return formatLocalDate(date);
+  }
+
+  /**
+   * 检查门店是否在冷却期内（不可访问）
+   * 如果当前日期早于下次可访问日期，返回 true（不可访问）
+   */
+  isInCooldown(storeId: string, currentDate: Date): boolean {
+    const nextAvailable = this.nextAvailableDate.get(storeId);
+    if (!nextAvailable) {
+      return false; // 从未访问过，可以访问
+    }
+    const currentDateStr = this.getDateStr(currentDate);
+    // 如果当前日期 < 下次可访问日期，则在冷却期内
+    return this.daysBetween(nextAvailable, currentDateStr) < 0;
+  }
+
+  /**
+   * 获取门店距离上次访问的天数（用于 LRU 计算）
+   */
+  getDaysSinceLastVisit(storeId: string, currentDate: Date): number {
+    const lastVisit = this.lastVisitDate.get(storeId);
+    if (!lastVisit) {
+      return 999; // 从未访问过，返回很大的值
+    }
+    const currentDateStr = this.getDateStr(currentDate);
+    return Math.max(0, this.daysBetween(lastVisit, currentDateStr));
   }
 
   /**
@@ -171,12 +200,10 @@ class StoreSelector {
     currentDate: Date,
     isFirstStop: boolean = false
   ): StoreInfo | null {
-    const dateStr = this.getDateStr(currentDate);
-
-    // 过滤掉：1) 本次行程已访问的门店  2) 当天已被其他车辆访问的门店
+    // 过滤掉：1) 本次行程已访问的门店  2) 在冷却期内的门店
     const candidates = availableStores.filter((s) => {
       if (excludeIds.has(s.id)) return false;
-      if (this.isVisitedToday(s.id, currentDate)) return false;
+      if (this.isInCooldown(s.id, currentDate)) return false;
       return true;
     });
 
@@ -184,25 +211,55 @@ class StoreSelector {
       return null;
     }
 
-    // 距离权重因子：
-    // - 第一个停靠点：0.15（85% 权重给访问历史，优先选择最久未访问的门店）
+    // 第一个停靠点策略：在距离合理的门店中，优先选择最久未访问的
+    // 这样既保证门店访问均匀性，又不会因为路程过远降低效率
+    if (isFirstStop && currentLat !== null && currentLon !== null) {
+      const MAX_FIRST_STOP_DISTANCE_KM = 25; // 第一站最大距离限制
+
+      // 计算所有候选门店的距离
+      const candidatesWithDistance = candidates
+        .map((store) => {
+          let distance = Infinity;
+          if (store.latitude !== null && store.longitude !== null) {
+            distance = haversineDistance(
+              currentLat,
+              currentLon,
+              store.latitude,
+              store.longitude
+            );
+          }
+          return { store, distance };
+        })
+        .filter((c) => c.distance <= MAX_FIRST_STOP_DISTANCE_KM);
+
+      // 如果有距离合理的门店，在其中按 LRU 优先选择
+      if (candidatesWithDistance.length > 0) {
+        // 按 LRU 优先级排序（越久没访问越优先）
+        const sortedByLru = candidatesWithDistance
+          .map((c) => {
+            const lruPriority = this.getDaysSinceLastVisit(c.store.id, currentDate);
+            return { ...c, lruPriority };
+          })
+          .sort((a, b) => b.lruPriority - a.lruPriority);
+
+        // 在 LRU 优先级最高的前 5 个中随机选择（加入随机性）
+        const topCandidates = sortedByLru.slice(0, 5);
+        const selectedIndex = Math.floor(Math.random() * topCandidates.length);
+        return topCandidates[selectedIndex].store;
+      }
+      // 如果没有距离合理的门店，继续使用常规策略
+    }
+
+    // 常规策略：综合考虑距离和 LRU
     // - 后续停靠点：0.7（70% 权重给距离，优先选择近的门店以优化路线）
-    const distanceWeight = isFirstStop ? 0.15 : 0.7;
+    const distanceWeight = 0.7;
 
     // 计算每个门店的得分
     const scored = candidates.map((store) => {
       // LRU 得分：越久没访问，得分越高
-      const lastVisitDate = this.visitHistory.get(store.id);
-      let lruScore: number;
-      if (!lastVisitDate) {
-        // 从未访问过，给最高分
-        lruScore = 1.0;
-      } else {
-        // 根据距离上次访问的天数计算得分
-        // 假设 30 天以上没访问就满分
-        const daysSinceVisit = this.daysBetween(lastVisitDate, dateStr);
-        lruScore = Math.min(1.0, daysSinceVisit / 30);
-      }
+      // 假设 30 天以上没访问就满分
+      const daysSinceVisit = this.getDaysSinceLastVisit(store.id, currentDate);
+      const lruScore = Math.min(1.0, daysSinceVisit / 30);
 
       // 距离得分：越近，得分越高
       let distanceScore = 0.5; // 默认中等得分（无坐标时）
@@ -246,33 +303,25 @@ class StoreSelector {
 
   /**
    * 记录门店访问（全局记录）
+   * 同时生成随机冷却期（在 minInterval 和 maxInterval 之间）
    * @param storeId 门店ID
    * @param visitDate 访问日期
    */
   recordVisit(storeId: string, visitDate: Date): void {
     const dateStr = this.getDateStr(visitDate);
 
-    // 更新最后访问日期
-    this.visitHistory.set(storeId, dateStr);
+    // 记录上次访问日期（用于 LRU 计算）
+    this.lastVisitDate.set(storeId, dateStr);
 
-    // 记录当天访问
-    if (!this.dailyVisits.has(dateStr)) {
-      this.dailyVisits.set(dateStr, new Set());
-    }
-    this.dailyVisits.get(dateStr)!.add(storeId);
-  }
+    // 随机生成冷却天数（在 min 和 max 之间）
+    const cooldownDays = randomBetween(
+      this.minIntervalDays,
+      this.maxIntervalDays
+    );
 
-  /**
-   * 获取门店的 LRU 优先级（用于排序）
-   * 返回值越大，表示越久没访问
-   */
-  getLruPriority(storeId: string, currentDate: Date): number {
-    const dateStr = this.getDateStr(currentDate);
-    const lastVisitDate = this.visitHistory.get(storeId);
-    if (!lastVisitDate) {
-      return 999; // 从未访问过，最高优先级
-    }
-    return this.daysBetween(lastVisitDate, dateStr);
+    // 计算下次可访问日期
+    const nextAvailable = this.addDays(dateStr, cooldownDays);
+    this.nextAvailableDate.set(storeId, nextAvailable);
   }
 }
 
@@ -837,7 +886,11 @@ export async function generateLedgerData(
 
   const collectionRecords: CollectionRecordData[] = [];
   const scheduler = new VehicleScheduler();
-  const storeSelector = new StoreSelector(startDate);
+  // 使用配置的收集间隔范围（随机冷却期）
+  const storeSelector = new StoreSelector(
+    config.collectionIntervalMin,
+    config.collectionIntervalMax
+  );
 
   // 获取收集车辆的平均载重
   const avgVehicleLoad =
