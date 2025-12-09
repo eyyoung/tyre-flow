@@ -1,31 +1,5 @@
 import prisma from './db';
-
-/**
- * 将本地时间转换为中国时区时间存储
- * 
- * 问题背景：服务器可能运行在 UTC 时区，而我们生成的时间是基于服务器本地时区的。
- * 例如：服务器在 UTC，我们创建了 06:00 的本地时间，存入数据库后，
- * 前端以北京时间显示时会变成 14:00（UTC 06:00 + 8小时）。
- * 
- * 解决方案：在保存前，将时间调整为"看起来像"中国时间的 UTC 时间。
- * 即：把 06:00 的本地时间转换为 UTC 22:00（前一天），这样前端显示时就是 06:00 北京时间。
- */
-function adjustToChineseTimezone(date: Date): Date {
-  // 获取服务器本地时区偏移量（分钟）
-  // getTimezoneOffset() 返回 UTC - 本地时间的分钟数
-  // UTC 时区返回 0，UTC+8 返回 -480
-  const localOffset = date.getTimezoneOffset();
-  
-  // 中国时区偏移量：UTC+8 = -480 分钟
-  const chinaOffset = -480;
-  
-  // 计算需要调整的时间差（分钟）
-  // 如果服务器在 UTC（偏移 0），需要减去 480 分钟（8小时）
-  // 如果服务器已经在 UTC+8（偏移 -480），不需要调整
-  const adjustment = (localOffset - chinaOffset) * 60 * 1000;
-  
-  return new Date(date.getTime() - adjustment);
-}
+import { adjustToChineseTimezone } from './timezone';
 
 interface GeneratorConfig {
   tireWeightKg: number;

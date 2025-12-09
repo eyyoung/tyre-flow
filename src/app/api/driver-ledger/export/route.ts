@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { formatDateCN, formatTimeCN } from '@/lib/timezone';
 import ExcelJS from 'exceljs';
 
 // 导出司机台账 Excel
@@ -205,9 +206,9 @@ export async function GET(request: NextRequest) {
       collectionRecords.forEach((record) => {
         const row = collectionSheet.addRow({
           recordNo: record.recordNo,
-          date: record.date.toISOString().slice(0, 10),
-          loadingTime: record.loadingTime.toISOString().slice(11, 16),
-          unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
+          date: formatDateCN(record.date),
+          loadingTime: formatTimeCN(record.loadingTime),
+          unloadingTime: formatTimeCN(record.unloadingTime),
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,
@@ -263,9 +264,9 @@ export async function GET(request: NextRequest) {
       transferRecords.forEach((record) => {
         const row = transferSheet.addRow({
           recordNo: record.recordNo,
-          date: record.date.toISOString().slice(0, 10),
-          loadingTime: record.loadingTime.toISOString().slice(11, 16),
-          unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
+          date: formatDateCN(record.date),
+          loadingTime: formatTimeCN(record.loadingTime),
+          unloadingTime: formatTimeCN(record.unloadingTime),
           driverName: record.driverName,
           driverPhone: record.driverPhone,
           vehiclePlate: record.vehiclePlate,

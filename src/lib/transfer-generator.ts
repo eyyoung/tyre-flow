@@ -1,4 +1,5 @@
 import prisma from './db';
+import { adjustToChineseTimezone } from './timezone';
 
 interface TransferRecordData {
   recordNo: string;
@@ -332,8 +333,15 @@ export async function executeTransferTask(taskId: string): Promise<TransferGener
       task.targetTonnage
     );
 
+    // 在保存前调整时间为中国时区
     await prisma.transferRecord.createMany({
-      data: transferRecords.map(r => ({ ...r, taskId })),
+      data: transferRecords.map(r => ({
+        ...r,
+        taskId,
+        transferDate: adjustToChineseTimezone(r.transferDate),
+        loadingTime: adjustToChineseTimezone(r.loadingTime),
+        unloadingTime: adjustToChineseTimezone(r.unloadingTime),
+      })),
     });
 
     const totalLoadingWeight = transferRecords.reduce((sum, r) => sum + r.loadingNetWeight, 0);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
+import { formatDateCN, formatTimeCN } from '@/lib/timezone';
 import ExcelJS from 'exceljs';
 
 interface RouteParams {
@@ -180,9 +181,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         collectionRecords.forEach((record) => {
           const row = collectionSheet.addRow({
             recordNo: record.recordNo,
-            date: record.collectionDate.toISOString().slice(0, 10),
-            loadingTime: record.loadingTime.toISOString().slice(11, 16),
-            unloadingTime: record.unloadingTime.toISOString().slice(11, 16),
+            date: formatDateCN(record.collectionDate),
+            loadingTime: formatTimeCN(record.loadingTime),
+            unloadingTime: formatTimeCN(record.unloadingTime),
             storeCode: record.store.code,
             storeName: record.store.name,
             storeAddress: record.store.address,
@@ -205,8 +206,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const buffer = await workbook.xlsx.writeBuffer();
 
       // 设置文件名
-      const startDateStr = task.startDate.toISOString().slice(0, 10);
-      const endDateStr = task.endDate.toISOString().slice(0, 10);
+      const startDateStr = formatDateCN(task.startDate);
+      const endDateStr = formatDateCN(task.endDate);
       const fileName = `台账_${task.collectionPoint.name}_${startDateStr}_${endDateStr}.xlsx`;
       const encodedFileName = encodeURIComponent(fileName);
 
