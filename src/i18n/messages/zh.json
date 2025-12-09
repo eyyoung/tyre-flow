@@ -117,7 +117,13 @@
     "contactPhone": "联系电话",
     "storeCount": "门店数量",
     "vehicleCount": "车辆数量",
-    "deleteConfirm": "确定要删除收集点 {name} 吗？删除后关联的门店和车辆也将被删除。"
+    "deleteConfirm": "确定要删除收集点 {name} 吗？删除后关联的门店和车辆也将被删除。",
+    "coordinates": "坐标位置",
+    "resetGeocode": "重新定位",
+    "resettingGeocode": "定位中...",
+    "resetGeocodeConfirm": "确定要根据地址重新获取坐标吗？",
+    "resetGeocodeSuccess": "坐标更新成功",
+    "resetGeocodeFailed": "坐标更新失败"
   },
   "stores": {
     "title": "门店管理",

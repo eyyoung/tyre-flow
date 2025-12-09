@@ -117,7 +117,13 @@
     "contactPhone": "Contact Phone",
     "storeCount": "Store Count",
     "vehicleCount": "Vehicle Count",
-    "deleteConfirm": "Are you sure you want to delete collection point {name}? Associated stores and vehicles will also be deleted."
+    "deleteConfirm": "Are you sure you want to delete collection point {name}? Associated stores and vehicles will also be deleted.",
+    "coordinates": "Coordinates",
+    "resetGeocode": "Reset Location",
+    "resettingGeocode": "Locating...",
+    "resetGeocodeConfirm": "Are you sure you want to get new coordinates based on the address?",
+    "resetGeocodeSuccess": "Coordinates updated successfully",
+    "resetGeocodeFailed": "Failed to update coordinates"
   },
   "stores": {
     "title": "Store Management",

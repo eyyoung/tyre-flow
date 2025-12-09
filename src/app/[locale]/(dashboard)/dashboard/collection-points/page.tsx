@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   App,
+  Descriptions,
 } from 'antd';
 import {
   PlusOutlined,
@@ -24,6 +25,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   EnvironmentOutlined,
+  AimOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
@@ -65,6 +67,9 @@ export default function CollectionPointsPage() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<CollectionPoint | null>(null);
   const [form] = Form.useForm();
+  
+  // 重置坐标相关状态
+  const [resettingGeocode, setResettingGeocode] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -177,6 +182,60 @@ export default function CollectionPointsPage() {
       }
     } catch {
       // 表单验证失败
+    }
+  };
+
+  // 重置地理坐标
+  const handleResetGeocode = async () => {
+    if (!editingItem) return;
+
+    setResettingGeocode(true);
+    try {
+      // 构造完整地址
+      const fullAddress = [
+        editingItem.province,
+        editingItem.city,
+        editingItem.district,
+        editingItem.address,
+      ].filter(Boolean).join('');
+
+      // 调用地理编码 API
+      const geocodeResponse = await fetch('/api/collection-points/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collectionPoints: [{ id: editingItem.id, address: fullAddress }],
+        }),
+      });
+
+      const geocodeResult = await geocodeResponse.json();
+
+      if (!geocodeResponse.ok) {
+        message.error(geocodeResult.message || t('collectionPoints.resetGeocodeFailed'));
+        return;
+      }
+
+      const cpResult = geocodeResult.results?.[0];
+      if (!cpResult?.success) {
+        message.error(cpResult?.error || t('collectionPoints.resetGeocodeFailed'));
+        return;
+      }
+
+      // 更新 editingItem 显示新的坐标
+      setEditingItem({
+        ...editingItem,
+        longitude: cpResult.longitude,
+        latitude: cpResult.latitude,
+      });
+
+      message.success(t('collectionPoints.resetGeocodeSuccess'));
+      
+      // 刷新列表数据
+      fetchData();
+    } catch {
+      message.error(t('collectionPoints.resetGeocodeFailed'));
+    } finally {
+      setResettingGeocode(false);
     }
   };
 
@@ -410,18 +469,55 @@ export default function CollectionPointsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="longitude" label={t('collectionPoints.longitude')}>
-                <Input type="number" step="0.000001" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="latitude" label={t('collectionPoints.latitude')}>
-                <Input type="number" step="0.000001" />
-              </Form.Item>
-            </Col>
-          </Row>
+          {editingItem ? (
+            <Descriptions
+              bordered
+              size="small"
+              column={2}
+              style={{ marginBottom: 24 }}
+            >
+              <Descriptions.Item label={t('collectionPoints.coordinates')} span={2}>
+                <Space>
+                  {editingItem.longitude && editingItem.latitude ? (
+                    <span style={{ color: '#52c41a' }}>
+                      <EnvironmentOutlined style={{ marginRight: 4 }} />
+                      {editingItem.longitude.toFixed(6)}, {editingItem.latitude.toFixed(6)}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#999' }}>-</span>
+                  )}
+                  <Popconfirm
+                    title={t('collectionPoints.resetGeocodeConfirm')}
+                    onConfirm={handleResetGeocode}
+                    okText={t('common.confirm')}
+                    cancelText={t('common.cancel')}
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<AimOutlined />}
+                      loading={resettingGeocode}
+                    >
+                      {resettingGeocode ? t('collectionPoints.resettingGeocode') : t('collectionPoints.resetGeocode')}
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+          ) : (
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="longitude" label={t('collectionPoints.longitude')}>
+                  <Input type="number" step="0.000001" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="latitude" label={t('collectionPoints.latitude')}>
+                  <Input type="number" step="0.000001" />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
