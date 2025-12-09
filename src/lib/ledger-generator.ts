@@ -364,6 +364,13 @@ function randomFloatBetween(
   return parseFloat(value.toFixed(decimals));
 }
 
+/**
+ * 将重量四舍五入到最近的 10kg（模拟磅秤精度）
+ */
+function roundToNearest10(value: number): number {
+  return Math.round(value / 10) * 10;
+}
+
 function getDaysInRange(startDate: Date, endDate: Date): number {
   const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
@@ -505,13 +512,12 @@ function generateMultiStopTrip(
 
     // 给轮胎重量添加随机波动（±5%，减小波动防止超载）
     const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.95, 1.05);
-    let actualWeight = parseFloat((actualTireCount * avgTireWeight).toFixed(2));
+    // 四舍五入到 10kg（模拟磅秤精度）
+    let actualWeight = roundToNearest10(actualTireCount * avgTireWeight);
 
     // 最终超载保护：确保累积重量不超过上限
     if (accumulatedWeight + actualWeight > maxLoadForTrip) {
-      actualWeight = parseFloat(
-        (maxLoadForTrip - accumulatedWeight).toFixed(2)
-      );
+      actualWeight = roundToNearest10(maxLoadForTrip - accumulatedWeight);
       // 如果调整后的重量太小，跳过这一站
       if (actualWeight < minWeightPerStop) {
         break;
@@ -839,13 +845,16 @@ export async function generateLedgerData(
         const isLastStop = stopIndex === trip.stops.length - 1;
 
         // 生成折损（折损发生在运输过程中，在卸车时体现）
+        // 卸车净重四舍五入到 10kg（模拟磅秤精度）
         const lossRatio = randomFloatBetween(
           config.lossRatioMin,
           config.lossRatioMax,
           5
         );
-        const loss = parseFloat((stop.weight * lossRatio).toFixed(2));
-        const unloadingNetWeight = parseFloat((stop.weight - loss).toFixed(2));
+        const rawUnloadingWeight = stop.weight * (1 - lossRatio);
+        const unloadingNetWeight = roundToNearest10(rawUnloadingWeight);
+        // 损耗 = 装车净重 - 卸车净重（根据实际磅秤读数反算）
+        const loss = stop.weight - unloadingNetWeight;
 
         collectionRecords.push({
           recordNo: generateRecordNo("CR", ++collectionIndex, collectionDate),
@@ -950,17 +959,18 @@ export async function executeLedgerTask(
       data: {
         status: "COMPLETED",
         completedAt: new Date(),
-        actualTonnage: parseFloat(totalLoadingWeight.toFixed(2)),
-        unloadingTonnage: parseFloat(totalUnloadingWeight.toFixed(2)),
-        totalLoss: parseFloat(totalLoss.toFixed(2)),
+        // 重量四舍五入到 10kg（模拟磅秤精度）
+        actualTonnage: roundToNearest10(totalLoadingWeight),
+        unloadingTonnage: roundToNearest10(totalUnloadingWeight),
+        totalLoss: roundToNearest10(totalLoss),
       },
     });
 
     return {
       totalRecords: collectionRecords.length,
-      totalLoadingWeight: parseFloat(totalLoadingWeight.toFixed(2)),
-      totalUnloadingWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
-      totalLoss: parseFloat(totalLoss.toFixed(2)),
+      totalLoadingWeight: roundToNearest10(totalLoadingWeight),
+      totalUnloadingWeight: roundToNearest10(totalUnloadingWeight),
+      totalLoss: roundToNearest10(totalLoss),
       storesCount,
       vehiclesCount,
     };
