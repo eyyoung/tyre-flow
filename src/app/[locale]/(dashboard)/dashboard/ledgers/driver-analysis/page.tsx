@@ -395,7 +395,7 @@ export default function DriverAnalysisPage() {
                           // 如果没有卸车时间，只显示装车点
                           const hasUnloadingTime = record.unloadingTimeMinutes !== null;
                           const y2 = hasUnloadingTime 
-                            ? 40 + ((record.unloadingTimeMinutes - timeRange.min) / (timeRange.max - timeRange.min)) * 420
+                            ? 40 + ((record.unloadingTimeMinutes! - timeRange.min) / (timeRange.max - timeRange.min)) * 420
                             : y1;
                           
                           return (
