@@ -334,7 +334,16 @@ export default function CollectionLedgerPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `收集台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        // 从 Content-Disposition 响应头获取文件名
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `收集台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+          if (match) {
+            filename = decodeURIComponent(match[1]);
+          }
+        }
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
