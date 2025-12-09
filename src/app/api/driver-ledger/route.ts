@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
     const recordType = searchParams.get('recordType') || 'all'; // all | collection | transfer
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
+    const sortField = searchParams.get('sortField') || 'date'; // date | recordNo
+    const sortOrder = searchParams.get('sortOrder') || 'desc'; // asc | desc
 
     // 构建日期条件
     const dateFilter: { gte?: Date; lte?: Date } = {};
@@ -141,7 +143,15 @@ export async function GET(request: NextRequest) {
 
     // 合并并排序
     const allRecords = [...collectionRecords, ...transferRecords]
-      .sort((a, b) => b.date.getTime() - a.date.getTime());
+      .sort((a, b) => {
+        if (sortField === 'recordNo') {
+          const comparison = a.recordNo.localeCompare(b.recordNo);
+          return sortOrder === 'asc' ? comparison : -comparison;
+        }
+        // 默认按日期排序
+        const comparison = a.date.getTime() - b.date.getTime();
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
 
     // 分页
     const total = allRecords.length;

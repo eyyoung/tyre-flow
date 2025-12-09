@@ -23,7 +23,8 @@ import {
   ScissorOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
+import type { SorterResult } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -82,6 +83,8 @@ export default function DriverLedgerPage() {
   const [selectedCp, setSelectedCp] = useState<string>('');
   const [recordType, setRecordType] = useState<string>('all');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
+  const [sortField, setSortField] = useState<string>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -121,6 +124,8 @@ export default function DriverLedgerPage() {
         page: page.toString(),
         pageSize: pageSize.toString(),
         recordType,
+        sortField,
+        sortOrder,
       });
 
       if (selectedDriver) {
@@ -151,7 +156,7 @@ export default function DriverLedgerPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, selectedDriver, selectedCp, recordType, dateRange, t, message]);
+  }, [page, pageSize, selectedDriver, selectedCp, recordType, dateRange, sortField, sortOrder, t, message]);
 
   useEffect(() => {
     fetchCollectionPoints();
@@ -208,6 +213,32 @@ export default function DriverLedgerPage() {
     }
   };
 
+  const handleTableChange: TableProps<LedgerRecord>['onChange'] = (
+    _pagination,
+    _filters,
+    sorter
+  ) => {
+    const sorterResult = sorter as SorterResult<LedgerRecord>;
+    // 只在排序真正变化时处理
+    const newSortField = sorterResult.field as string | undefined;
+    const newSortOrder = sorterResult.order ? (sorterResult.order === 'ascend' ? 'asc' : 'desc') : undefined;
+    
+    if (newSortField && newSortOrder) {
+      // 排序变化时才重置页码
+      if (newSortField !== sortField || newSortOrder !== sortOrder) {
+        setSortField(newSortField);
+        setSortOrder(newSortOrder);
+        setPage(1);
+      }
+    } else if (sorterResult.column && !sorterResult.order) {
+      // 取消排序时恢复默认按日期降序
+      setSortField('date');
+      setSortOrder('desc');
+      setPage(1);
+    }
+    // 翻页操作不在这里处理，由 pagination.onChange 处理
+  };
+
   const columns: ColumnsType<LedgerRecord> = [
     {
       title: t('ledgers.recordNo'),
@@ -216,6 +247,8 @@ export default function DriverLedgerPage() {
       width: 200,
       fixed: 'left',
       ellipsis: true,
+      sorter: true,
+      sortOrder: sortField === 'recordNo' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
     },
     {
       title: t('ledgers.recordType'),
@@ -233,6 +266,8 @@ export default function DriverLedgerPage() {
       dataIndex: 'date',
       key: 'date',
       width: 120,
+      sorter: true,
+      sortOrder: sortField === 'date' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     {
@@ -382,6 +417,7 @@ export default function DriverLedgerPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1400 }}
+          onChange={handleTableChange}
           pagination={{
             current: page,
             pageSize,
