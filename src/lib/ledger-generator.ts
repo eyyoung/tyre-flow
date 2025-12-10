@@ -467,7 +467,7 @@ async function getConfig(): Promise<GeneratorConfig> {
     // 多站点配置
     minStopsPerTrip: parseInt(configMap.get("min_stops_per_trip") || "2"),
     maxStopsPerTrip: parseInt(configMap.get("max_stops_per_trip") || "5"),
-    overloadRatio: parseFloat(configMap.get("overload_ratio") || "1.12"),
+    overloadRatio: parseFloat(configMap.get("overload_ratio") || "2.5"),
     overloadProbability: parseFloat(
       configMap.get("overload_probability") || "0.3"
     ),
@@ -754,8 +754,8 @@ function assignVehicleAndGenerateTrip(
   collectionDate: Date
 ): MultiStopTrip | null {
   // 司机工作时间：8:00-18:00
-  const startHour = 8;
-  const endHour = 18;
+  const startHour = 6;
+  const endHour = 20;
 
   // 按当天行程数排序，优先分配给任务少的车辆
   const sortedVehicles = [...vehicles].sort((a, b) => {
