@@ -4,49 +4,20 @@
  */
 
 import prisma from './db';
-
-interface AmapDirectionResponse {
-  status: string;
-  info: string;
-  infocode: string;
-  count: string;
-  route: {
-    origin: string;
-    destination: string;
-    paths: Array<{
-      distance: string;
-      duration: string;
-      strategy: string;
-    }>;
-  };
-}
-
-// 高德地图驾车路径规划API
-const AMAP_DIRECTION_URL = 'https://restapi.amap.com/v3/direction/driving';
+import { 
+  getLocationService, 
+  getQPSDelay, 
+  getLBSProviderType,
+  type LocationServiceProvider 
+} from './location-service';
 
 // 任务运行标记
 let isTaskRunning = false;
 
-// 从环境变量获取高德地图API Key
-const getAmapKey = async (): Promise<string | null> => {
-  if (process.env.AMAP_API_KEY) {
-    return process.env.AMAP_API_KEY;
-  }
-  
-  try {
-    const config = await prisma.systemConfig.findUnique({
-      where: { key: 'amap_api_key' },
-    });
-    return config?.value || null;
-  } catch {
-    return null;
-  }
-};
-
 // 获取收集点坐标（如果没有则进行地理编码）
 async function getCollectionPointCoords(
   collectionPointId: string,
-  apiKey: string
+  locationService: LocationServiceProvider
 ): Promise<{ longitude: number; latitude: number } | null> {
   const collectionPoint = await prisma.collectionPoint.findUnique({
     where: { id: collectionPointId },
@@ -62,86 +33,32 @@ async function getCollectionPointCoords(
   }
 
   // 需要先对收集点进行地理编码
-  const geocodeUrl = new URL('https://restapi.amap.com/v3/geocode/geo');
   const fullAddress = [
     collectionPoint.province,
     collectionPoint.city,
     collectionPoint.district,
     collectionPoint.address,
   ].filter(Boolean).join('');
-  
-  geocodeUrl.searchParams.set('address', fullAddress);
-  geocodeUrl.searchParams.set('key', apiKey);
-  geocodeUrl.searchParams.set('output', 'JSON');
 
   try {
-    const geocodeResponse = await fetch(geocodeUrl.toString());
-    const geocodeData = await geocodeResponse.json();
+    const geocodeResult = await locationService.geocode(fullAddress);
 
-    if (geocodeData.status === '1' && geocodeData.geocodes && geocodeData.geocodes.length > 0) {
-      const location = geocodeData.geocodes[0].location;
-      const [lng, lat] = location.split(',').map(Number);
+    if (geocodeResult.success && geocodeResult.longitude && geocodeResult.latitude) {
+      const { longitude, latitude } = geocodeResult;
 
       // 更新收集点坐标
       await prisma.collectionPoint.update({
         where: { id: collectionPointId },
-        data: { longitude: lng, latitude: lat },
+        data: { longitude, latitude },
       });
 
-      return { longitude: lng, latitude: lat };
+      return { longitude, latitude };
     }
   } catch (error) {
     console.error('[RoutePlanScheduler] Collection point geocode error:', error);
   }
 
   return null;
-}
-
-// 单个路径规划
-async function planRoute(
-  originLng: number,
-  originLat: number,
-  destLng: number,
-  destLat: number,
-  apiKey: string
-): Promise<{ success: boolean; duration?: number; distance?: number; error?: string }> {
-  try {
-    const url = new URL(AMAP_DIRECTION_URL);
-    url.searchParams.set('origin', `${originLng},${originLat}`);
-    url.searchParams.set('destination', `${destLng},${destLat}`);
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('output', 'JSON');
-    url.searchParams.set('strategy', '0'); // 速度优先
-
-    const response = await fetch(url.toString());
-    const data: AmapDirectionResponse = await response.json();
-
-    if (data.status !== '1') {
-      return { success: false, error: `API Error: ${data.info}` };
-    }
-
-    if (!data.route || !data.route.paths || data.route.paths.length === 0) {
-      return { success: false, error: '未找到可行路线' };
-    }
-
-    const path = data.route.paths[0];
-    const durationSeconds = parseInt(path.duration);
-
-    if (isNaN(durationSeconds)) {
-      return { success: false, error: '时间格式无效' };
-    }
-
-    // 转换为分钟，向上取整
-    const durationMinutes = Math.ceil(durationSeconds / 60);
-
-    return { 
-      success: true, 
-      duration: durationMinutes,
-      distance: parseInt(path.distance),
-    };
-  } catch (error) {
-    return { success: false, error: `请求失败: ${error instanceof Error ? error.message : 'Unknown error'}` };
-  }
 }
 
 // 获取待处理门店数量
@@ -165,12 +82,13 @@ async function getPendingStoreCount(): Promise<number> {
 async function runFullRoutePlanTask() {
   // 设置运行标记
   isTaskRunning = true;
-  console.log('[RoutePlanScheduler] Task started');
+  const providerType = getLBSProviderType();
+  console.log(`[RoutePlanScheduler] Task started (provider: ${providerType})`);
 
   try {
-    // 获取 API Key
-    const apiKey = await getAmapKey();
-    if (!apiKey) {
+    // 获取位置服务
+    const locationService = await getLocationService();
+    if (!locationService) {
       console.log('[RoutePlanScheduler] No API key configured, task skipped');
       return;
     }
@@ -181,6 +99,8 @@ async function runFullRoutePlanTask() {
     let totalProcessed = 0;
     let totalSuccess = 0;
     let totalFailed = 0;
+
+    const qpsDelay = getQPSDelay();
 
     // 循环处理，每次批量获取一批门店
     const batchSize = 50; // 每批获取50个门店
@@ -219,7 +139,7 @@ async function runFullRoutePlanTask() {
         
         // 获取或缓存收集点坐标
         if (!collectionPointCoords.has(cpId)) {
-          const coords = await getCollectionPointCoords(cpId, apiKey);
+          const coords = await getCollectionPointCoords(cpId, locationService);
           collectionPointCoords.set(cpId, coords);
         }
 
@@ -231,12 +151,11 @@ async function runFullRoutePlanTask() {
         }
 
         // 执行路径规划
-        const result = await planRoute(
+        const result = await locationService.planRoute(
           store.longitude!,
           store.latitude!,
           destCoords.longitude,
-          destCoords.latitude,
-          apiKey
+          destCoords.latitude
         );
 
         totalProcessed++;
@@ -258,8 +177,8 @@ async function runFullRoutePlanTask() {
           console.log(`[RoutePlanScheduler] ✗ Store ${store.code}: ${result.error} (coordinates reset)`);
         }
 
-        // 添加延迟避免超过QPS限制（高德免费 3 QPS，设置约 2 QPS）
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // 添加延迟避免超过QPS限制
+        await new Promise(resolve => setTimeout(resolve, qpsDelay));
       }
     }
 
@@ -308,7 +227,8 @@ export function startRoutePlanScheduler() {
     return;
   }
 
-  console.log('[RoutePlanScheduler] Starting scheduler (check interval: 1min)...');
+  const providerType = getLBSProviderType();
+  console.log(`[RoutePlanScheduler] Starting scheduler (check interval: 1min, provider: ${providerType})...`);
   
   // 延迟 10 秒后开始第一次检测，等待数据库连接稳定
   setTimeout(() => {

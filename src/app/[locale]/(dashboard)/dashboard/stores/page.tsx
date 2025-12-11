@@ -327,6 +327,8 @@ export default function StoresPage() {
 
       const routeResult = await routeResponse.json();
 
+      console.log(routeResult);
+
       if (!routeResponse.ok) {
         // 坐标成功但路径规划失败，仍然提示成功但显示警告
         message.warning(routeResult.message || t('stores.resetGeocodeFailed'));

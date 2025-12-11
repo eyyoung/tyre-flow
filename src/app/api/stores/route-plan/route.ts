@@ -1,91 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
+import { getLocationService, getApiKeyErrorMessage, getQPSDelay } from '@/lib/location-service';
 
 interface RoutePlanRequest {
   id: string;
   longitude: number;
   latitude: number;
-}
-
-interface AmapDirectionResponse {
-  status: string;
-  info: string;
-  infocode: string;
-  count: string;
-  route: {
-    origin: string;
-    destination: string;
-    paths: Array<{
-      distance: string;
-      duration: string;
-      strategy: string;
-    }>;
-  };
-}
-
-// 高德地图驾车路径规划API
-const AMAP_DIRECTION_URL = 'https://restapi.amap.com/v3/direction/driving';
-
-// 从环境变量获取高德地图API Key
-const getAmapKey = async (): Promise<string | null> => {
-  if (process.env.AMAP_API_KEY) {
-    return process.env.AMAP_API_KEY;
-  }
-  
-  const config = await prisma.systemConfig.findUnique({
-    where: { key: 'amap_api_key' },
-  });
-  
-  return config?.value || null;
-};
-
-// 单个路径规划
-async function planRoute(
-  originLng: number,
-  originLat: number,
-  destLng: number,
-  destLat: number,
-  apiKey: string
-): Promise<{ success: boolean; duration?: number; distance?: number; error?: string }> {
-  try {
-    const url = new URL(AMAP_DIRECTION_URL);
-    url.searchParams.set('origin', `${originLng},${originLat}`);
-    url.searchParams.set('destination', `${destLng},${destLat}`);
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('output', 'JSON');
-    url.searchParams.set('strategy', '0'); // 速度优先
-
-    const response = await fetch(url.toString());
-    const data: AmapDirectionResponse = await response.json();
-
-    if (data.status !== '1') {
-      return { success: false, error: `API Error: ${data.info}` };
-    }
-
-    if (!data.route || !data.route.paths || data.route.paths.length === 0) {
-      return { success: false, error: '未找到可行路线' };
-    }
-
-    const path = data.route.paths[0];
-    const durationSeconds = parseInt(path.duration);
-    const distanceMeters = parseInt(path.distance);
-
-    if (isNaN(durationSeconds)) {
-      return { success: false, error: '时间格式无效' };
-    }
-
-    // 转换为分钟，向上取整
-    const durationMinutes = Math.ceil(durationSeconds / 60);
-
-    return { 
-      success: true, 
-      duration: durationMinutes,
-      distance: distanceMeters,
-    };
-  } catch (error) {
-    return { success: false, error: `请求失败: ${error instanceof Error ? error.message : 'Unknown error'}` };
-  }
 }
 
 // 批量路径规划
@@ -128,21 +49,21 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // 获取位置服务
+      const locationService = await getLocationService();
+      if (!locationService) {
+        return NextResponse.json(
+          { message: getApiKeyErrorMessage() },
+          { status: 400 }
+        );
+      }
+
       // 如果收集点没有坐标，先进行地理编码
       let destLng = collectionPoint.longitude;
       let destLat = collectionPoint.latitude;
 
       if (!destLng || !destLat) {
         // 需要先对收集点进行地理编码
-        const apiKey = await getAmapKey();
-        if (!apiKey) {
-          return NextResponse.json(
-            { message: '未配置高德地图API Key' },
-            { status: 400 }
-          );
-        }
-
-        const geocodeUrl = new URL('https://restapi.amap.com/v3/geocode/geo');
         const fullAddress = [
           collectionPoint.province,
           collectionPoint.city,
@@ -150,23 +71,16 @@ export async function POST(request: NextRequest) {
           collectionPoint.address,
         ].filter(Boolean).join('');
         
-        geocodeUrl.searchParams.set('address', fullAddress);
-        geocodeUrl.searchParams.set('key', apiKey);
-        geocodeUrl.searchParams.set('output', 'JSON');
+        const geocodeResult = await locationService.geocode(fullAddress);
 
-        const geocodeResponse = await fetch(geocodeUrl.toString());
-        const geocodeData = await geocodeResponse.json();
-
-        if (geocodeData.status === '1' && geocodeData.geocodes && geocodeData.geocodes.length > 0) {
-          const location = geocodeData.geocodes[0].location;
-          const [lng, lat] = location.split(',').map(Number);
-          destLng = lng;
-          destLat = lat;
+        if (geocodeResult.success && geocodeResult.longitude && geocodeResult.latitude) {
+          destLng = geocodeResult.longitude;
+          destLat = geocodeResult.latitude;
 
           // 更新收集点坐标
           await prisma.collectionPoint.update({
             where: { id: collectionPointId },
-            data: { longitude: lng, latitude: lat },
+            data: { longitude: destLng, latitude: destLat },
           });
         } else {
           return NextResponse.json(
@@ -174,15 +88,6 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-      }
-
-      // 获取API Key
-      const apiKey = await getAmapKey();
-      if (!apiKey) {
-        return NextResponse.json(
-          { message: '未配置高德地图API Key，请在系统设置或环境变量中配置 AMAP_API_KEY' },
-          { status: 400 }
-        );
       }
 
       const results: Array<{
@@ -193,18 +98,15 @@ export async function POST(request: NextRequest) {
         error?: string;
       }> = [];
 
-      // 逐个处理（高德免费API有QPS限制）
-      // 此时 destLng 和 destLat 已确保有值（上面的逻辑已处理null情况）
-      const destinationLng = destLng as number;
-      const destinationLat = destLat as number;
-      
+      const qpsDelay = getQPSDelay();
+
+      // 逐个处理（API有QPS限制）
       for (const store of stores) {
-        const result = await planRoute(
+        const result = await locationService.planRoute(
           store.longitude,
           store.latitude,
-          destinationLng,
-          destinationLat,
-          apiKey
+          destLng,
+          destLat
         );
         
         results.push({
@@ -222,13 +124,14 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // 添加延迟避免超过QPS限制（高德免费API限制3QPS，保守设置约1.5QPS）
-        await new Promise(resolve => setTimeout(resolve, 700));
+        // 添加延迟避免超过QPS限制
+        await new Promise(resolve => setTimeout(resolve, qpsDelay));
       }
 
       return NextResponse.json({ 
         results,
         collectionPointCoords: { longitude: destLng, latitude: destLat },
+        provider: locationService.name,
       });
     } catch (error) {
       console.error('Route plan error:', error);
@@ -239,4 +142,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

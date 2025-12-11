@@ -1,81 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { withAuth, isAdmin } from '@/lib/auth';
+import { getLocationService, getApiKeyErrorMessage, getQPSDelay } from '@/lib/location-service';
 
 interface GeocodeRequest {
   id: string;
   address: string;
-}
-
-interface AmapGeocodeResponse {
-  status: string;
-  info: string;
-  infocode: string;
-  count: string;
-  geocodes: Array<{
-    location: string;
-    formatted_address: string;
-    province: string;
-    city: string;
-    district: string;
-  }>;
-}
-
-// 高德地图地理编码API
-const AMAP_GEOCODE_URL = 'https://restapi.amap.com/v3/geocode/geo';
-
-// 从环境变量获取高德地图API Key
-const getAmapKey = async (): Promise<string | null> => {
-  // 优先从环境变量获取
-  if (process.env.AMAP_API_KEY) {
-    return process.env.AMAP_API_KEY;
-  }
-  
-  // 从数据库配置获取
-  const config = await prisma.systemConfig.findUnique({
-    where: { key: 'amap_api_key' },
-  });
-  
-  return config?.value || null;
-};
-
-// 单个地址地理编码
-async function geocodeAddress(
-  address: string,
-  apiKey: string
-): Promise<{ success: boolean; longitude?: number; latitude?: number; error?: string }> {
-  try {
-    const url = new URL(AMAP_GEOCODE_URL);
-    url.searchParams.set('address', address);
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('output', 'JSON');
-
-    const response = await fetch(url.toString());
-    const data: AmapGeocodeResponse = await response.json();
-
-    if (data.status !== '1') {
-      return { success: false, error: `API Error: ${data.info}` };
-    }
-
-    if (!data.geocodes || data.geocodes.length === 0) {
-      return { success: false, error: '未找到匹配的地址' };
-    }
-
-    const location = data.geocodes[0].location;
-    if (!location) {
-      return { success: false, error: '地址解析结果无坐标' };
-    }
-
-    const [lng, lat] = location.split(',').map(Number);
-    
-    if (isNaN(lng) || isNaN(lat)) {
-      return { success: false, error: '坐标格式无效' };
-    }
-
-    return { success: true, longitude: lng, latitude: lat };
-  } catch (error) {
-    return { success: false, error: `请求失败: ${error instanceof Error ? error.message : 'Unknown error'}` };
-  }
 }
 
 // 批量地理编码
@@ -96,11 +26,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 获取API Key
-      const apiKey = await getAmapKey();
-      if (!apiKey) {
+      // 获取位置服务
+      const locationService = await getLocationService();
+      if (!locationService) {
         return NextResponse.json(
-          { message: '未配置高德地图API Key，请在系统设置或环境变量中配置 AMAP_API_KEY' },
+          { message: getApiKeyErrorMessage() },
           { status: 400 }
         );
       }
@@ -113,9 +43,11 @@ export async function POST(request: NextRequest) {
         error?: string;
       }> = [];
 
-      // 逐个处理（高德免费API有QPS限制）
+      const qpsDelay = getQPSDelay();
+
+      // 逐个处理（API有QPS限制）
       for (const store of stores) {
-        const result = await geocodeAddress(store.address, apiKey);
+        const result = await locationService.geocode(store.address);
         
         results.push({
           storeId: store.id,
@@ -133,11 +65,14 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // 添加延迟避免超过QPS限制（高德免费API限制3QPS，保守设置约1.5QPS）
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // 添加延迟避免超过QPS限制
+        await new Promise(resolve => setTimeout(resolve, qpsDelay));
       }
 
-      return NextResponse.json({ results });
+      return NextResponse.json({ 
+        results,
+        provider: locationService.name,
+      });
     } catch (error) {
       console.error('Geocode error:', error);
       return NextResponse.json(
@@ -204,4 +139,3 @@ export async function PUT(request: NextRequest) {
     }
   });
 }
-

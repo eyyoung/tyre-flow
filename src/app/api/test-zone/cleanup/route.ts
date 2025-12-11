@@ -30,6 +30,20 @@ export async function POST(request: NextRequest) {
             ? (collectionPointId ? { collectionPointId } : {})
             : (collectionPointId ? { collectionPointId, isVirtual: true } : { isVirtual: true });
           
+          // 先获取要删除的门店 ID
+          const storesToDelete = await prisma.store.findMany({
+            where,
+            select: { id: true },
+          });
+          const storeIds = storesToDelete.map((s) => s.id);
+
+          if (storeIds.length > 0) {
+            // 先删除关联的收集记录
+            await prisma.collectionRecord.deleteMany({
+              where: { storeId: { in: storeIds } },
+            });
+          }
+
           const result = await prisma.store.deleteMany({ where });
           count = result.count;
           break;

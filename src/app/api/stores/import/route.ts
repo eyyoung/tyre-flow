@@ -275,9 +275,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 获取已存在的营业执照号（用于去重）
+      // 获取已存在的营业执照号（收集点内去重）
       const existingLicenses = await prisma.store.findMany({
         where: {
+          collectionPointId,
           businessLicense: {
             in: stores
               .filter((s) => s.businessLicense)
@@ -290,7 +291,7 @@ export async function POST(request: NextRequest) {
         existingLicenses.map((s) => s.businessLicense)
       );
 
-      // 获取已存在的门店名称+地址组合（用于去重）
+      // 获取已存在的门店名称+地址组合（收集点内去重）
       const existingStores = await prisma.store.findMany({
         where: {
           collectionPointId,
@@ -303,6 +304,25 @@ export async function POST(request: NextRequest) {
       });
       const existingStoreSet = new Set(
         existingStores.map((s) => `${s.name}|${s.address}`)
+      );
+
+      // 获取已存在的法定代表人+手机组合（收集点内去重）
+      const existingLegalPersonPhones = await prisma.store.findMany({
+        where: {
+          collectionPointId,
+          OR: stores
+            .filter((s) => s.legalPerson && s.contactPhone)
+            .map((s) => ({
+              legalPerson: s.legalPerson!,
+              contactPhone: s.contactPhone!,
+            })),
+        },
+        select: { legalPerson: true, contactPhone: true },
+      });
+      const existingLegalPersonPhoneSet = new Set(
+        existingLegalPersonPhones
+          .filter((s) => s.legalPerson && s.contactPhone)
+          .map((s) => `${s.legalPerson}|${s.contactPhone}`)
       );
 
       let success = 0;
@@ -339,7 +359,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 检查营业执照号是否重复
+        // 检查营业执照号是否重复（收集点内）
         if (
           store.businessLicense &&
           existingLicenseSet.has(store.businessLicense)
@@ -348,9 +368,22 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 检查门店名称+地址是否重复
+        // 检查门店名称+地址是否重复（收集点内）
         const storeKey = `${store.name}|${store.address}`;
         if (existingStoreSet.has(storeKey)) {
+          skipped++;
+          continue;
+        }
+
+        // 检查法定代表人+手机是否重复（收集点内）
+        const legalPersonPhoneKey =
+          store.legalPerson && store.contactPhone
+            ? `${store.legalPerson}|${store.contactPhone}`
+            : null;
+        if (
+          legalPersonPhoneKey &&
+          existingLegalPersonPhoneSet.has(legalPersonPhoneKey)
+        ) {
           skipped++;
           continue;
         }
@@ -360,6 +393,9 @@ export async function POST(request: NextRequest) {
           existingLicenseSet.add(store.businessLicense);
         }
         existingStoreSet.add(storeKey);
+        if (legalPersonPhoneKey) {
+          existingLegalPersonPhoneSet.add(legalPersonPhoneKey);
+        }
 
         // 确定状态：
         // - "开业" 或默认值 "开业" -> ACTIVE

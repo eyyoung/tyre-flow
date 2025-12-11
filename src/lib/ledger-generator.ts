@@ -237,7 +237,10 @@ class StoreSelector {
         // 按 LRU 优先级排序（越久没访问越优先）
         const sortedByLru = candidatesWithDistance
           .map((c) => {
-            const lruPriority = this.getDaysSinceLastVisit(c.store.id, currentDate);
+            const lruPriority = this.getDaysSinceLastVisit(
+              c.store.id,
+              currentDate
+            );
             return { ...c, lruPriority };
           })
           .sort((a, b) => b.lruPriority - a.lruPriority);
@@ -467,9 +470,9 @@ async function getConfig(): Promise<GeneratorConfig> {
     // 多站点配置
     minStopsPerTrip: parseInt(configMap.get("min_stops_per_trip") || "2"),
     maxStopsPerTrip: parseInt(configMap.get("max_stops_per_trip") || "5"),
-    overloadRatio: parseFloat(configMap.get("overload_ratio") || "2.5"),
+    overloadRatio: parseFloat(configMap.get("overload_ratio") || "3.5"),
     overloadProbability: parseFloat(
-      configMap.get("overload_probability") || "0.3"
+      configMap.get("overload_probability") || "0.5"
     ),
   };
 }
