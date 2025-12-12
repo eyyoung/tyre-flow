@@ -74,8 +74,6 @@ interface TransferRecord {
   id: string;
   recordNo: string;
   transferDate: string;
-  loadingTime: string;
-  unloadingTime: string;
   tireCount: number;
   loadingNetWeight: number;
   grossWeight: number;
@@ -472,20 +470,6 @@ export default function TransferLedgerPage() {
       width: 120,
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
-    {
-      title: t('ledgers.loadingTime'),
-      dataIndex: 'loadingTime',
-      key: 'loadingTime',
-      width: 90,
-      render: (v) => dayjs(v).format('HH:mm'),
-    },
-    {
-      title: t('ledgers.unloadingTime'),
-      dataIndex: 'unloadingTime',
-      key: 'unloadingTime',
-      width: 90,
-      render: (v) => dayjs(v).format('HH:mm'),
-    },
     { title: t('vehicles.plateNumber'), dataIndex: ['vehicle', 'plateNumber'], key: 'vehicle', width: 110 },
     { title: t('ledgers.destination'), dataIndex: 'destination', key: 'destination', width: 160, ellipsis: true },
     { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right', render: (v) => v.toLocaleString() },
@@ -630,7 +614,7 @@ export default function TransferLedgerPage() {
               rules={[{ required: true }]}
             >
               <Space.Compact>
-                <InputNumber min={0.1} max={1000} step={0.1} style={{ width: 160 }} />
+                <InputNumber min={0.1} max={999999} step={0.1} style={{ width: 160 }} />
                 <Button disabled style={{ pointerEvents: 'none' }}>t (吨)</Button>
               </Space.Compact>
             </Form.Item>

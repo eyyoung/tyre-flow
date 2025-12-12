@@ -1,12 +1,10 @@
-import prisma from './db';
-import { adjustToChineseTimezone } from './timezone';
+import prisma from "./db";
+import { adjustToChineseTimezone } from "./timezone";
 
 interface TransferRecordData {
   recordNo: string;
   vehicleId: string;
   transferDate: Date;
-  loadingTime: Date;
-  unloadingTime: Date;
   destination: string;
   tireCount: number;
   loadingNetWeight: number;
@@ -15,12 +13,6 @@ interface TransferRecordData {
   unloadingNetWeight: number;
   loss: number;
   weighbridgeNo: string;
-}
-
-interface TimeSlot {
-  loadingTime: Date;
-  unloadingTime: Date;
-  returnTime: Date;
 }
 
 interface GeneratorConfig {
@@ -39,8 +31,8 @@ export interface TransferGenerationResult {
 
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -48,104 +40,40 @@ function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function randomFloatBetween(min: number, max: number, decimals: number = 2): number {
+function randomFloatBetween(
+  min: number,
+  max: number,
+  decimals: number = 2
+): number {
   const value = Math.random() * (max - min) + min;
   return parseFloat(value.toFixed(decimals));
 }
 
-class VehicleScheduler {
-  private schedules: Map<string, TimeSlot[]> = new Map();
-
-  getEarliestAvailableTime(vehicleId: string, date: Date, minStartHour: number): Date {
-    const slots = this.schedules.get(vehicleId) || [];
-    const targetDateStr = formatLocalDate(date);
-    
-    const todaySlots = slots.filter(slot => 
-      formatLocalDate(slot.loadingTime) === targetDateStr
-    ).sort((a, b) => a.returnTime.getTime() - b.returnTime.getTime());
-
-    if (todaySlots.length === 0) {
-      return new Date(date.getFullYear(), date.getMonth(), date.getDate(), minStartHour, 0, 0);
-    }
-
-    const lastSlot = todaySlots[todaySlots.length - 1];
-    return new Date(lastSlot.returnTime.getTime());
-  }
-
-  hasConflict(vehicleId: string, loadingTime: Date, returnTime: Date): boolean {
-    const slots = this.schedules.get(vehicleId) || [];
-    
-    for (const slot of slots) {
-      if (
-        (loadingTime >= slot.loadingTime && loadingTime < slot.returnTime) ||
-        (returnTime > slot.loadingTime && returnTime <= slot.returnTime) ||
-        (loadingTime <= slot.loadingTime && returnTime >= slot.returnTime)
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  book(vehicleId: string, loadingTime: Date, unloadingTime: Date, returnTime: Date): void {
-    if (!this.schedules.has(vehicleId)) {
-      this.schedules.set(vehicleId, []);
-    }
-    this.schedules.get(vehicleId)!.push({ loadingTime, unloadingTime, returnTime });
-  }
-
-  getTripCountForDay(vehicleId: string, date: Date): number {
-    const slots = this.schedules.get(vehicleId) || [];
-    const targetDateStr = formatLocalDate(date);
-    return slots.filter(slot => 
-      formatLocalDate(slot.loadingTime) === targetDateStr
-    ).length;
-  }
-}
-
-function generateTransferTripTimes(loadingTime: Date): { unloadingTime: Date; returnTime: Date } {
-  // 去程：60-120分钟
-  const outboundMinutes = randomBetween(60, 120);
-  const unloadingTime = new Date(loadingTime.getTime() + outboundMinutes * 60 * 1000);
-  
-  // 卸货过磅：30-60分钟
-  const unloadMinutes = randomBetween(30, 60);
-  
-  // 返程：60-120分钟
-  const returnMinutes = randomBetween(60, 120);
-  
-  // 休息时间：20-40分钟
-  const restMinutes = randomBetween(20, 40);
-  
-  const totalMinutes = outboundMinutes + unloadMinutes + returnMinutes + restMinutes;
-  const returnTime = new Date(loadingTime.getTime() + totalMinutes * 60 * 1000);
-  
-  return { unloadingTime, returnTime };
-}
-
 function generateRecordNo(prefix: string, index: number, date: Date): string {
-  const dateStr = formatLocalDate(date).replace(/-/g, '');
-  return `${prefix}-${dateStr}-${String(index).padStart(5, '0')}`;
+  const dateStr = formatLocalDate(date).replace(/-/g, "");
+  return `${prefix}-${dateStr}-${String(index).padStart(5, "0")}`;
 }
 
 function generateWeighbridgeNo(date: Date, index: number): string {
-  const dateStr = formatLocalDate(date).replace(/-/g, '');
-  return `WB${dateStr}${String(index).padStart(4, '0')}`;
+  const dateStr = formatLocalDate(date).replace(/-/g, "");
+  return `WB${dateStr}${String(index).padStart(4, "0")}`;
 }
 
 async function getConfig(): Promise<GeneratorConfig> {
   const configs = await prisma.systemConfig.findMany();
-  const configMap = new Map(configs.map(c => [c.key, c.value]));
+  const configMap = new Map(configs.map((c) => [c.key, c.value]));
 
   return {
-    tireWeightKg: parseFloat(configMap.get('tire_weight_kg') || '10'),
-    lossRatioMin: parseFloat(configMap.get('loss_ratio_min') || '0.001'),
-    lossRatioMax: parseFloat(configMap.get('loss_ratio_max') || '0.005'),
+    tireWeightKg: parseFloat(configMap.get("tire_weight_kg") || "10"),
+    lossRatioMin: parseFloat(configMap.get("loss_ratio_min") || "0.001"),
+    lossRatioMax: parseFloat(configMap.get("loss_ratio_max") || "0.005"),
   };
 }
 
 /**
  * 生成转移台账数据
+ * 转移任务会均匀分配到选定日期范围内的每一个工作日
+ *
  * @param collectionPointId 收集点 ID
  * @param startDate 开始日期
  * @param endDate 结束日期
@@ -158,21 +86,26 @@ export async function generateTransferData(
   targetWeightKg: number
 ): Promise<{ transferRecords: TransferRecordData[] }> {
   const config = await getConfig();
-  
+
   // 获取转移车辆
   const transferVehicles = await prisma.vehicle.findMany({
-    where: { collectionPointId, type: 'TRANSFER', status: 'ACTIVE' },
-    select: { id: true, plateNumber: true, maxLoad: true, tareWeight: true, tareWeightVariance: true },
+    where: { collectionPointId, type: "TRANSFER", status: "ACTIVE" },
+    select: {
+      id: true,
+      plateNumber: true,
+      maxLoad: true,
+      tareWeight: true,
+      tareWeightVariance: true,
+    },
   });
 
   if (transferVehicles.length === 0) {
-    throw new Error('该收集点没有可用的转移车辆');
+    throw new Error("该收集点没有可用的转移车辆");
   }
 
   const transferRecords: TransferRecordData[] = [];
-  const scheduler = new VehicleScheduler();
-  
-  // 计算日期范围内的工作日
+
+  // 计算日期范围内的工作日（周一到周六）
   const workDays: Date[] = [];
   const currentDate = new Date(startDate);
   while (currentDate <= endDate) {
@@ -185,121 +118,132 @@ export async function generateTransferData(
   }
 
   if (workDays.length === 0) {
-    throw new Error('所选日期范围内没有工作日');
+    throw new Error("所选日期范围内没有工作日");
   }
 
-  const startHour = 8;
-  const endHour = 16;
-  
-  let transferredKg = 0;
-  let transferIndex = 0;
-  let dayIndex = 0;
+  // 计算车辆平均载重（考虑装载系数 85%-98%）
+  const avgLoadFactor = 0.92; // 平均装载系数
+  const avgVehicleCapacity =
+    (transferVehicles.reduce((sum, v) => sum + v.maxLoad, 0) /
+      transferVehicles.length) *
+    avgLoadFactor;
 
-  // 按目标重量生成转移记录
-  while (transferredKg < targetWeightKg && dayIndex < workDays.length * 3) {
-    const currentDay = workDays[dayIndex % workDays.length];
-    
-    // 选择车辆（优先选择当天行程少的）
+  const randomTargetWeightKg = randomFloatBetween(
+    targetWeightKg * 1,
+    targetWeightKg * 1.1
+  );
+  // 计算总共需要多少车次（向上取整确保能达到目标）
+  const totalTripsNeeded = Math.ceil(randomTargetWeightKg / avgVehicleCapacity);
+
+  // 使用累积分配方式，将车次均匀分布到所有工作日
+  // 每天的累积目标车次 = (天数索引 + 1) / 总工作日数 * 总车次数
+  // 当累积目标超过已分配车次时，分配新的车次
+
+  let globalIndex = 0;
+  let allocatedTrips = 0; // 已分配的总车次数
+
+  // 跟踪每辆车每天的使用次数
+  const vehicleDayUsage: Map<string, Map<string, number>> = new Map();
+
+  const getVehicleUsageForDay = (vehicleId: string, date: Date): number => {
+    const dateStr = formatLocalDate(date);
+    const vehicleUsage = vehicleDayUsage.get(vehicleId);
+    if (!vehicleUsage) return 0;
+    return vehicleUsage.get(dateStr) || 0;
+  };
+
+  const incrementVehicleUsage = (vehicleId: string, date: Date): void => {
+    const dateStr = formatLocalDate(date);
+    if (!vehicleDayUsage.has(vehicleId)) {
+      vehicleDayUsage.set(vehicleId, new Map());
+    }
+    const current = vehicleDayUsage.get(vehicleId)!.get(dateStr) || 0;
+    vehicleDayUsage.get(vehicleId)!.set(dateStr, current + 1);
+  };
+
+  // 生成单条转移记录的辅助函数
+  const generateTransferRecord = (workDay: Date) => {
+    // 选择车辆（优先选择当天使用次数少的）
     const sortedVehicles = [...transferVehicles].sort((a, b) => {
-      const countA = scheduler.getTripCountForDay(a.id, currentDay);
-      const countB = scheduler.getTripCountForDay(b.id, currentDay);
+      const countA = getVehicleUsageForDay(a.id, workDay);
+      const countB = getVehicleUsageForDay(b.id, workDay);
       return countA - countB;
     });
 
-    let assigned = false;
+    // 从使用次数最少的车辆中随机选择一辆（增加多样性）
+    const minUsage = getVehicleUsageForDay(sortedVehicles[0].id, workDay);
+    const candidateVehicles = sortedVehicles.filter(
+      (v) => getVehicleUsageForDay(v.id, workDay) === minUsage
+    );
+    const vehicle =
+      candidateVehicles[randomBetween(0, candidateVehicles.length - 1)];
 
-    for (const vehicle of sortedVehicles) {
-      // 每辆车每天最多2趟
-      if (scheduler.getTripCountForDay(vehicle.id, currentDay) >= 2) {
-        continue;
-      }
+    // 计算本次转移量（装车净重）
+    const loadFactor = randomFloatBetween(0.85, 0.98);
+    const loadingNetWeight = parseFloat(
+      (vehicle.maxLoad * loadFactor).toFixed(2)
+    );
 
-      const earliestTime = scheduler.getEarliestAvailableTime(vehicle.id, currentDay, startHour);
-      
-      if (earliestTime.getHours() >= endHour) {
-        continue;
-      }
+    // 计算折损
+    const lossRatio = randomFloatBetween(
+      config.lossRatioMin,
+      config.lossRatioMax,
+      5
+    );
+    const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
+    const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
 
-      const randomOffset = randomBetween(0, 30) * 60 * 1000;
-      const loadingTime = new Date(earliestTime.getTime() + randomOffset);
-      
-      if (loadingTime.getHours() >= endHour) {
-        continue;
-      }
+    // 计算皮重（带随机微调）
+    const tareVariance = vehicle.tareWeightVariance || 50;
+    const actualTareWeight = parseFloat(
+      (
+        vehicle.tareWeight + randomFloatBetween(-tareVariance, tareVariance)
+      ).toFixed(2)
+    );
+    const grossWeight = parseFloat(
+      (unloadingNetWeight + actualTareWeight).toFixed(2)
+    );
 
-      const { unloadingTime, returnTime } = generateTransferTripTimes(loadingTime);
-      
-      if (scheduler.hasConflict(vehicle.id, loadingTime, returnTime)) {
-        continue;
-      }
+    // 计算轮胎条数
+    const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
+    const calculatedTireCount = Math.round(loadingNetWeight / avgTireWeight);
+    const tireCount = Math.max(500, calculatedTireCount);
 
-      // 计算本次转移量（装车净重）
-      const loadFactor = randomFloatBetween(0.85, 0.98);
-      // vehicle.maxLoad 是 kg
-      const maxNetWeight = vehicle.maxLoad * loadFactor;
-      const remainingKg = targetWeightKg - transferredKg;
-      
-      // 最小装车重量：车辆最大载重的 30%（约 6-7 吨）
-      const minLoadWeight = vehicle.maxLoad * 0.3;
-      
-      // 如果剩余量太小（小于最小装车重量），视为完成，不再生成记录
-      if (remainingKg < minLoadWeight) {
-        // 标记为完成，退出主循环
-        transferredKg = targetWeightKg;
-        break;
-      }
-      
-      const loadingNetWeight = parseFloat(Math.min(maxNetWeight, remainingKg).toFixed(2));
+    globalIndex++;
+    incrementVehicleUsage(vehicle.id, workDay);
 
-      // 最终安全检查：装车重量必须大于 5000kg（5吨）
-      if (loadingNetWeight < 5000) {
-        // 装车量太小，不生成这条记录，视为完成
-        transferredKg = targetWeightKg;
-        break;
-      }
+    transferRecords.push({
+      recordNo: generateRecordNo("TR", globalIndex, workDay),
+      vehicleId: vehicle.id,
+      transferDate: workDay,
+      destination: "再生资源加工厂",
+      tireCount,
+      loadingNetWeight,
+      grossWeight,
+      tareWeight: actualTareWeight,
+      unloadingNetWeight,
+      loss,
+      weighbridgeNo: generateWeighbridgeNo(workDay, globalIndex),
+    });
+  };
 
-      // 计算折损
-      const lossRatio = randomFloatBetween(config.lossRatioMin, config.lossRatioMax, 5);
-      const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
-      const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
+  // 按天循环，使用累积分配方式均匀分布车次
+  for (let dayIndex = 0; dayIndex < workDays.length; dayIndex++) {
+    const workDay = workDays[dayIndex];
 
-      // 计算皮重（带随机微调）- vehicle.tareWeight 是 kg
-      const tareVariance = vehicle.tareWeightVariance || 50;
-      const actualTareWeight = parseFloat((vehicle.tareWeight + randomFloatBetween(-tareVariance, tareVariance)).toFixed(2));
-      const grossWeight = parseFloat((unloadingNetWeight + actualTareWeight).toFixed(2));
+    // 计算到当天结束时应该累积分配的车次数
+    // 使用 (dayIndex + 1) / workDays.length * totalTripsNeeded
+    const targetAllocatedTrips = Math.round(
+      ((dayIndex + 1) / workDays.length) * totalTripsNeeded
+    );
 
-      // 计算轮胎条数（给平均轮胎重量添加随机波动，模拟真实世界中轮胎重量差异）
-      // 转移车辆装载的轮胎数量应该较大，最小 500 条
-      const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
-      const calculatedTireCount = Math.round(loadingNetWeight / avgTireWeight);
-      const tireCount = Math.max(500, calculatedTireCount);
+    // 当天需要分配的车次数
+    const dailyTrips = targetAllocatedTrips - allocatedTrips;
 
-      scheduler.book(vehicle.id, loadingTime, unloadingTime, returnTime);
-
-      transferRecords.push({
-        recordNo: generateRecordNo('TR', ++transferIndex, currentDay),
-        vehicleId: vehicle.id,
-        transferDate: currentDay,
-        loadingTime,
-        unloadingTime,
-        destination: '再生资源加工厂',
-        tireCount,
-        loadingNetWeight,
-        grossWeight,
-        tareWeight: actualTareWeight,
-        unloadingNetWeight,
-        loss,
-        weighbridgeNo: generateWeighbridgeNo(currentDay, transferIndex),
-      });
-
-      transferredKg += loadingNetWeight;
-      assigned = true;
-      break;
-    }
-
-    // 如果当天所有车辆都无法分配，转到下一天
-    if (!assigned) {
-      dayIndex++;
+    // 生成当天的转移记录
+    for (let i = 0; i < dailyTrips; i++) {
+      generateTransferRecord(workDay);
+      allocatedTrips++;
     }
   }
 
@@ -309,19 +253,21 @@ export async function generateTransferData(
 /**
  * 执行转移台账生成任务
  */
-export async function executeTransferTask(taskId: string): Promise<TransferGenerationResult> {
+export async function executeTransferTask(
+  taskId: string
+): Promise<TransferGenerationResult> {
   const task = await prisma.transferTask.findUnique({
     where: { id: taskId },
   });
 
   if (!task) {
-    throw new Error('任务不存在');
+    throw new Error("任务不存在");
   }
 
   try {
     await prisma.transferTask.update({
       where: { id: taskId },
-      data: { status: 'PROCESSING', startedAt: new Date() },
+      data: { status: "PROCESSING", startedAt: new Date() },
     });
 
     await prisma.transferRecord.deleteMany({ where: { taskId } });
@@ -335,24 +281,28 @@ export async function executeTransferTask(taskId: string): Promise<TransferGener
 
     // 在保存前调整时间为中国时区
     await prisma.transferRecord.createMany({
-      data: transferRecords.map(r => ({
+      data: transferRecords.map((r) => ({
         ...r,
         taskId,
         transferDate: adjustToChineseTimezone(r.transferDate),
-        loadingTime: adjustToChineseTimezone(r.loadingTime),
-        unloadingTime: adjustToChineseTimezone(r.unloadingTime),
       })),
     });
 
-    const totalLoadingWeight = transferRecords.reduce((sum, r) => sum + r.loadingNetWeight, 0);
-    const totalUnloadingWeight = transferRecords.reduce((sum, r) => sum + r.unloadingNetWeight, 0);
+    const totalLoadingWeight = transferRecords.reduce(
+      (sum, r) => sum + r.loadingNetWeight,
+      0
+    );
+    const totalUnloadingWeight = transferRecords.reduce(
+      (sum, r) => sum + r.unloadingNetWeight,
+      0
+    );
     const totalLoss = transferRecords.reduce((sum, r) => sum + r.loss, 0);
-    const vehicleIds = new Set(transferRecords.map(r => r.vehicleId));
+    const vehicleIds = new Set(transferRecords.map((r) => r.vehicleId));
 
     await prisma.transferTask.update({
       where: { id: taskId },
       data: {
-        status: 'COMPLETED',
+        status: "COMPLETED",
         completedAt: new Date(),
         actualTonnage: parseFloat(totalLoadingWeight.toFixed(2)),
         unloadingTonnage: parseFloat(totalUnloadingWeight.toFixed(2)),
@@ -371,8 +321,8 @@ export async function executeTransferTask(taskId: string): Promise<TransferGener
     await prisma.transferTask.update({
       where: { id: taskId },
       data: {
-        status: 'FAILED',
-        errorMessage: error instanceof Error ? error.message : '未知错误',
+        status: "FAILED",
+        errorMessage: error instanceof Error ? error.message : "未知错误",
       },
     });
     throw error;

@@ -262,8 +262,6 @@ model TransferRecord {
   vehicleId          String
   vehicle            Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   transferDate       DateTime     // 转移日期
-  loadingTime        DateTime     // 装车时间（精确到分）
-  unloadingTime      DateTime     // 卸车时间（精确到分）
   destination        String       // 目的地（工厂）
   tireCount          Int          // 轮胎条数
   loadingNetWeight   Float        // 装车净重（kg）

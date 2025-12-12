@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { formatDateCN } from '@/lib/timezone';
 
 interface TripRecord {
   id: string;
@@ -61,10 +62,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 构建日期条件
-    const startDateObj = new Date(startDate);
-    startDateObj.setHours(0, 0, 0, 0);
-    const endDateObj = new Date(endDate);
-    endDateObj.setHours(23, 59, 59, 999);
+    // 用户输入的日期代表中国时区（UTC+8）的那一天
+    // 使用固定的 +08:00 时区偏移，不依赖服务器时区设置
+    const startDateObj = new Date(startDate + 'T00:00:00.000+08:00');
+    const endDateObj = new Date(endDate + 'T23:59:59.999+08:00');
 
     const tripRecords: TripRecord[] = [];
     const driversMap = new Map<string, { name: string; phone: string }>();
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
       });
 
       for (const record of records) {
-        const dateStr = record.collectionDate.toISOString().slice(0, 10);
+        const dateStr = formatDateCN(record.collectionDate);
         const driverId = record.vehicle.id;
         const driverName = record.vehicle.driverName || record.vehicle.plateNumber;
         
@@ -141,7 +142,7 @@ export async function GET(request: NextRequest) {
       });
 
       for (const record of records) {
-        const dateStr = record.transferDate.toISOString().slice(0, 10);
+        const dateStr = formatDateCN(record.transferDate);
         const driverId = record.vehicle.id;
         const driverName = record.vehicle.driverName || record.vehicle.plateNumber;
         

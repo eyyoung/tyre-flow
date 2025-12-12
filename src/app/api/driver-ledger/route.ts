@@ -16,16 +16,18 @@ export async function GET(request: NextRequest) {
     const sortOrder = searchParams.get('sortOrder') || 'desc'; // asc | desc
 
     // 构建日期条件
+    // 用户输入的日期代表中国时区（UTC+8）的那一天
+    // 使用固定的 +08:00 时区偏移，不依赖服务器时区设置
     const dateFilter: { gte?: Date; lte?: Date } = {};
     if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      dateFilter.gte = start;
+      // startDate 格式为 YYYY-MM-DD，代表中国时区的那一天的开始
+      // 中国时区 YYYY-MM-DD 00:00:00 -> 自动转换为 UTC
+      dateFilter.gte = new Date(startDate + 'T00:00:00.000+08:00');
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      dateFilter.lte = end;
+      // endDate 格式为 YYYY-MM-DD，代表中国时区的那一天的结束
+      // 中国时区 YYYY-MM-DD 23:59:59.999 -> 自动转换为 UTC
+      dateFilter.lte = new Date(endDate + 'T23:59:59.999+08:00');
     }
 
     // 获取收集记录

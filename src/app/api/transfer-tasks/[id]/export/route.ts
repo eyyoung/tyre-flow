@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { formatDateCN, formatTimeCN } from '@/lib/timezone';
+import { formatDateCN } from '@/lib/timezone';
 import ExcelJS from 'exceljs';
 
 interface RouteParams {
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       include: {
         vehicle: { select: { plateNumber: true, driverName: true, driverPhone: true } },
       },
-      orderBy: { loadingTime: 'asc' },
+      orderBy: { transferDate: 'asc' },
     });
 
     // 创建工作簿
@@ -68,8 +68,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     sheet.columns = [
       { header: '记录编号', key: 'recordNo', width: 25 },
       { header: '日期', key: 'date', width: 12 },
-      { header: '装车时间', key: 'loadingTime', width: 10 },
-      { header: '卸车时间', key: 'unloadingTime', width: 10 },
       { header: '车牌号', key: 'vehiclePlate', width: 12 },
       { header: '司机姓名', key: 'driverName', width: 12 },
       { header: '司机电话', key: 'driverPhone', width: 15 },
@@ -94,8 +92,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const row = sheet.addRow({
         recordNo: record.recordNo,
         date: formatDateCN(record.transferDate),
-        loadingTime: formatTimeCN(record.loadingTime),
-        unloadingTime: formatTimeCN(record.unloadingTime),
         vehiclePlate: record.vehicle.plateNumber,
         driverName: record.vehicle.driverName || '',
         driverPhone: record.vehicle.driverPhone || '',
@@ -131,10 +127,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 生成 Excel 文件
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // 设置文件名
+    // 设置文件名: 收集点_时间范围_转移记录.xlsx
     const startDateStr = formatDateCN(task.startDate);
     const endDateStr = formatDateCN(task.endDate);
-    const fileName = `转移台账_${task.collectionPoint.name}_${startDateStr}_${endDateStr}.xlsx`;
+    const fileName = `${task.collectionPoint.name}_${startDateStr}_${endDateStr}_转移记录.xlsx`;
     const encodedFileName = encodeURIComponent(fileName);
 
     return new NextResponse(buffer, {
