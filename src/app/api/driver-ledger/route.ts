@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
     // 构建日期条件
     const dateFilter: { gte?: Date; lte?: Date } = {};
     if (startDate) {
-      dateFilter.gte = new Date(startDate);
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      dateFilter.gte = start;
     }
     if (endDate) {
       const end = new Date(endDate);

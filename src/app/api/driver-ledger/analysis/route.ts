@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
 
     // 构建日期条件
     const startDateObj = new Date(startDate);
+    startDateObj.setHours(0, 0, 0, 0);
     const endDateObj = new Date(endDate);
     endDateObj.setHours(23, 59, 59, 999);
 
