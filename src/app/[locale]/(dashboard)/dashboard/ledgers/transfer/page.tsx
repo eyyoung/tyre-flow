@@ -81,7 +81,6 @@ interface TransferRecord {
   unloadingNetWeight: number;
   loss: number;
   weighbridgeNo: string | null;
-  destination: string;
   vehicle: { plateNumber: string };
 }
 
@@ -272,7 +271,16 @@ export default function TransferLedgerPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `转移台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        // 从响应头获取文件名
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let fileName = `转移台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+          if (match) {
+            fileName = decodeURIComponent(match[1]);
+          }
+        }
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -471,7 +479,6 @@ export default function TransferLedgerPage() {
       render: (v) => dayjs(v).format('YYYY-MM-DD'),
     },
     { title: t('vehicles.plateNumber'), dataIndex: ['vehicle', 'plateNumber'], key: 'vehicle', width: 110 },
-    { title: t('ledgers.destination'), dataIndex: 'destination', key: 'destination', width: 160, ellipsis: true },
     { title: t('ledgers.tireCount'), dataIndex: 'tireCount', key: 'tireCount', width: 100, align: 'right', render: (v) => v.toLocaleString() },
     {
       title: `${t('ledgers.loadingNetWeight')}(kg)`,
