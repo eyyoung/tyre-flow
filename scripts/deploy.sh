@@ -97,11 +97,11 @@ info "🏗️  开始构建 Docker 镜像..."
 
 # 构建应用镜像
 info "构建应用镜像 (tyre-flow-app)..."
-docker build -t tyre-flow-app:latest -t tyre-flow-app:${GIT_SHA} .
+docker build --platform linux/amd64 -t tyre-flow-app:latest .
 
 # 构建迁移镜像
 info "构建迁移镜像 (tyre-flow-migrate)..."
-docker build -f Dockerfile.migrate -t tyre-flow-migrate:latest -t tyre-flow-migrate:${GIT_SHA} .
+docker build --platform linux/amd64 -f Dockerfile.migrate -t tyre-flow-migrate:latest .
 
 success "镜像构建完成"
 docker images | grep tyre-flow
