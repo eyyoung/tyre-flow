@@ -84,6 +84,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       const l = labels[lang as keyof typeof labels] || labels.zh;
 
+      // 门店统计表多语言标签
+      const storeStatsLabels = {
+        zh: {
+          sheetName: '门店统计',
+          storeName: '门店名称',
+          total: '合计',
+        },
+        en: {
+          sheetName: 'Store Statistics',
+          storeName: 'Store Name',
+          total: 'Total',
+        },
+      };
+      const sl = storeStatsLabels[lang as keyof typeof storeStatsLabels] || storeStatsLabels.zh;
+
       // 设置单元格样式
       const headerStyle: Partial<ExcelJS.Style> = {
         font: { bold: true, color: { argb: 'FFFFFFFF' } },
@@ -180,6 +195,122 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } },
           };
         });
+
+        // 门店统计表：以门店为维度，纵轴门店，横轴日期，单元格为轮胎条数
+        if (collectionRecords.length > 0) {
+          const storeStatsSheet = workbook.addWorksheet(sl.sheetName);
+
+          // 获取所有唯一日期并排序
+          const dateSet = new Set<string>();
+          collectionRecords.forEach((record) => {
+            dateSet.add(formatDateCN(record.collectionDate));
+          });
+          const sortedDates = Array.from(dateSet).sort();
+
+          // 获取所有唯一门店并排序
+          const storeMap = new Map<string, { name: string; dateData: Map<string, number> }>();
+          collectionRecords.forEach((record) => {
+            const storeId = record.storeId;
+            const dateStr = formatDateCN(record.collectionDate);
+            
+            if (!storeMap.has(storeId)) {
+              storeMap.set(storeId, {
+                name: record.store.name,
+                dateData: new Map(),
+              });
+            }
+            
+            const storeData = storeMap.get(storeId)!;
+            const currentCount = storeData.dateData.get(dateStr) || 0;
+            storeData.dateData.set(dateStr, currentCount + record.tireCount);
+          });
+
+          // 按门店名称排序
+          const sortedStores = Array.from(storeMap.entries()).sort((a, b) => 
+            a[1].name.localeCompare(b[1].name, 'zh-CN')
+          );
+
+          // 设置列：第一列是门店名称，后面是日期列，最后是合计列
+          const columns: Partial<ExcelJS.Column>[] = [
+            { header: sl.storeName, key: 'storeName', width: 45 },
+          ];
+          sortedDates.forEach((date) => {
+            columns.push({ header: date, key: date, width: 12 });
+          });
+          columns.push({ header: sl.total, key: 'total', width: 12 });
+          storeStatsSheet.columns = columns;
+
+          // 设置表头样式
+          storeStatsSheet.getRow(1).eachCell((cell) => {
+            cell.style = headerStyle;
+          });
+          storeStatsSheet.getRow(1).height = 25;
+
+          // 添加数据行
+          sortedStores.forEach(([, storeData]) => {
+            const rowData: Record<string, string | number> = {
+              storeName: storeData.name,
+            };
+            let storeTotal = 0;
+            sortedDates.forEach((date) => {
+              const count = storeData.dateData.get(date) || 0;
+              rowData[date] = count || '';
+              storeTotal += count;
+            });
+            rowData['total'] = storeTotal;
+
+            const row = storeStatsSheet.addRow(rowData);
+            row.eachCell((cell, colNumber) => {
+              if (colNumber === columns.length) {
+                // 合计列样式
+                cell.style = {
+                  ...cellStyle,
+                  font: { bold: true },
+                  alignment: { horizontal: 'center', vertical: 'middle' },
+                };
+              } else if (colNumber > 1) {
+                // 数据列居中
+                cell.style = {
+                  ...cellStyle,
+                  alignment: { horizontal: 'center', vertical: 'middle' },
+                };
+              } else {
+                cell.style = cellStyle;
+              }
+            });
+          });
+
+          // 添加日期汇总行
+          const dateTotals: Record<string, string | number> = {
+            storeName: sl.total,
+          };
+          let grandTotal = 0;
+          sortedDates.forEach((date) => {
+            let dateTotal = 0;
+            sortedStores.forEach(([, storeData]) => {
+              dateTotal += storeData.dateData.get(date) || 0;
+            });
+            dateTotals[date] = dateTotal;
+            grandTotal += dateTotal;
+          });
+          dateTotals['total'] = grandTotal;
+
+          const totalRow = storeStatsSheet.addRow(dateTotals);
+          totalRow.eachCell((cell) => {
+            cell.style = {
+              ...cellStyle,
+              font: { bold: true },
+              fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } },
+              alignment: { horizontal: 'center', vertical: 'middle' },
+            };
+          });
+          // 第一列（门店名称/合计）左对齐
+          totalRow.getCell(1).style = {
+            ...cellStyle,
+            font: { bold: true },
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } },
+          };
+        }
       }
 
       // 转移台账已移至独立的 TransferTask，此处不再导出
