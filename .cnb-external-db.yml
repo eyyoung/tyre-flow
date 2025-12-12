@@ -49,7 +49,7 @@
 
             # 配置 SSH 密钥
             - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - echo "$PROD_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 8.148.203.142 >> ~/.ssh/known_hosts 2>/dev/null
 
@@ -158,7 +158,7 @@
           script:
             - apt-get update && apt-get install -y openssh-client || apk add --no-cache openssh-client
             - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+            - echo "$PROD_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
             - ssh-keyscan -H 8.148.203.142 >> ~/.ssh/known_hosts 2>/dev/null
             - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@8.148.203.142:/tmp/
