@@ -299,8 +299,9 @@ export async function GET(request: NextRequest) {
       transferRecords = records.map(r => ({
         recordNo: r.recordNo,
         date: r.transferDate,
-        loadingTime: r.loadingTime,
-        unloadingTime: r.unloadingTime,
+        // TransferRecord 只有 transferDate，用它作为时间参考
+        loadingTime: r.transferDate,
+        unloadingTime: null,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
         vehiclePlate: r.vehicle.plateNumber,

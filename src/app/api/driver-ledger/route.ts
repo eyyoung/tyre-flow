@@ -132,8 +132,9 @@ export async function GET(request: NextRequest) {
         id: r.id,
         recordNo: r.recordNo,
         date: r.transferDate,
-        loadingTime: r.loadingTime,
-        unloadingTime: r.unloadingTime,
+        // TransferRecord 只有 transferDate，用它作为时间参考
+        loadingTime: r.transferDate,
+        unloadingTime: null,
         type: 'transfer' as const,
         driverName: r.vehicle.driverName || '',
         driverPhone: r.vehicle.driverPhone || '',
