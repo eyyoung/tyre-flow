@@ -159,10 +159,11 @@ export async function GET(request: NextRequest) {
           date: dateStr,
           driverId,
           driverName,
-          loadingTimeMinutes: getMinutesFromMidnight(record.loadingTime),
-          unloadingTimeMinutes: getMinutesFromMidnight(record.unloadingTime),
-          loadingTimeStr: formatTimeWithTimezone(record.loadingTime),
-          unloadingTimeStr: formatTimeWithTimezone(record.unloadingTime),
+          // TransferRecord 只有 transferDate，用它作为时间参考
+          loadingTimeMinutes: getMinutesFromMidnight(record.transferDate),
+          unloadingTimeMinutes: null,
+          loadingTimeStr: formatTimeWithTimezone(record.transferDate),
+          unloadingTimeStr: '-',
           weight: Math.round(record.loadingNetWeight),
         });
       }
