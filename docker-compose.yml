@@ -19,6 +19,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - internal-db
 
   # Next.js Application
   app:
@@ -44,6 +46,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    profiles:
+      - internal-db
 
   # Next.js Application (外部数据库模式，不依赖本地 db)
   app-external-db:
@@ -71,6 +75,7 @@ services:
 
   # Database migration and seeding (run once)
   migrate:
+    image: tyre-flow-migrate:latest
     build:
       context: .
       dockerfile: Dockerfile.migrate
@@ -85,10 +90,11 @@ services:
 
   # Database migration (外部数据库模式)
   migrate-external-db:
+    image: tyre-flow-migrate:latest
     build:
       context: .
       dockerfile: Dockerfile.migrate
-    container_name: tyre-flow-migrate
+    container_name: tyre-flow-migrate-external
     environment:
       - DATABASE_URL=${EXTERNAL_DB_URL}
     profiles:

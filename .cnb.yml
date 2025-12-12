@@ -21,12 +21,14 @@ dev:
       env:
         DOCKER_HOST: unix:///var/run/docker.sock
       stages:
-        # 阶段1: 构建 Docker 镜像
+        # 阶段1: 构建 Docker 镜像（应用 + 迁移）
         - name: 🏗️ 构建 Docker 镜像
           script:
             - echo "开始构建 Docker 镜像..."
             - docker version
             - docker build -t tyre-flow-app:latest -t tyre-flow-app:${CI_COMMIT_SHORT_SHA:-latest} .
+            - echo "构建迁移镜像..."
+            - docker build -f Dockerfile.migrate -t tyre-flow-migrate:latest .
             - echo "镜像构建完成"
             - docker images | grep tyre-flow
 
@@ -34,7 +36,7 @@ dev:
         - name: 📦 保存镜像
           script:
             - echo "保存镜像为 tar 文件..."
-            - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
+            - docker save tyre-flow-app:latest tyre-flow-migrate:latest | gzip > tyre-flow-app.tar.gz
             - ls -lh tyre-flow-app.tar.gz
 
         # 阶段3: 部署到服务器
@@ -103,10 +105,10 @@ dev:
                 docker compose --profile setup run --rm migrate
                 
                 echo "🚀 启动应用服务..."
-                docker compose up -d --no-build
+                docker compose --profile internal-db up -d --no-build
               else
                 echo "🔄 更新部署：启动所有服务..."
-                docker compose up -d --no-build
+                docker compose --profile internal-db up -d --no-build
                 
                 echo "⏳ 等待服务启动..."
                 sleep 10
@@ -152,12 +154,14 @@ main:
       env:
         DOCKER_HOST: unix:///var/run/docker.sock
       stages:
-        # 阶段1: 构建 Docker 镜像
+        # 阶段1: 构建 Docker 镜像（应用 + 迁移）
         - name: 🏗️ 构建 Docker 镜像
           script:
             - echo "开始构建 Docker 镜像..."
             - docker version
             - docker build -t tyre-flow-app:latest -t tyre-flow-app:${CI_COMMIT_SHORT_SHA:-latest} .
+            - echo "构建迁移镜像..."
+            - docker build -f Dockerfile.migrate -t tyre-flow-migrate:latest .
             - echo "镜像构建完成"
             - docker images | grep tyre-flow
 
@@ -165,7 +169,7 @@ main:
         - name: 📦 保存镜像
           script:
             - echo "保存镜像为 tar 文件..."
-            - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
+            - docker save tyre-flow-app:latest tyre-flow-migrate:latest | gzip > tyre-flow-app.tar.gz
             - ls -lh tyre-flow-app.tar.gz
 
         # 阶段3: 部署到服务器（外部数据库模式）
@@ -266,7 +270,8 @@ main:
           script:
             - echo "构建版本 $CNB_TAG"
             - docker build -t tyre-flow-app:$CNB_TAG -t tyre-flow-app:latest .
-            - docker save tyre-flow-app:latest | gzip > tyre-flow-app.tar.gz
+            - docker build -f Dockerfile.migrate -t tyre-flow-migrate:latest .
+            - docker save tyre-flow-app:latest tyre-flow-migrate:latest | gzip > tyre-flow-app.tar.gz
 
         - name: 🚀 部署发布版本到生产环境
           script:
