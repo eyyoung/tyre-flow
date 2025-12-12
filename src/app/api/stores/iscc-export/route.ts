@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
 
         const fileName = `ISCC_${store.code}_${store.name.replace(/[/\\?%*:|"<>]/g, '_')}.docx`;
 
-        return new NextResponse(buf, {
+        return new NextResponse(new Uint8Array(buf), {
           headers: {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"`,
@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
       // 返回 ZIP 文件
       const zipFileName = `ISCC_${collectionPoint.code}_${currentDate}.zip`;
       
-      return new NextResponse(zipBuffer, {
+      return new NextResponse(new Uint8Array(zipBuffer), {
         headers: {
           'Content-Type': 'application/zip',
           'Content-Disposition': `attachment; filename="${encodeURIComponent(zipFileName)}"`,
