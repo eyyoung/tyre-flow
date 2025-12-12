@@ -2,7 +2,10 @@
 
 # ===========================================
 # 本地部署脚本
-# 用法: ./scripts/deploy.sh [dev|prod]
+# 用法: ./scripts/deploy.sh [dev|prod] [--scp]
+#
+# 选项:
+#   --scp  使用传统 SCP 方式传输（默认使用 Registry 增量推送）
 # ===========================================
 
 set -e
@@ -34,14 +37,35 @@ error() {
 
 # 检查参数
 if [ -z "$1" ]; then
-    echo "用法: $0 [dev|prod]"
+    echo "用法: $0 [dev|prod] [--scp]"
     echo ""
     echo "  dev   - 部署到测试环境 (212.129.242.30)"
     echo "  prod  - 部署到生产环境 (8.148.203.142)"
+    echo ""
+    echo "选项:"
+    echo "  --scp - 使用传统 SCP 方式传输完整镜像（默认使用 Registry 增量推送）"
     exit 1
 fi
 
 ENV=$1
+USE_SCP=false
+
+# 解析额外参数
+shift
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --scp)
+            USE_SCP=true
+            shift
+            ;;
+        *)
+            error "未知参数: $1"
+            ;;
+    esac
+done
+
+# Registry 配置（在服务器上运行）
+REGISTRY_PORT="5000"
 
 # 配置变量
 case $ENV in
@@ -53,6 +77,7 @@ case $ENV in
         DOCKER_PROFILE="internal-db"
         SETUP_PROFILE="setup"
         MIGRATE_SERVICE="migrate"
+        REGISTRY_HOST="${SERVER_IP}:${REGISTRY_PORT}"
         ;;
     prod)
         SERVER_IP="8.148.203.142"
@@ -62,6 +87,7 @@ case $ENV in
         DOCKER_PROFILE="external-db"
         SETUP_PROFILE="external-db-setup"
         MIGRATE_SERVICE="migrate-external-db"
+        REGISTRY_HOST="${SERVER_IP}:${REGISTRY_PORT}"
         ;;
     *)
         error "未知环境: $ENV (请使用 dev 或 prod)"
@@ -79,6 +105,12 @@ echo "服务器: ${SERVER_USER}@${SERVER_IP}"
 echo "部署目录: ${DEPLOY_DIR}"
 echo "Git SHA: ${GIT_SHA}"
 echo "Docker Profile: ${DOCKER_PROFILE}"
+if [ "$USE_SCP" = true ]; then
+    echo "传输方式: SCP（完整镜像）"
+else
+    echo "传输方式: Registry（增量推送）🚀"
+    echo "Registry: ${REGISTRY_HOST}"
+fi
 echo "========================================"
 echo ""
 
@@ -91,52 +123,182 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # ===========================================
+# Registry 模式预检查
+# ===========================================
+if [ "$USE_SCP" = false ]; then
+    info "🔍 检查 Docker 配置..."
+    
+    # 检查本地 Docker 是否配置了 insecure-registries
+    DOCKER_CONFIG_OK=false
+    
+    # 检查 daemon.json
+    if [ -f "/etc/docker/daemon.json" ]; then
+        if grep -q "${REGISTRY_HOST}" /etc/docker/daemon.json 2>/dev/null; then
+            DOCKER_CONFIG_OK=true
+        fi
+    fi
+    
+    # macOS: 检查 Docker Desktop 配置
+    if [ -f "$HOME/.docker/daemon.json" ]; then
+        if grep -q "${REGISTRY_HOST}" "$HOME/.docker/daemon.json" 2>/dev/null; then
+            DOCKER_CONFIG_OK=true
+        fi
+    fi
+    
+    if [ "$DOCKER_CONFIG_OK" = false ]; then
+        warn "检测到本地 Docker 可能未配置 insecure-registries"
+        echo ""
+        echo "📝 请将以下内容添加到 Docker 配置中："
+        echo ""
+        echo "   macOS/Windows (Docker Desktop):"
+        echo "   Settings -> Docker Engine -> 添加："
+        echo ""
+        echo "   {\"insecure-registries\": [\"${REGISTRY_HOST}\"]}"
+        echo ""
+        echo "   Linux (/etc/docker/daemon.json):"
+        echo "   {\"insecure-registries\": [\"${REGISTRY_HOST}\"]}"
+        echo ""
+        echo "   然后重启 Docker 服务"
+        echo ""
+        read -p "配置完成后按 Enter 继续，或输入 'skip' 跳过检查: " SKIP_CHECK
+        if [ "$SKIP_CHECK" != "skip" ]; then
+            info "请完成配置后重新运行部署脚本"
+            info "或使用 --scp 选项使用传统传输方式"
+            exit 0
+        fi
+    else
+        success "Docker insecure-registries 已配置"
+    fi
+fi
+
+# ===========================================
 # 阶段1: 构建 Docker 镜像
 # ===========================================
 info "🏗️  开始构建 Docker 镜像..."
 
+# 根据传输方式决定镜像标签
+if [ "$USE_SCP" = true ]; then
+    APP_IMAGE="tyre-flow-app:latest"
+    MIGRATE_IMAGE="tyre-flow-migrate:latest"
+else
+    APP_IMAGE="${REGISTRY_HOST}/tyre-flow-app:${GIT_SHA}"
+    APP_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-app:latest"
+    MIGRATE_IMAGE="${REGISTRY_HOST}/tyre-flow-migrate:${GIT_SHA}"
+    MIGRATE_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-migrate:latest"
+fi
+
 # 构建应用镜像
-info "构建应用镜像 (tyre-flow-app)..."
-docker build --platform linux/amd64 -t tyre-flow-app:latest .
+info "构建应用镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 -t "$APP_IMAGE" .
+else
+    docker build --platform linux/amd64 -t "$APP_IMAGE" -t "$APP_IMAGE_LATEST" .
+fi
 
 # 构建迁移镜像
-info "构建迁移镜像 (tyre-flow-migrate)..."
-docker build --platform linux/amd64 -f Dockerfile.migrate -t tyre-flow-migrate:latest .
+info "构建迁移镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" .
+else
+    docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" -t "$MIGRATE_IMAGE_LATEST" .
+fi
 
 success "镜像构建完成"
 docker images | grep tyre-flow
 
-# ===========================================
-# 阶段2: 保存镜像
-# ===========================================
-info "📦 保存镜像为 tar 文件..."
+if [ "$USE_SCP" = true ]; then
+    # ===========================================
+    # SCP 模式: 保存并传输完整镜像
+    # ===========================================
+    info "📦 保存镜像为 tar 文件..."
 
-TEMP_FILE=$(mktemp /tmp/tyre-flow-app.XXXXXX.tar.gz)
-docker save tyre-flow-app:latest | gzip > "$TEMP_FILE"
+    TEMP_FILE=$(mktemp /tmp/tyre-flow-app.XXXXXX.tar.gz)
+    docker save tyre-flow-app:latest | gzip > "$TEMP_FILE"
 
-TEMP_MIGRATE_FILE=$(mktemp /tmp/tyre-flow-migrate.XXXXXX.tar.gz)
-docker save tyre-flow-migrate:latest | gzip > "$TEMP_MIGRATE_FILE"
+    TEMP_MIGRATE_FILE=$(mktemp /tmp/tyre-flow-migrate.XXXXXX.tar.gz)
+    docker save tyre-flow-migrate:latest | gzip > "$TEMP_MIGRATE_FILE"
 
-ls -lh "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
-success "镜像保存完成"
+    ls -lh "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
+    success "镜像保存完成"
 
-# ===========================================
-# 阶段3: 传输镜像到服务器
-# ===========================================
-info "📤 传输镜像到服务器 (${SERVER_IP})..."
+    info "📤 传输镜像到服务器 (${SERVER_IP})..."
 
-scp -o StrictHostKeyChecking=no "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
-scp -o StrictHostKeyChecking=no "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
+    scp -o StrictHostKeyChecking=no "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
+    scp -o StrictHostKeyChecking=no "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
 
-success "镜像传输完成"
+    success "镜像传输完成"
 
-# 清理本地临时文件
-rm -f "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
+    # 清理本地临时文件
+    rm -f "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
+else
+    # ===========================================
+    # Registry 模式: 增量推送到远程 Registry
+    # ===========================================
+    
+    # 确保服务器上 Registry 正在运行
+    info "🔧 确保远程 Registry 服务运行中..."
+    ssh -o StrictHostKeyChecking=no "${SERVER_USER}@${SERVER_IP}" << 'REGISTRY_SETUP'
+set -e
+# 检查 registry 是否运行
+if ! docker ps --format '{{.Names}}' | grep -q "^registry$"; then
+    echo "启动 Docker Registry..."
+    docker run -d \
+        --name registry \
+        --restart=always \
+        -p 5000:5000 \
+        -v /var/lib/registry:/var/lib/registry \
+        registry:2
+    echo "Registry 已启动"
+else
+    echo "Registry 已在运行"
+fi
+REGISTRY_SETUP
+    
+    success "Registry 服务就绪"
+
+    # 配置本地 Docker 信任该 Registry（insecure registry）
+    info "📤 推送镜像到 Registry（增量传输）..."
+    
+    # 推送应用镜像
+    info "推送应用镜像 (只传输变化的层)..."
+    docker push "$APP_IMAGE"
+    docker push "$APP_IMAGE_LATEST"
+    
+    # 推送迁移镜像
+    info "推送迁移镜像 (只传输变化的层)..."
+    docker push "$MIGRATE_IMAGE"
+    docker push "$MIGRATE_IMAGE_LATEST"
+    
+    success "镜像推送完成（增量传输）"
+fi
 
 # ===========================================
 # 阶段4: 在服务器上部署
 # ===========================================
 info "🚀 在服务器上执行部署..."
+
+# 根据传输模式设置镜像加载命令
+if [ "$USE_SCP" = true ]; then
+    LOAD_IMAGES_CMD='
+echo "📥 加载 Docker 镜像..."
+docker load < /tmp/tyre-flow-app.tar.gz
+rm -f /tmp/tyre-flow-app.tar.gz
+
+echo "📥 加载迁移镜像..."
+docker load < /tmp/tyre-flow-migrate.tar.gz
+rm -f /tmp/tyre-flow-migrate.tar.gz
+'
+else
+    LOAD_IMAGES_CMD="
+echo \"📥 从 Registry 拉取镜像（增量下载）...\"
+docker pull localhost:${REGISTRY_PORT}/tyre-flow-app:latest
+docker pull localhost:${REGISTRY_PORT}/tyre-flow-migrate:latest
+
+echo \"📥 重新标记镜像...\"
+docker tag localhost:${REGISTRY_PORT}/tyre-flow-app:latest tyre-flow-app:latest
+docker tag localhost:${REGISTRY_PORT}/tyre-flow-migrate:latest tyre-flow-migrate:latest
+"
+fi
 
 if [ "$ENV" = "dev" ]; then
     # Dev 环境部署脚本
@@ -148,13 +310,7 @@ DEPLOY_DIR="${DEPLOY_DIR}"
 mkdir -p \$DEPLOY_DIR
 cd \$DEPLOY_DIR
 
-echo "📥 加载 Docker 镜像..."
-docker load < /tmp/tyre-flow-app.tar.gz
-rm -f /tmp/tyre-flow-app.tar.gz
-
-echo "📥 加载迁移镜像..."
-docker load < /tmp/tyre-flow-migrate.tar.gz
-rm -f /tmp/tyre-flow-migrate.tar.gz
+${LOAD_IMAGES_CMD}
 
 echo "📥 同步配置文件..."
 if [ -d ".git" ]; then
@@ -236,13 +392,7 @@ DEPLOY_DIR="${DEPLOY_DIR}"
 mkdir -p \$DEPLOY_DIR
 cd \$DEPLOY_DIR
 
-echo "📥 加载 Docker 镜像..."
-docker load < /tmp/tyre-flow-app.tar.gz
-rm -f /tmp/tyre-flow-app.tar.gz
-
-echo "📥 加载迁移镜像..."
-docker load < /tmp/tyre-flow-migrate.tar.gz
-rm -f /tmp/tyre-flow-migrate.tar.gz
+${LOAD_IMAGES_CMD}
 
 echo "📥 同步配置文件..."
 if [ -d ".git" ]; then
@@ -300,4 +450,3 @@ DEPLOY_SCRIPT
 fi
 
 success "🎉 部署脚本执行完成！"
-
