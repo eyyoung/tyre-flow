@@ -832,6 +832,332 @@ function assignVehicleAndGenerateTrip(
 }
 
 /**
+ * 检测并重新分配最后几天空缺的数据
+ * 如果最后几天没有数据，取出空缺天数*2的行程，重新分配到空缺的天数中
+ * 保持门店和重量不变，但重新生成时间
+ * 按行程（趟）平均分配到各天，而不是按记录条数
+ */
+function redistributeRecordsToEmptyDays(
+  records: CollectionRecordData[],
+  startDate: Date,
+  endDate: Date,
+  vehicles: Array<{
+    id: string;
+    plateNumber: string;
+    maxLoad: number;
+    tareWeight: number;
+  }>,
+  stores: StoreInfo[],
+  collectionPoint: CollectionPointInfo
+): CollectionRecordData[] {
+  if (records.length === 0) {
+    return records;
+  }
+
+  const totalDays = getDaysInRange(startDate, endDate);
+
+  // 统计每天的记录数
+  const recordsByDate = new Map<string, CollectionRecordData[]>();
+  for (let dayOffset = 0; dayOffset < totalDays; dayOffset++) {
+    const date = getDateFromRange(startDate, dayOffset);
+    const dateStr = formatLocalDate(date);
+    recordsByDate.set(dateStr, []);
+  }
+
+  for (const record of records) {
+    const dateStr = formatLocalDate(record.collectionDate);
+    const existing = recordsByDate.get(dateStr);
+    if (existing) {
+      existing.push(record);
+    }
+  }
+
+  // 找出最后连续没有数据的天数
+  let emptyDaysAtEnd = 0;
+  for (let dayOffset = totalDays - 1; dayOffset >= 0; dayOffset--) {
+    const date = getDateFromRange(startDate, dayOffset);
+    const dateStr = formatLocalDate(date);
+    const dayRecords = recordsByDate.get(dateStr) || [];
+    if (dayRecords.length === 0) {
+      emptyDaysAtEnd++;
+    } else {
+      break; // 遇到有数据的天就停止
+    }
+  }
+
+  console.log(`最后 ${emptyDaysAtEnd} 天没有数据`);
+
+  // 如果没有空缺天数，直接返回原记录
+  if (emptyDaysAtEnd === 0) {
+    return records;
+  }
+
+  console.log(`检测到最后 ${emptyDaysAtEnd} 天没有数据，开始重新分配...`);
+
+  // 计算需要重新分配的天数 = 空缺天数 × 2
+  const daysToFill = Math.min(emptyDaysAtEnd * 2, totalDays);
+  // 从倒数第 daysToFill 天开始填充
+  const fillStartDayOffset = totalDays - daysToFill;
+
+  // 收集需要重新分配的天数内的所有记录
+  // 从有数据的最后 (空缺天数 × 2 - 空缺天数) 天取数据
+  const daysWithDataToMove = daysToFill - emptyDaysAtEnd;
+  const recordsToMoveStartOffset = fillStartDayOffset;
+
+  // 收集需要重新分配的记录（从 fillStartDayOffset 开始的 daysWithDataToMove 天的数据）
+  const recordsToMove: CollectionRecordData[] = [];
+  const recordsToKeep: CollectionRecordData[] = [];
+
+  for (const record of records) {
+    const recordDateStr = formatLocalDate(record.collectionDate);
+    const recordDayOffset = Array.from(recordsByDate.keys()).indexOf(
+      recordDateStr
+    );
+
+    if (
+      recordDayOffset >= recordsToMoveStartOffset &&
+      recordDayOffset < recordsToMoveStartOffset + daysWithDataToMove
+    ) {
+      // 这条记录在需要重新分配的天数范围内
+      recordsToMove.push(record);
+    } else {
+      recordsToKeep.push(record);
+    }
+  }
+
+  console.log(
+    `从 ${daysWithDataToMove} 天中取出 ${recordsToMove.length} 条记录进行重新分配`
+  );
+
+  if (recordsToMove.length === 0) {
+    return records;
+  }
+
+  // 将需要重新分配的记录按行程分组（通过检测 unloadingTime 来判断行程边界）
+  // 每个行程的最后一条记录有 unloadingTime
+  const tripsToMove: CollectionRecordData[][] = [];
+  let currentTrip: CollectionRecordData[] = [];
+
+  for (const record of recordsToMove) {
+    currentTrip.push(record);
+    if (record.unloadingTime !== null) {
+      // 行程结束
+      tripsToMove.push(currentTrip);
+      currentTrip = [];
+    }
+  }
+  // 如果还有未完成的行程，也加入
+  if (currentTrip.length > 0) {
+    tripsToMove.push(currentTrip);
+  }
+
+  console.log(
+    `分析出 ${tripsToMove.length} 趟行程需要重新分配到 ${daysToFill} 天`
+  );
+
+  if (tripsToMove.length === 0) {
+    return records;
+  }
+
+  // 为需要重新分配的行程重新生成时间
+  const redistributedRecords: CollectionRecordData[] = [];
+  const scheduler = new VehicleScheduler();
+
+  // 计算每天应该分配的行程数（尽量均匀）
+  const baseTripsPerDay = Math.floor(tripsToMove.length / daysToFill);
+  const extraTrips = tripsToMove.length % daysToFill;
+
+  console.log(`每天基础 ${baseTripsPerDay} 趟，前 ${extraTrips} 天各多 1 趟`);
+
+  let tripIndex = 0;
+  for (
+    let fillDay = 0;
+    fillDay < daysToFill && tripIndex < tripsToMove.length;
+    fillDay++
+  ) {
+    const targetDayOffset = fillStartDayOffset + fillDay;
+    const targetDate = getDateFromRange(startDate, targetDayOffset);
+    const year = targetDate.getFullYear();
+    const month = targetDate.getMonth() + 1;
+    const day = targetDate.getDate();
+    const collectionDate = new Date(year, month - 1, day);
+
+    // 这一天需要处理的行程数（前 extraTrips 天多分配 1 趟）
+    const tripsForThisDay = baseTripsPerDay + (fillDay < extraTrips ? 1 : 0);
+
+    // 处理这一天的行程
+    const tripsForDay: CollectionRecordData[][] = [];
+    for (
+      let i = 0;
+      i < tripsForThisDay && tripIndex < tripsToMove.length;
+      i++
+    ) {
+      tripsForDay.push(tripsToMove[tripIndex]);
+      tripIndex++;
+    }
+
+    // 为每个行程重新生成时间
+    const startHour = 6;
+    const endHour = 20;
+
+    for (const tripRecords of tripsForDay) {
+      if (tripRecords.length === 0) continue;
+
+      // 找一辆可用的车辆
+      const vehicleId = tripRecords[0].vehicleId;
+      const vehicle = vehicles.find((v) => v.id === vehicleId) || vehicles[0];
+
+      // 获取车辆最早可用时间
+      let departureTime = scheduler.getEarliestAvailableTime(
+        vehicle.id,
+        year,
+        month,
+        day,
+        startHour
+      );
+
+      // 添加一些随机缓冲时间
+      const bufferMinutes = randomBetween(5, 15);
+      departureTime = new Date(
+        departureTime.getTime() + bufferMinutes * 60 * 1000
+      );
+
+      // 如果已经超过工作时间，跳到下一天的开始
+      if (departureTime.getHours() >= endHour - 1) {
+        continue;
+      }
+
+      let currentTime = new Date(departureTime);
+      let currentLat = collectionPoint.latitude;
+      let currentLon = collectionPoint.longitude;
+
+      // 为行程中的每条记录重新生成时间
+      for (let stopIndex = 0; stopIndex < tripRecords.length; stopIndex++) {
+        const originalRecord = tripRecords[stopIndex];
+        const isLastStop = stopIndex === tripRecords.length - 1;
+
+        // 获取门店信息
+        const store = stores.find((s) => s.id === originalRecord.storeId);
+        if (!store) continue;
+
+        // 计算行驶时间
+        let travelMinutes = store.estimatedTravelMinutes;
+        if (
+          currentLat !== null &&
+          currentLon !== null &&
+          store.latitude !== null &&
+          store.longitude !== null
+        ) {
+          const distance = haversineDistance(
+            currentLat,
+            currentLon,
+            store.latitude,
+            store.longitude
+          );
+          travelMinutes = estimateTravelTime(distance);
+        }
+
+        // 添加随机波动
+        const travelVariance = randomBetween(-3, 8);
+        const actualTravelMinutes = Math.max(5, travelMinutes + travelVariance);
+
+        const arrivalTime = new Date(
+          currentTime.getTime() + actualTravelMinutes * 60 * 1000
+        );
+
+        // 装卸时间
+        const loadingMinutes = 8 + Math.ceil(originalRecord.tireCount / 20);
+        const departureTimeFromStop = new Date(
+          arrivalTime.getTime() + loadingMinutes * 60 * 1000
+        );
+
+        // 计算返回时间（只有最后一站需要）
+        let unloadingTime: Date | null = null;
+        if (isLastStop) {
+          let returnTravelMinutes = store.estimatedTravelMinutes;
+          if (
+            collectionPoint.latitude !== null &&
+            collectionPoint.longitude !== null &&
+            store.latitude !== null &&
+            store.longitude !== null
+          ) {
+            const returnDistance = haversineDistance(
+              store.latitude,
+              store.longitude,
+              collectionPoint.latitude,
+              collectionPoint.longitude
+            );
+            returnTravelMinutes = estimateTravelTime(returnDistance);
+          }
+          const returnVariance = randomBetween(-3, 10);
+          const actualReturnMinutes = Math.max(
+            10,
+            returnTravelMinutes + returnVariance
+          );
+          const unloadAndRestMinutes = randomBetween(15, 30);
+          unloadingTime = new Date(
+            departureTimeFromStop.getTime() +
+              (actualReturnMinutes + unloadAndRestMinutes) * 60 * 1000
+          );
+        }
+
+        // 创建新记录，保持门店和重量，更新时间
+        redistributedRecords.push({
+          ...originalRecord,
+          collectionDate,
+          loadingTime: arrivalTime,
+          unloadingTime,
+        });
+
+        // 更新当前位置和时间
+        currentTime = departureTimeFromStop;
+        currentLat = store.latitude;
+        currentLon = store.longitude;
+      }
+
+      // 记录行程到调度器
+      if (tripRecords.length > 0) {
+        const lastRecord =
+          redistributedRecords[redistributedRecords.length - 1];
+        const firstRecordOfTrip =
+          redistributedRecords[
+            redistributedRecords.length - tripRecords.length
+          ];
+        scheduler.book(
+          vehicle.id,
+          departureTime,
+          firstRecordOfTrip.loadingTime,
+          lastRecord.unloadingTime || lastRecord.loadingTime
+        );
+      }
+    }
+  }
+
+  // 重新生成记录编号（按日期和顺序）
+  const allRecords = [...recordsToKeep, ...redistributedRecords];
+
+  // 按收集日期和装车时间排序
+  allRecords.sort((a, b) => {
+    const dateCompare = a.collectionDate.getTime() - b.collectionDate.getTime();
+    if (dateCompare !== 0) return dateCompare;
+    return a.loadingTime.getTime() - b.loadingTime.getTime();
+  });
+
+  // 重新编号
+  allRecords.forEach((record, index) => {
+    record.recordNo = generateRecordNo("CR", index + 1, record.collectionDate);
+  });
+
+  console.log(
+    `重新分配完成：将 ${tripsToMove.length} 趟行程（共 ${
+      tripsToMove.flat().length
+    } 条记录）分配到最后 ${daysToFill} 天`
+  );
+
+  return allRecords;
+}
+
+/**
  * 生成收集台账数据（不包含转移记录）
  * @param taskId 任务ID
  * @param collectionPointId 收集点ID
@@ -1016,7 +1342,17 @@ export async function generateLedgerData(
     }
   }
 
-  return { collectionRecords };
+  // 检测并重新分配最后几天空缺的数据
+  const redistributedRecords = redistributeRecordsToEmptyDays(
+    collectionRecords,
+    startDate,
+    endDate,
+    collectionVehicles,
+    stores,
+    collectionPoint
+  );
+
+  return { collectionRecords: redistributedRecords };
 }
 
 export interface LedgerGenerationResult {
@@ -1051,13 +1387,16 @@ export async function executeLedgerTask(
 
     await prisma.collectionRecord.deleteMany({ where: { taskId } });
 
+    const randomTargetTonnage =
+      task.targetTonnage * randomFloatBetween(1, 1.02);
+
     // targetTonnage 字段实际存储的是 kg 值
     const { collectionRecords } = await generateLedgerData(
       taskId,
       task.collectionPointId,
       task.startDate,
       task.endDate,
-      task.targetTonnage // 单位: kg
+      randomTargetTonnage // 单位: kg
     );
 
     // 在保存前调整时间为中国时区
