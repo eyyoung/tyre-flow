@@ -46,31 +46,31 @@
           script:
             # 安装 SSH 客户端
             - apt-get update && apt-get install -y openssh-client || apk add --no-cache openssh-client
-            
+
             # 配置 SSH 密钥
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
-            - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
-            
+            - ssh-keyscan -H 8.148.203.142 >> ~/.ssh/known_hosts 2>/dev/null
+
             # 传输镜像到服务器
             - echo "传输镜像到服务器..."
-            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@212.129.242.30:/tmp/
-            
+            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@8.148.203.142:/tmp/
+
             # 在服务器上部署（外部数据库模式）
             - |
-              ssh -o StrictHostKeyChecking=no root@212.129.242.30 << 'DEPLOY_SCRIPT'
+              ssh -o StrictHostKeyChecking=no root@8.148.203.142 << 'DEPLOY_SCRIPT'
               set -e
-              
+
               echo "📂 进入项目目录..."
               DEPLOY_DIR="/root/deployment/tyre-flow"
               mkdir -p $DEPLOY_DIR
               cd $DEPLOY_DIR
-              
+
               echo "📥 加载 Docker 镜像..."
               docker load < /tmp/tyre-flow-app.tar.gz
               rm -f /tmp/tyre-flow-app.tar.gz
-              
+
               echo "📥 同步配置文件..."
               if [ -d ".git" ]; then
                 git fetch origin
@@ -78,33 +78,33 @@
               else
                 git clone -b main https://cnb.cool/tyre-flow/tyre-flow.git .
               fi
-              
+
               # 检测是否是首次部署（应用容器不存在）
               FIRST_DEPLOY=false
               if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-app"; then
                 echo "🆕 检测到首次部署..."
                 FIRST_DEPLOY=true
               fi
-              
+
               echo "🚢 停止旧服务..."
               docker compose --profile external-db down || true
-              
+
               if [ "$FIRST_DEPLOY" = true ]; then
                 echo "📊 首次部署：运行数据库迁移和初始化..."
                 docker compose --profile external-db-setup run --rm migrate-external-db
               fi
-              
+
               echo "🚀 启动应用服务（外部数据库模式）..."
               docker compose --profile external-db up -d --no-build
-              
+
               echo "⏳ 等待服务启动..."
               sleep 10
-              
+
               if [ "$FIRST_DEPLOY" = false ]; then
                 echo "📊 运行数据库迁移（如有更新）..."
                 docker compose --profile external-db-setup run --rm migrate-external-db || echo "迁移已完成或无更新"
               fi
-              
+
               echo "🔍 检查服务状态..."
               if docker compose --profile external-db ps | grep -q "Up"; then
                 echo "✅ 服务运行正常"
@@ -114,10 +114,10 @@
                 docker compose --profile external-db logs --tail=50
                 exit 1
               fi
-              
+
               echo "🧹 清理旧镜像..."
               docker image prune -f
-              
+
               echo ""
               echo "========================================"
               echo "✅ 部署完成！（外部数据库模式）"
@@ -160,19 +160,19 @@
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             - chmod 600 ~/.ssh/id_rsa
-            - ssh-keyscan -H 212.129.242.30 >> ~/.ssh/known_hosts 2>/dev/null
-            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@212.129.242.30:/tmp/
+            - ssh-keyscan -H 8.148.203.142 >> ~/.ssh/known_hosts 2>/dev/null
+            - scp -o StrictHostKeyChecking=no tyre-flow-app.tar.gz root@8.148.203.142:/tmp/
             - |
-              ssh -o StrictHostKeyChecking=no root@212.129.242.30 << 'DEPLOY'
+              ssh -o StrictHostKeyChecking=no root@8.148.203.142 << 'DEPLOY'
               set -e
               cd /root/deployment/tyre-flow
-              
+
               docker load < /tmp/tyre-flow-app.tar.gz
               rm -f /tmp/tyre-flow-app.tar.gz
-              
+
               git fetch --tags origin
               git checkout $CNB_TAG 2>/dev/null || git checkout origin/main
-              
+
               # 检测是否首次部署
               FIRST_DEPLOY=false
               if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-app"; then
@@ -180,13 +180,13 @@
                 echo "🆕 首次部署：运行数据库迁移..."
                 docker compose --profile external-db-setup run --rm migrate-external-db
               fi
-              
+
               docker compose --profile external-db down || true
               docker compose --profile external-db up -d --no-build
-              
+
               if [ "$FIRST_DEPLOY" = false ]; then
                 docker compose --profile external-db-setup run --rm migrate-external-db || echo "迁移已完成"
               fi
-              
+
               echo "✅ 版本 $CNB_TAG 部署完成（外部数据库模式）"
               DEPLOY

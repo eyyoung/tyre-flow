@@ -45,11 +45,13 @@ enum Status {
 model CollectionPoint {
   id           String   @id @default(cuid())
   code         String   @unique // 收集点编码
-  name         String
+  name         String            // 收集点名称（简称）
+  companyName  String?           // 收集点公司名（用于 ISCC 声明）
   address      String
   province     String?
   city         String?
   district     String?
+  postcode     String?  // 邮编
   longitude    Float?
   latitude     Float?
   certScope    String?  // 认证范围

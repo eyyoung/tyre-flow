@@ -111,6 +111,9 @@
     "province": "省份",
     "city": "城市",
     "district": "区县",
+    "postcode": "邮编",
+    "companyName": "公司名称",
+    "companyNameTooltip": "用于 ISCC 声明中显示的收集点全称，不填则使用简称",
     "longitude": "经度",
     "latitude": "纬度",
     "certScope": "认证范围",
@@ -171,7 +174,13 @@
     "resettingGeocode": "正在重置坐标...",
     "batchDisable": "批量停用",
     "batchDisableConfirm": "确定要停用选中的 {count} 家门店吗？",
-    "batchDisableSuccess": "成功停用 {count} 家门店"
+    "batchDisableSuccess": "成功停用 {count} 家门店",
+    "exportIscc": "导出 ISCC",
+    "exportIsccTitle": "导出 ISCC 声明",
+    "exportIsccDescription": "选择收集点后，批量生成所有门店的 ISCC 自我声明文件，打包成 ZIP 下载。",
+    "exportIsccConfirm": "确定要导出该收集点所有门店的 ISCC 声明吗？",
+    "exporting": "正在导出...",
+    "exportIsccSuccess": "成功导出 {count} 份 ISCC 声明"
   },
   "vehicles": {
     "title": "车辆管理",

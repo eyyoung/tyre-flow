@@ -37,10 +37,12 @@ interface CollectionPoint {
   id: string;
   code: string;
   name: string;
+  companyName: string | null;
   address: string;
   province: string | null;
   city: string | null;
   district: string | null;
+  postcode: string | null;
   longitude: number | null;
   latitude: number | null;
   certScope: string | null;
@@ -124,10 +126,12 @@ export default function CollectionPointsPage() {
     form.setFieldsValue({
       code: item.code,
       name: item.name,
+      companyName: item.companyName,
       address: item.address,
       province: item.province,
       city: item.city,
       district: item.district,
+      postcode: item.postcode,
       longitude: item.longitude,
       latitude: item.latitude,
       certScope: item.certScope,
@@ -406,7 +410,7 @@ export default function CollectionPointsPage() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 name="code"
                 label={t('collectionPoints.code')}
@@ -422,7 +426,7 @@ export default function CollectionPointsPage() {
                 <Input disabled={!!editingItem} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 name="name"
                 label={t('collectionPoints.name')}
@@ -434,6 +438,15 @@ export default function CollectionPointsPage() {
                     }),
                   },
                 ]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="companyName"
+                label={t('collectionPoints.companyName')}
+                tooltip={t('collectionPoints.companyNameTooltip')}
               >
                 <Input />
               </Form.Item>
@@ -454,19 +467,24 @@ export default function CollectionPointsPage() {
             <Input />
           </Form.Item>
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="province" label={t('collectionPoints.province')}>
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="city" label={t('collectionPoints.city')}>
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="district" label={t('collectionPoints.district')}>
                 <Input />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="postcode" label={t('collectionPoints.postcode')}>
+                <Input placeholder="e.g. 100000" />
               </Form.Item>
             </Col>
           </Row>

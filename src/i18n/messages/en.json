@@ -111,6 +111,9 @@
     "province": "Province",
     "city": "City",
     "district": "District",
+    "postcode": "Postcode",
+    "companyName": "Company Name",
+    "companyNameTooltip": "Full company name for ISCC declaration, uses short name if not provided",
     "longitude": "Longitude",
     "latitude": "Latitude",
     "certScope": "Certification Scope",
@@ -171,7 +174,13 @@
     "resettingGeocode": "Resetting coordinates...",
     "batchDisable": "Batch Disable",
     "batchDisableConfirm": "Are you sure you want to disable the selected {count} stores?",
-    "batchDisableSuccess": "Successfully disabled {count} stores"
+    "batchDisableSuccess": "Successfully disabled {count} stores",
+    "exportIscc": "Export ISCC",
+    "exportIsccTitle": "Export ISCC Declaration",
+    "exportIsccDescription": "Select a collection point to batch generate ISCC self-declaration files for all stores, packaged as a ZIP download.",
+    "exportIsccConfirm": "Are you sure you want to export ISCC declarations for all stores in this collection point?",
+    "exporting": "Exporting...",
+    "exportIsccSuccess": "Successfully exported {count} ISCC declarations"
   },
   "vehicles": {
     "title": "Vehicle Management",

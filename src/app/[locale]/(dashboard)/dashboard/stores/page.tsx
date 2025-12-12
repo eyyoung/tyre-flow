@@ -31,6 +31,7 @@ import {
   DownloadOutlined,
   AimOutlined,
   StopOutlined,
+  FileWordOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType, TableProps } from 'antd/es/table';
@@ -102,6 +103,11 @@ export default function StoresPage() {
   // 批量操作相关状态
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchDisabling, setBatchDisabling] = useState(false);
+  
+  // ISCC 导出相关状态
+  const [isccModalVisible, setIsccModalVisible] = useState(false);
+  const [isccForm] = Form.useForm();
+  const [exportingIscc, setExportingIscc] = useState(false);
 
   // 获取收集点列表
   const fetchCollectionPoints = useCallback(async () => {
@@ -357,6 +363,82 @@ export default function StoresPage() {
     }
   };
 
+  // 导出单个门店 ISCC 声明
+  const handleExportSingleIscc = async (storeId: string, storeName: string) => {
+    try {
+      const response = await fetch(`/api/stores/iscc-export?storeId=${storeId}`);
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let fileName = `ISCC_${storeName}.docx`;
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (match) {
+            fileName = decodeURIComponent(match[1]);
+          }
+        }
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        message.success(t('common.success'));
+      } else {
+        const result = await response.json();
+        message.error(result.message || t('common.error'));
+      }
+    } catch {
+      message.error(t('common.error'));
+    }
+  };
+
+  // 导出 ISCC 声明（批量）
+  const handleExportIscc = async () => {
+    try {
+      const values = await isccForm.validateFields();
+      setExportingIscc(true);
+
+      const params = new URLSearchParams();
+      params.set('collectionPointId', values.collectionPointId);
+
+      const response = await fetch(`/api/stores/iscc-export?${params}`);
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // 从 Content-Disposition 获取文件名
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let fileName = `ISCC_${new Date().toISOString().slice(0, 10)}.zip`;
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (match) {
+            fileName = decodeURIComponent(match[1]);
+          }
+        }
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setIsccModalVisible(false);
+        message.success(t('common.success'));
+      } else {
+        const result = await response.json();
+        message.error(result.message || t('common.error'));
+      }
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setExportingIscc(false);
+    }
+  };
+
   // 批量停用
   const handleBatchDisable = async () => {
     if (selectedRowKeys.length === 0) {
@@ -472,7 +554,7 @@ export default function StoresPage() {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 120,
+      width: 150,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
@@ -482,6 +564,15 @@ export default function StoresPage() {
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           />
+          {!record.isVirtual && (
+            <Button
+              type="link"
+              size="small"
+              icon={<FileWordOutlined />}
+              onClick={() => handleExportSingleIscc(record.id, record.name)}
+              title={t('stores.exportIscc')}
+            />
+          )}
           <Popconfirm
             title={t('stores.deleteConfirm', { name: record.name })}
             onConfirm={() => handleDelete(record.id)}
@@ -525,17 +616,6 @@ export default function StoresPage() {
             }))}
           />
           <Select
-            placeholder={t('stores.isVirtual')}
-            value={isVirtualFilter || undefined}
-            onChange={setIsVirtualFilter}
-            style={{ width: 120 }}
-            allowClear
-            options={[
-              { value: 'true', label: t('common.yes') },
-              { value: 'false', label: t('common.no') },
-            ]}
-          />
-          <Select
             placeholder={t('common.status')}
             value={statusFilter || undefined}
             onChange={setStatusFilter}
@@ -548,9 +628,6 @@ export default function StoresPage() {
           />
           <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
             {t('common.search')}
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={handleReset}>
-            {t('common.reset')}
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             {t('stores.addStore')}
@@ -569,6 +646,15 @@ export default function StoresPage() {
             }}
           >
             {t('stores.exportExcel')}
+          </Button>
+          <Button
+            icon={<FileWordOutlined />}
+            onClick={() => {
+              isccForm.resetFields();
+              setIsccModalVisible(true);
+            }}
+          >
+            {t('stores.exportIscc')}
           </Button>
           <Popconfirm
             title={t('stores.batchDisableConfirm', { count: selectedRowKeys.length })}
@@ -858,6 +944,41 @@ export default function StoresPage() {
           </Form.Item>
           <Form.Item name="includeEstimatedTime" valuePropName="checked">
             <Checkbox>{t('stores.includeEstimatedTime')}</Checkbox>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 导出 ISCC 声明弹窗 */}
+      <Modal
+        title={t('stores.exportIsccTitle')}
+        open={isccModalVisible}
+        onOk={handleExportIscc}
+        onCancel={() => setIsccModalVisible(false)}
+        confirmLoading={exportingIscc}
+        okText={t('stores.export')}
+        width={500}
+      >
+        <Form form={isccForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            {t('stores.exportIsccDescription')}
+          </Typography.Paragraph>
+          <Form.Item
+            name="collectionPointId"
+            label={t('stores.collectionPoint')}
+            rules={[
+              {
+                required: true,
+                message: t('validation.required', { field: t('stores.collectionPoint') }),
+              },
+            ]}
+          >
+            <Select
+              placeholder={t('stores.collectionPoint')}
+              options={collectionPoints.map((cp) => ({
+                value: cp.id,
+                label: cp.name,
+              }))}
+            />
           </Form.Item>
         </Form>
       </Modal>
