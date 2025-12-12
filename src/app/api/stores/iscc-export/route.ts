@@ -160,14 +160,7 @@ async function generateIsccDocument(
       .join(", ") || "-";
 
   // 构造完整地址
-  const fullAddress = [
-    store.province,
-    store.city,
-    store.district,
-    store.address,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const fullAddress = store.address;
 
   // 填充数据（使用公司名，如果没有则回退到简称）
   doc.render({

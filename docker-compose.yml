@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tyre-flow-app
+    container_name: tyre-flow-external-db-app
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"
@@ -63,6 +63,9 @@ services:
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
       # 高德地图 API Key（用于地理编码和路径规划）
       - AMAP_API_KEY=${AMAP_API_KEY:-}
+      - LBS_PROVIDER=${LBS_PROVIDER:-tencent}
+      - TENCENT_LBS_KEY=${TENCENT_LBS_KEY:-}
+      - TENCENT_LBS_SK=${TENCENT_LBS_SK:-}
     profiles:
       - external-db
 
