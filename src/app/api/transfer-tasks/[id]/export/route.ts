@@ -71,7 +71,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       { header: '车牌号', key: 'vehiclePlate', width: 12 },
       { header: '司机姓名', key: 'driverName', width: 12 },
       { header: '司机电话', key: 'driverPhone', width: 15 },
-      { header: '目的地', key: 'destination', width: 20 },
       { header: '轮胎条数', key: 'tireCount', width: 10 },
       { header: '装车净重（kg）', key: 'loadingNetWeight', width: 15 },
       { header: '毛重（kg）', key: 'grossWeight', width: 12 },
@@ -95,7 +94,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         vehiclePlate: record.vehicle.plateNumber,
         driverName: record.vehicle.driverName || '',
         driverPhone: record.vehicle.driverPhone || '',
-        destination: record.destination,
         tireCount: record.tireCount,
         loadingNetWeight: record.loadingNetWeight,
         grossWeight: record.grossWeight,
@@ -127,10 +125,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 生成 Excel 文件
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // 设置文件名: 收集点_时间范围_转移记录.xlsx
+    // 设置文件名: 收集点_日期范围_转移记录.xlsx
     const startDateStr = formatDateCN(task.startDate);
     const endDateStr = formatDateCN(task.endDate);
-    const fileName = `${task.collectionPoint.name}_${startDateStr}_${endDateStr}_转移记录.xlsx`;
+    const fileName = `${task.collectionPoint.name}_${startDateStr}-${endDateStr}_转移记录.xlsx`;
     const encodedFileName = encodeURIComponent(fileName);
 
     return new NextResponse(buffer, {
