@@ -95,7 +95,13 @@ fi
 # ===========================================
 info "🏗️  开始构建 Docker 镜像..."
 
+# 构建应用镜像
+info "构建应用镜像 (tyre-flow-app)..."
 docker build -t tyre-flow-app:latest -t tyre-flow-app:${GIT_SHA} .
+
+# 构建迁移镜像
+info "构建迁移镜像 (tyre-flow-migrate)..."
+docker build -f Dockerfile.migrate -t tyre-flow-migrate:latest -t tyre-flow-migrate:${GIT_SHA} .
 
 success "镜像构建完成"
 docker images | grep tyre-flow
@@ -108,7 +114,10 @@ info "📦 保存镜像为 tar 文件..."
 TEMP_FILE=$(mktemp /tmp/tyre-flow-app.XXXXXX.tar.gz)
 docker save tyre-flow-app:latest | gzip > "$TEMP_FILE"
 
-ls -lh "$TEMP_FILE"
+TEMP_MIGRATE_FILE=$(mktemp /tmp/tyre-flow-migrate.XXXXXX.tar.gz)
+docker save tyre-flow-migrate:latest | gzip > "$TEMP_MIGRATE_FILE"
+
+ls -lh "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
 success "镜像保存完成"
 
 # ===========================================
@@ -117,11 +126,12 @@ success "镜像保存完成"
 info "📤 传输镜像到服务器 (${SERVER_IP})..."
 
 scp -o StrictHostKeyChecking=no "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
+scp -o StrictHostKeyChecking=no "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
 
 success "镜像传输完成"
 
 # 清理本地临时文件
-rm -f "$TEMP_FILE"
+rm -f "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
 
 # ===========================================
 # 阶段4: 在服务器上部署
@@ -141,6 +151,10 @@ cd \$DEPLOY_DIR
 echo "📥 加载 Docker 镜像..."
 docker load < /tmp/tyre-flow-app.tar.gz
 rm -f /tmp/tyre-flow-app.tar.gz
+
+echo "📥 加载迁移镜像..."
+docker load < /tmp/tyre-flow-migrate.tar.gz
+rm -f /tmp/tyre-flow-migrate.tar.gz
 
 echo "📥 同步配置文件..."
 if [ -d ".git" ]; then
@@ -225,6 +239,10 @@ cd \$DEPLOY_DIR
 echo "📥 加载 Docker 镜像..."
 docker load < /tmp/tyre-flow-app.tar.gz
 rm -f /tmp/tyre-flow-app.tar.gz
+
+echo "📥 加载迁移镜像..."
+docker load < /tmp/tyre-flow-migrate.tar.gz
+rm -f /tmp/tyre-flow-migrate.tar.gz
 
 echo "📥 同步配置文件..."
 if [ -d ".git" ]; then
