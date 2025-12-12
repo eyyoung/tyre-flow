@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { formatDateCN, formatTimeCN } from '@/lib/timezone';
+import { formatDateCN } from '@/lib/timezone';
 import ExcelJS from 'exceljs';
 
 // 记录类型定义
@@ -71,8 +71,6 @@ function addCollectionRecordsToSheet(
     sheet.columns = [
       { header: '记录编号', key: 'recordNo', width: 25 },
       { header: '日期', key: 'date', width: 12 },
-      { header: '装车时间', key: 'loadingTime', width: 10 },
-      { header: '卸车时间', key: 'unloadingTime', width: 10 },
       { header: '司机姓名', key: 'driverName', width: 12 },
       { header: '司机电话', key: 'driverPhone', width: 15 },
       { header: '车牌号', key: 'vehiclePlate', width: 12 },
@@ -92,8 +90,6 @@ function addCollectionRecordsToSheet(
     const row = sheet.addRow({
       recordNo: record.recordNo,
       date: formatDateCN(record.date),
-      loadingTime: formatTimeCN(record.loadingTime),
-      unloadingTime: record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
       driverName: record.driverName,
       driverPhone: record.driverPhone,
       vehiclePlate: record.vehiclePlate,
@@ -135,8 +131,6 @@ function addTransferRecordsToSheet(
     sheet.columns = [
       { header: '记录编号', key: 'recordNo', width: 25 },
       { header: '日期', key: 'date', width: 12 },
-      { header: '装车时间', key: 'loadingTime', width: 10 },
-      { header: '卸车时间', key: 'unloadingTime', width: 10 },
       { header: '司机姓名', key: 'driverName', width: 12 },
       { header: '司机电话', key: 'driverPhone', width: 15 },
       { header: '车牌号', key: 'vehiclePlate', width: 12 },
@@ -159,8 +153,6 @@ function addTransferRecordsToSheet(
     const row = sheet.addRow({
       recordNo: record.recordNo,
       date: formatDateCN(record.date),
-      loadingTime: formatTimeCN(record.loadingTime),
-      unloadingTime: record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
       driverName: record.driverName,
       driverPhone: record.driverPhone,
       vehiclePlate: record.vehiclePlate,
@@ -421,8 +413,6 @@ export async function GET(request: NextRequest) {
         driverSheet.columns = [
           { key: 'recordNo', width: 25 },
           { key: 'date', width: 12 },
-          { key: 'loadingTime', width: 10 },
-          { key: 'unloadingTime', width: 10 },
           { key: 'driverName', width: 12 },
           { key: 'driverPhone', width: 15 },
           { key: 'vehiclePlate', width: 12 },
@@ -436,7 +426,7 @@ export async function GET(request: NextRequest) {
         // 添加表头
         const headerRowCollection = driverSheet.getRow(currentRow);
         headerRowCollection.values = [
-          '记录编号', '日期', '装车时间', '卸车时间', '司机姓名', '司机电话',
+          '记录编号', '日期', '司机姓名', '司机电话',
           '车牌号', '门店', '轮胎条数', '装车净重（kg）', '卸车净重（kg）', '折损（kg）'
         ];
         headerRowCollection.eachCell((cell) => {
@@ -451,8 +441,6 @@ export async function GET(request: NextRequest) {
           row.values = [
             record.recordNo,
             formatDateCN(record.date),
-            formatTimeCN(record.loadingTime),
-            record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
             record.driverName,
             record.driverPhone,
             record.vehiclePlate,
@@ -473,9 +461,9 @@ export async function GET(request: NextRequest) {
         const totalLoss = driverCollection.reduce((sum, r) => sum + r.loss, 0);
         const totalRow = driverSheet.getRow(currentRow);
         totalRow.getCell(1).value = '合计';
-        totalRow.getCell(9).value = driverCollection.reduce((sum, r) => sum + r.tireCount, 0);
-        totalRow.getCell(11).value = parseFloat(totalUnloadingWeight.toFixed(2));
-        totalRow.getCell(12).value = parseFloat(totalLoss.toFixed(2));
+        totalRow.getCell(7).value = driverCollection.reduce((sum, r) => sum + r.tireCount, 0);
+        totalRow.getCell(9).value = parseFloat(totalUnloadingWeight.toFixed(2));
+        totalRow.getCell(10).value = parseFloat(totalLoss.toFixed(2));
         totalRow.font = { bold: true };
         currentRow += 2; // 空一行
       }
@@ -492,7 +480,7 @@ export async function GET(request: NextRequest) {
         // 添加表头
         const headerRowTransfer = driverSheet.getRow(currentRow);
         headerRowTransfer.values = [
-          '记录编号', '日期', '装车时间', '卸车时间', '司机姓名', '司机电话',
+          '记录编号', '日期', '司机姓名', '司机电话',
           '车牌号', '目的地', '轮胎条数', '装车净重（kg）', '毛重（kg）', 
           '皮重（kg）', '卸车净重（kg）', '折损（kg）', '磅单号'
         ];
@@ -508,8 +496,6 @@ export async function GET(request: NextRequest) {
           row.values = [
             record.recordNo,
             formatDateCN(record.date),
-            formatTimeCN(record.loadingTime),
-            record.unloadingTime ? formatTimeCN(record.unloadingTime) : '',
             record.driverName,
             record.driverPhone,
             record.vehiclePlate,
@@ -533,9 +519,9 @@ export async function GET(request: NextRequest) {
         const totalLoss = driverTransfer.reduce((sum, r) => sum + r.loss, 0);
         const totalRow = driverSheet.getRow(currentRow);
         totalRow.getCell(1).value = '合计';
-        totalRow.getCell(9).value = driverTransfer.reduce((sum, r) => sum + r.tireCount, 0);
-        totalRow.getCell(13).value = parseFloat(totalUnloadingWeight.toFixed(2));
-        totalRow.getCell(14).value = parseFloat(totalLoss.toFixed(2));
+        totalRow.getCell(7).value = driverTransfer.reduce((sum, r) => sum + r.tireCount, 0);
+        totalRow.getCell(11).value = parseFloat(totalUnloadingWeight.toFixed(2));
+        totalRow.getCell(12).value = parseFloat(totalLoss.toFixed(2));
         totalRow.font = { bold: true };
       }
     }
