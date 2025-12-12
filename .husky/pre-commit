@@ -1,0 +1,44 @@
+#!/bin/sh
+
+# 检查 package.json 和 package-lock.json 是否同步
+# 如果 package.json 被修改，确保 lock 文件也被更新
+
+# 检查 package.json 是否在本次提交的暂存区中
+if git diff --cached --name-only | grep -q "^package\.json$"; then
+    echo "📦 检测到 package.json 变更，验证 lock 文件同步..."
+    
+    # 运行 npm install 检查是否会产生变更
+    npm install --package-lock-only --ignore-scripts 2>/dev/null
+    
+    # 检查 package-lock.json 是否有未暂存的变更
+    if git diff --name-only | grep -q "^package-lock\.json$"; then
+        echo ""
+        echo "⚠️  package-lock.json 需要更新！"
+        echo ""
+        echo "自动将 package-lock.json 添加到提交中..."
+        git add package-lock.json
+        echo "✅ package-lock.json 已更新并添加到暂存区"
+        echo ""
+    fi
+fi
+
+# 如果 package-lock.json 被暂存，验证它与 package.json 同步
+if git diff --cached --name-only | grep -q "package"; then
+    # 使用 npm ci --dry-run 来验证同步状态（如果可用）
+    # 对于较新版本的 npm，可以用这个检查
+    npm ls --package-lock-only >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "❌ 错误: package.json 和 package-lock.json 不同步！"
+        echo ""
+        echo "请运行以下命令修复："
+        echo "  npm install"
+        echo ""
+        echo "然后重新添加文件到暂存区："
+        echo "  git add package.json package-lock.json"
+        echo ""
+        exit 1
+    fi
+fi
+
+echo "✅ 依赖文件检查通过"

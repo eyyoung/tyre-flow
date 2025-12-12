@@ -8,25 +8,113 @@ import PizZip from "pizzip";
 import JSZip from "jszip";
 import dayjs from "dayjs";
 import { convertDocxToPdf } from "@/lib/docx-to-pdf";
-// @ts-expect-error docx-merger has no type definitions
-import DocxMerger from "docx-merger";
 
 // 每个合并文档包含的最大门店数量
 const BATCH_SIZE = 500;
 
+// Word XML 命名空间
+const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
 /**
- * 合并多个 Word 文档为一个
+ * 从 document.xml 中提取 body 内容（不包含 sectPr）
  */
-async function mergeDocxFiles(docxBuffers: Buffer[]): Promise<Buffer> {
-  return new Promise((resolve) => {
-    const docxMerger = new DocxMerger(
-      { pageBreak: true }, // 每个文档之间插入分页符
-      docxBuffers
-    );
-    docxMerger.save("nodebuffer", (data: Buffer) => {
-      resolve(data);
-    });
-  });
+function extractBodyContent(documentXml: string): string {
+  // 匹配 <w:body>...</w:body> 中的内容
+  const bodyMatch = documentXml.match(/<w:body[^>]*>([\s\S]*)<\/w:body>/);
+  if (!bodyMatch) return "";
+
+  let bodyContent = bodyMatch[1];
+
+  // 移除最后的 sectPr（节属性，包含页面设置等）
+  // sectPr 通常在 body 的最后，我们只保留第一个文档的 sectPr
+  bodyContent = bodyContent.replace(/<w:sectPr[\s\S]*?<\/w:sectPr>\s*$/, "");
+
+  return bodyContent;
+}
+
+/**
+ * 获取文档的 sectPr（节属性）
+ */
+function extractSectPr(documentXml: string): string {
+  const match = documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
+  return match ? match[0] : "";
+}
+
+/**
+ * 生成分页符 XML
+ */
+function createPageBreak(): string {
+  return `<w:p xmlns:w="${WORD_NS}"><w:r><w:br w:type="page"/></w:r></w:p>`;
+}
+
+/**
+ * 合并多个 Word 文档为一个（基于 XML 操作，更可靠）
+ * 使用第一个文档作为基础，保留其样式和设置
+ */
+function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
+  if (docxBuffers.length === 0) {
+    throw new Error("No documents to merge");
+  }
+
+  if (docxBuffers.length === 1) {
+    return docxBuffers[0];
+  }
+
+  // 使用第一个文档作为基础
+  const baseZip = new PizZip(docxBuffers[0]);
+  const baseDocXml = baseZip.file("word/document.xml")?.asText();
+
+  if (!baseDocXml) {
+    throw new Error("Invalid base document");
+  }
+
+  // 提取基础文档的 body 内容和 sectPr
+  const baseBodyContent = extractBodyContent(baseDocXml);
+  const baseSectPr = extractSectPr(baseDocXml);
+
+  // 收集所有文档的 body 内容
+  const allBodyContents: string[] = [baseBodyContent];
+
+  for (let i = 1; i < docxBuffers.length; i++) {
+    try {
+      const docZip = new PizZip(docxBuffers[i]);
+      const docXml = docZip.file("word/document.xml")?.asText();
+
+      if (docXml) {
+        const bodyContent = extractBodyContent(docXml);
+        if (bodyContent) {
+          allBodyContents.push(bodyContent);
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing document ${i}:`, error);
+    }
+  }
+
+  // 用分页符连接所有内容
+  const mergedBodyContent = allBodyContents.join(createPageBreak());
+
+  // 重建 document.xml
+  // 保留原始文档的声明和根元素属性
+  const xmlDeclaration =
+    baseDocXml.match(/<\?xml[^?]*\?>/)?.[0] ||
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const documentStart =
+    baseDocXml.match(/<w:document[^>]*>/)?.[0] || "<w:document>";
+
+  const mergedDocXml = `${xmlDeclaration}
+${documentStart}
+<w:body>${mergedBodyContent}${baseSectPr}</w:body>
+</w:document>`;
+
+  // 更新 ZIP 中的 document.xml
+  baseZip.file("word/document.xml", mergedDocXml);
+
+  // 生成合并后的文档
+  return baseZip.generate({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  }) as Buffer;
 }
 
 // 生成单个门店的 ISCC 声明 Word 文件
@@ -188,10 +276,16 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      console.log(
+        `[ISCC Export] Testing with ${stores.length} stores (limited for testing)`
+      );
+
       const currentDate = dayjs().format("YYYY-MM-DD");
 
       // 第一步：为每个门店生成 Word 文档
-      console.log(`[ISCC Export] Generating ${stores.length} Word documents...`);
+      console.log(
+        `[ISCC Export] Generating ${stores.length} Word documents...`
+      );
       const docxBuffers: Buffer[] = [];
       for (const store of stores) {
         try {
@@ -224,7 +318,9 @@ export async function GET(request: NextRequest) {
         const batchDocx = docxBuffers.slice(startIdx, endIdx);
 
         console.log(
-          `[ISCC Export] Processing batch ${batchIndex + 1}/${totalBatches} (${batchDocx.length} docs)...`
+          `[ISCC Export] Processing batch ${batchIndex + 1}/${totalBatches} (${
+            batchDocx.length
+          } docs)...`
         );
 
         try {
@@ -237,7 +333,9 @@ export async function GET(request: NextRequest) {
           const batchName =
             totalBatches === 1
               ? `ISCC_${collectionPoint.name}_${currentDate}.pdf`
-              : `ISCC_${collectionPoint.name}_${currentDate}_${batchIndex + 1}.pdf`;
+              : `ISCC_${collectionPoint.name}_${currentDate}_${
+                  batchIndex + 1
+                }.pdf`;
 
           mergedPdfs.push({
             name: batchName,
