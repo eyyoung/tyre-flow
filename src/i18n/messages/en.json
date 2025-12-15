@@ -29,7 +29,8 @@
     "all": "All",
     "noData": "No data",
     "total": "Total {count} items",
-    "selectAtLeastOne": "Please select at least one item"
+    "selectAtLeastOne": "Please select at least one item",
+    "items": "items"
   },
   "status": {
     "active": "Active",
@@ -99,7 +100,11 @@
     "passwordMismatch": "Passwords do not match",
     "deleteConfirm": "Are you sure you want to delete user {name}?",
     "bindCollectionPoints": "Bind Collection Points",
-    "boundCollectionPoints": "Bound Collection Points"
+    "boundCollectionPoints": "Collection Points",
+    "availableCollectionPoints": "Available",
+    "assignedCollectionPoints": "Assigned",
+    "collectionPointsHint": "Auditors can be assigned up to 5 collection points and can only view and operate data from assigned points",
+    "allCollectionPoints": "All Points"
   },
   "collectionPoints": {
     "title": "Collection Point Management",

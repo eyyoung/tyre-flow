@@ -29,7 +29,8 @@
     "all": "全部",
     "noData": "暂无数据",
     "total": "共 {count} 条",
-    "selectAtLeastOne": "请至少选择一项"
+    "selectAtLeastOne": "请至少选择一项",
+    "items": "项"
   },
   "status": {
     "active": "正常",
@@ -99,7 +100,11 @@
     "passwordMismatch": "两次输入的密码不一致",
     "deleteConfirm": "确定要删除用户 {name} 吗？",
     "bindCollectionPoints": "绑定收集点",
-    "boundCollectionPoints": "已绑定收集点"
+    "boundCollectionPoints": "绑定收集点",
+    "availableCollectionPoints": "可用收集点",
+    "assignedCollectionPoints": "已分配收集点",
+    "collectionPointsHint": "审核员最多可分配 5 个收集点，只能查看和操作已分配的收集点数据",
+    "allCollectionPoints": "全部收集点"
   },
   "collectionPoints": {
     "title": "收集点管理",

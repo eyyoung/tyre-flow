@@ -14,6 +14,7 @@ import {
   Popconfirm,
   Typography,
   App,
+  Tooltip,
 } from 'antd';
 import {
   PlusOutlined,
@@ -21,10 +22,12 @@ import {
   EditOutlined,
   DeleteOutlined,
   ReloadOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import CollectionPointTransfer from '@/components/user/CollectionPointTransfer';
 
 const { Title } = Typography;
 
@@ -53,6 +56,7 @@ interface FormValues {
   name?: string;
   role: 'ADMIN' | 'USER';
   status?: 'ACTIVE' | 'DISABLED';
+  collectionPointIds?: string[];
 }
 
 export default function UsersPage() {
@@ -116,9 +120,19 @@ export default function UsersPage() {
   const handleAdd = () => {
     setEditingUser(null);
     form.resetFields();
-    form.setFieldsValue({ role: 'USER', status: 'ACTIVE' });
+    form.setFieldsValue({ role: 'USER', status: 'ACTIVE', collectionPointIds: [] });
     setModalVisible(true);
   };
+
+  // 监听角色变化，切换到管理员时清空收集点
+  const handleRoleChange = (role: 'ADMIN' | 'USER') => {
+    if (role === 'ADMIN') {
+      form.setFieldsValue({ collectionPointIds: [] });
+    }
+  };
+
+  // 获取当前表单中的角色值
+  const currentRole = Form.useWatch('role', form);
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
@@ -128,6 +142,7 @@ export default function UsersPage() {
       name: user.name,
       role: user.role,
       status: user.status,
+      collectionPointIds: user.collectionPoints.map((cp) => cp.collectionPoint.id),
     });
     setModalVisible(true);
   };
@@ -222,6 +237,42 @@ export default function UsersPage() {
           {status === 'ACTIVE' ? t('status.active') : t('status.disabled')}
         </Tag>
       ),
+    },
+    {
+      title: t('users.boundCollectionPoints'),
+      dataIndex: 'collectionPoints',
+      key: 'collectionPoints',
+      width: 200,
+      render: (collectionPoints: User['collectionPoints'], record: User) => {
+        if (record.role === 'ADMIN') {
+          return <Tag color="blue">{t('users.allCollectionPoints')}</Tag>;
+        }
+        if (!collectionPoints || collectionPoints.length === 0) {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        const displayCount = 2;
+        const displayItems = collectionPoints.slice(0, displayCount);
+        const remainingCount = collectionPoints.length - displayCount;
+        return (
+          <Space size={[0, 4]} wrap>
+            {displayItems.map((cp) => (
+              <Tooltip key={cp.collectionPoint.id} title={cp.collectionPoint.code}>
+                <Tag icon={<EnvironmentOutlined />}>{cp.collectionPoint.name}</Tag>
+              </Tooltip>
+            ))}
+            {remainingCount > 0 && (
+              <Tooltip
+                title={collectionPoints
+                  .slice(displayCount)
+                  .map((cp) => cp.collectionPoint.name)
+                  .join(', ')}
+              >
+                <Tag>+{remainingCount}</Tag>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: t('users.lastLoginAt'),
@@ -340,6 +391,7 @@ export default function UsersPage() {
         onCancel={() => setModalVisible(false)}
         destroyOnHidden
         forceRender
+        width={currentRole === 'USER' ? 700 : 520}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item
@@ -373,6 +425,7 @@ export default function UsersPage() {
                 { value: 'ADMIN', label: t('users.roleAdmin') },
                 { value: 'USER', label: t('users.roleUser') },
               ]}
+              onChange={handleRoleChange}
             />
           </Form.Item>
           {editingUser && (
@@ -383,6 +436,15 @@ export default function UsersPage() {
                   { value: 'DISABLED', label: t('status.disabled') },
                 ]}
               />
+            </Form.Item>
+          )}
+          {currentRole === 'USER' && (
+            <Form.Item
+              name="collectionPointIds"
+              label={t('users.bindCollectionPoints')}
+              extra={t('users.collectionPointsHint')}
+            >
+              <CollectionPointTransfer maxCount={5} />
             </Form.Item>
           )}
         </Form>
