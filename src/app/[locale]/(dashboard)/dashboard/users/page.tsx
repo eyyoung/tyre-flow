@@ -390,7 +390,6 @@ export default function UsersPage() {
         onOk={handleModalOk}
         onCancel={() => setModalVisible(false)}
         destroyOnHidden
-        forceRender
         width={currentRole === 'USER' ? 700 : 520}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

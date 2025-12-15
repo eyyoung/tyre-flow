@@ -1,4 +1,5 @@
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import { AuthProvider } from '@/contexts/AuthContext';
 import { CollectionPointProvider } from '@/contexts/CollectionPointContext';
 
 export default function DashboardLayoutWrapper({
@@ -7,9 +8,11 @@ export default function DashboardLayoutWrapper({
   children: React.ReactNode;
 }) {
   return (
-    <CollectionPointProvider>
-      <DashboardLayout>{children}</DashboardLayout>
-    </CollectionPointProvider>
+    <AuthProvider>
+      <CollectionPointProvider>
+        <DashboardLayout>{children}</DashboardLayout>
+      </CollectionPointProvider>
+    </AuthProvider>
   );
 }
 

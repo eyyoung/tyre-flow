@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Layout,
   Menu,
@@ -11,6 +11,7 @@ import {
   theme,
   Drawer,
   Spin,
+  Tag,
 } from "antd";
 import {
   DashboardOutlined,
@@ -39,6 +40,8 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { locales, localeNames, type Locale } from "@/i18n/config";
 import { useCollectionPoint } from "@/contexts/CollectionPointContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { MENU, type Permission } from "@/lib/permissions";
 import styles from "./DashboardLayout.module.css";
 
 const { Header, Sider, Content } = Layout;
@@ -48,6 +51,15 @@ const MOBILE_BREAKPOINT = 768;
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
+}
+
+// 菜单项类型定义
+interface MenuItem {
+  key: string;
+  icon?: React.ReactNode;
+  label: React.ReactNode;
+  permission?: Permission;
+  children?: MenuItem[];
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -64,6 +76,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     setCurrentCollectionPoint,
     loading: cpLoading,
   } = useCollectionPoint();
+  const { user, can, loading: authLoading } = useAuth();
 
   // 检测是否为移动端
   useEffect(() => {
@@ -88,11 +101,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const currentLocale = pathParts[1] as Locale;
   const currentPath = "/" + pathParts.slice(2).join("/");
 
-  // 菜单项配置
-  const menuItems = [
+  // 菜单项配置（带权限控制）
+  const allMenuItems: MenuItem[] = [
     {
       key: "/dashboard",
       icon: <DashboardOutlined />,
+      permission: MENU.DASHBOARD,
       label: (
         <Link href={`/${currentLocale}/dashboard`}>{t("menu.dashboard")}</Link>
       ),
@@ -100,6 +114,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/users",
       icon: <UserOutlined />,
+      permission: MENU.USERS,
       label: (
         <Link href={`/${currentLocale}/dashboard/users`}>
           {t("menu.users")}
@@ -109,6 +124,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/collection-points",
       icon: <EnvironmentOutlined />,
+      permission: MENU.COLLECTION_POINTS,
       label: (
         <Link href={`/${currentLocale}/dashboard/collection-points`}>
           {t("menu.collectionPoints")}
@@ -118,13 +134,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/stores",
       icon: <ShopOutlined />,
+      permission: MENU.STORES,
       label: t("menu.stores"),
       children: [
         {
           key: "/dashboard/stores/list",
           icon: <UnorderedListOutlined />,
-      label: (
-        <Link href={`/${currentLocale}/dashboard/stores`}>
+          permission: MENU.STORES,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/stores`}>
               {t("menu.storeList")}
             </Link>
           ),
@@ -132,15 +150,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/stores/import",
           icon: <ImportOutlined />,
+          permission: MENU.STORES_IMPORT,
           label: (
             <Link href={`/${currentLocale}/dashboard/stores/import`}>
               {t("menu.storeImport")}
-        </Link>
-      ),
+            </Link>
+          ),
         },
         {
           key: "/dashboard/stores/cleanup",
           icon: <ClearOutlined />,
+          permission: MENU.STORES_CLEANUP,
           label: (
             <Link href={`/${currentLocale}/dashboard/stores/cleanup`}>
               {t("menu.storeCleanup")}
@@ -152,11 +172,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/vehicles",
       icon: <CarOutlined />,
+      permission: MENU.VEHICLES,
       label: t("menu.vehicles"),
       children: [
         {
           key: "/dashboard/vehicles/list",
           icon: <UnorderedListOutlined />,
+          permission: MENU.VEHICLES,
           label: (
             <Link href={`/${currentLocale}/dashboard/vehicles`}>
               {t("menu.vehicleList")}
@@ -166,6 +188,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/vehicles/import",
           icon: <ImportOutlined />,
+          permission: MENU.VEHICLES_IMPORT,
           label: (
             <Link href={`/${currentLocale}/dashboard/vehicles/import`}>
               {t("menu.vehicleImport")}
@@ -182,6 +205,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/ledgers/collection",
           icon: <ContainerOutlined />,
+          permission: MENU.LEDGERS_COLLECTION,
           label: (
             <Link href={`/${currentLocale}/dashboard/ledgers/collection`}>
               {t("menu.collectionLedger")}
@@ -191,6 +215,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/ledgers/driver",
           icon: <IdcardOutlined />,
+          permission: MENU.LEDGERS_DRIVER,
           label: (
             <Link href={`/${currentLocale}/dashboard/ledgers/driver`}>
               {t("menu.driverLedger")}
@@ -200,6 +225,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/ledgers/driver-analysis",
           icon: <LineChartOutlined />,
+          permission: MENU.LEDGERS_DRIVER_ANALYSIS,
           label: (
             <Link href={`/${currentLocale}/dashboard/ledgers/driver-analysis`}>
               {t("menu.driverAnalysis")}
@@ -209,6 +235,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {
           key: "/dashboard/ledgers/transfer",
           icon: <SwapOutlined />,
+          permission: MENU.LEDGERS_TRANSFER,
           label: (
             <Link href={`/${currentLocale}/dashboard/ledgers/transfer`}>
               {t("menu.transferLedger")}
@@ -220,6 +247,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     {
       key: "/dashboard/settings",
       icon: <SettingOutlined />,
+      permission: MENU.SETTINGS,
       label: (
         <Link href={`/${currentLocale}/dashboard/settings`}>
           {t("menu.settings")}
@@ -227,6 +255,33 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       ),
     },
   ];
+
+  // 根据权限过滤菜单项
+  const filterMenuItems = (items: MenuItem[]): MenuItem[] => {
+    return items
+      .filter((item) => {
+        // 如果没有定义权限，则默认显示
+        if (!item.permission) return true;
+        return can(item.permission);
+      })
+      .map((item) => {
+        if (item.children) {
+          const filteredChildren = filterMenuItems(item.children);
+          // 如果子菜单全部被过滤掉了，则不显示父菜单
+          if (filteredChildren.length === 0) return null;
+          return { ...item, children: filteredChildren };
+        }
+        return item;
+      })
+      .filter((item): item is MenuItem => item !== null);
+  };
+
+  // 过滤后的菜单项
+  const menuItems = useMemo(
+    () => filterMenuItems(allMenuItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.role, currentLocale, t]
+  );
 
   // 获取所有菜单项（包括子菜单）
   const getAllMenuKeys = () => {
@@ -480,7 +535,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <Avatar size="small" icon={<UserOutlined />} />
                 {!isMobile && (
                   <>
-                    <span className={styles.userName}>Admin</span>
+                    <span className={styles.userName}>
+                      {authLoading ? (
+                        <Spin size="small" />
+                      ) : (
+                        user?.name || user?.username || "User"
+                      )}
+                    </span>
+                    {user?.role && (
+                      <Tag
+                        color={user.role === "ADMIN" ? "blue" : "green"}
+                        style={{ marginLeft: 4, marginRight: 0 }}
+                      >
+                        {user.role === "ADMIN" ? t("users.roleAdmin") : t("users.roleUser")}
+                      </Tag>
+                    )}
                     <DownOutlined style={{ fontSize: 10 }} />
                   </>
                 )}

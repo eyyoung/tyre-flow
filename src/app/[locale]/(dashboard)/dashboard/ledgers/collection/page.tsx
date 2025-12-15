@@ -40,6 +40,8 @@ import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useCollectionPoint } from "@/contexts/CollectionPointContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { LEDGER_TASK } from "@/lib/permissions";
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -119,6 +121,7 @@ export default function CollectionLedgerPage() {
   const t = useTranslations();
   const { message } = App.useApp();
   const { currentCollectionPoint } = useCollectionPoint();
+  const { can } = useAuth();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<LedgerTask[]>([]);
   const [total, setTotal] = useState(0);
@@ -492,21 +495,23 @@ export default function CollectionLedgerPage() {
           >
             {t("common.view")}
           </Button>
-          <Popconfirm
-            title="确定要删除此任务吗？"
-            onConfirm={() => handleDelete(record.id)}
-            okText={t("common.confirm")}
-            cancelText={t("common.cancel")}
-            destroyOnHidden
-          >
-            <Button
-              type="link"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={record.status === "PROCESSING"}
-            />
-          </Popconfirm>
+          {can(LEDGER_TASK.DELETE) && (
+            <Popconfirm
+              title="确定要删除此任务吗？"
+              onConfirm={() => handleDelete(record.id)}
+              okText={t("common.confirm")}
+              cancelText={t("common.cancel")}
+              destroyOnHidden
+            >
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.status === "PROCESSING"}
+              />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -620,9 +625,11 @@ export default function CollectionLedgerPage() {
           <Button icon={<ReloadOutlined />} onClick={() => fetchData()}>
             {t("common.refresh")}
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            {t("ledgers.createTask")}
-          </Button>
+          {can(LEDGER_TASK.CREATE) && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              {t("ledgers.createTask")}
+            </Button>
+          )}
         </Space>
 
         <Table

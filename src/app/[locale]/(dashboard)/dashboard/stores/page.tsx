@@ -31,11 +31,14 @@ import {
   AimOutlined,
   StopOutlined,
   FileWordOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { STORE } from '@/lib/permissions';
 
 const { Title } = Typography;
 
@@ -69,6 +72,7 @@ export default function StoresPage() {
   const t = useTranslations();
   const { message } = App.useApp();
   const { currentCollectionPoint } = useCollectionPoint();
+  const { can } = useAuth();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Store[]>([]);
   const [total, setTotal] = useState(0);
@@ -537,12 +541,22 @@ export default function StoresPage() {
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          />
+          {can(STORE.EDIT) ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+            />
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => handleEdit(record)}
+              title={t('common.view')}
+            />
+          )}
           {!record.isVirtual && (
             <Button
               type="link"
@@ -552,15 +566,17 @@ export default function StoresPage() {
               title={t('stores.exportIscc')}
             />
           )}
-          <Popconfirm
-            title={t('stores.deleteConfirm', { name: record.name })}
-            onConfirm={() => handleDelete(record.id)}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
-            destroyOnHidden
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          {can(STORE.DELETE) && (
+            <Popconfirm
+              title={t('stores.deleteConfirm', { name: record.name })}
+              onConfirm={() => handleDelete(record.id)}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
+              destroyOnHidden
+            >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -597,9 +613,11 @@ export default function StoresPage() {
           <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
             {t('common.search')}
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            {t('stores.addStore')}
-          </Button>
+          {can(STORE.CREATE) && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              {t('stores.addStore')}
+            </Button>
+          )}
           <Button
             icon={<DownloadOutlined />}
             onClick={() => {
@@ -624,24 +642,26 @@ export default function StoresPage() {
           >
             {t('stores.exportIscc')}
           </Button>
-          <Popconfirm
-            title={t('stores.batchDisableConfirm', { count: selectedRowKeys.length })}
-            onConfirm={handleBatchDisable}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
-            disabled={selectedRowKeys.length === 0}
-            destroyOnHidden
-          >
-            <Button
-              danger
-              icon={<StopOutlined />}
+          {can(STORE.EDIT) && (
+            <Popconfirm
+              title={t('stores.batchDisableConfirm', { count: selectedRowKeys.length })}
+              onConfirm={handleBatchDisable}
+              okText={t('common.confirm')}
+              cancelText={t('common.cancel')}
               disabled={selectedRowKeys.length === 0}
-              loading={batchDisabling}
+              destroyOnHidden
             >
-              {t('stores.batchDisable')}
-              {selectedRowKeys.length > 0 && ` (${selectedRowKeys.length})`}
-            </Button>
-          </Popconfirm>
+              <Button
+                danger
+                icon={<StopOutlined />}
+                disabled={selectedRowKeys.length === 0}
+                loading={batchDisabling}
+              >
+                {t('stores.batchDisable')}
+                {selectedRowKeys.length > 0 && ` (${selectedRowKeys.length})`}
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
 
         <Table
@@ -650,24 +670,34 @@ export default function StoresPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1600 }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: (keys) => setSelectedRowKeys(keys),
-            getCheckboxProps: (record) => ({
-              disabled: record.status === 'DISABLED',
-            }),
-          }}
-          onRow={(record) => ({
-            onClick: () => {
-              if (record.status === 'DISABLED') return;
-              const key = record.id;
-              const newKeys = selectedRowKeys.includes(key)
-                ? selectedRowKeys.filter((k) => k !== key)
-                : [...selectedRowKeys, key];
-              setSelectedRowKeys(newKeys);
-            },
-            style: { cursor: record.status === 'DISABLED' ? 'not-allowed' : 'pointer' },
-          })}
+          rowSelection={
+            can(STORE.EDIT)
+              ? {
+                  selectedRowKeys,
+                  onChange: (keys) => setSelectedRowKeys(keys),
+                  getCheckboxProps: (record) => ({
+                    disabled: record.status === 'DISABLED',
+                  }),
+                }
+              : undefined
+          }
+          onRow={
+            can(STORE.EDIT)
+              ? (record) => ({
+                  onClick: () => {
+                    if (record.status === 'DISABLED') return;
+                    const key = record.id;
+                    const newKeys = selectedRowKeys.includes(key)
+                      ? selectedRowKeys.filter((k) => k !== key)
+                      : [...selectedRowKeys, key];
+                    setSelectedRowKeys(newKeys);
+                  },
+                  style: {
+                    cursor: record.status === 'DISABLED' ? 'not-allowed' : 'pointer',
+                  },
+                })
+              : undefined
+          }
           pagination={{
             current: page,
             pageSize,
@@ -699,16 +729,31 @@ export default function StoresPage() {
         />
       </Card>
 
-      {/* 新增/编辑门店弹窗 */}
+      {/* 新增/编辑/查看门店弹窗 */}
       <Modal
-        title={editingItem ? t('stores.editStore') : t('stores.addStore')}
+        title={
+          editingItem
+            ? can(STORE.EDIT)
+              ? t('stores.editStore')
+              : t('common.detail')
+            : t('stores.addStore')
+        }
         open={modalVisible}
         onOk={handleModalOk}
         onCancel={() => setModalVisible(false)}
         width={700}
         destroyOnHidden
+        footer={
+          editingItem && !can(STORE.EDIT)
+            ? [
+                <Button key="close" onClick={() => setModalVisible(false)}>
+                  {t('common.cancel')}
+                </Button>,
+              ]
+            : undefined
+        }
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }} disabled={!!editingItem && !can(STORE.EDIT)}>
           {/* 隐藏的收集点字段 */}
           <Form.Item name="collectionPointId" hidden>
             <Input />
