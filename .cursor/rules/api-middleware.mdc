@@ -1,0 +1,199 @@
+---
+description: API 路由必须使用中间件架构实现认证和收集点范围过滤
+globs:
+  - src/app/api/**/*.ts
+alwaysApply: true
+---
+
+# API 路由中间件规则
+
+本项目采用统一的中间件架构来处理 API 认证和基于收集点的数据访问控制（RBAC）。
+
+## 核心原则
+
+1. **所有 API 路由必须使用 `withMiddlewares` 包装**
+2. **使用 `ctx.prisma` 而非直接导入 `prisma`** - 这确保非管理员用户的数据访问自动受限于其绑定的收集点
+3. **根据权限需求选择正确的中间件组合**
+
+## 中间件组合
+
+```typescript
+import { 
+  withMiddlewares, 
+  standardMiddlewares,  // 认证 + 收集点范围过滤
+  adminMiddlewares,     // 认证 + 收集点范围过滤（用于管理员专用接口）
+  authMiddleware,       // 仅认证，无范围过滤
+  publicMiddlewares     // 无认证（公开接口）
+} from '@/lib/middleware';
+```
+
+## 使用场景
+
+| 中间件组合 | 使用场景 | 示例接口 |
+|-----------|---------|---------|
+| `standardMiddlewares` | 普通认证用户，需要收集点数据过滤 | `/api/stores`, `/api/vehicles`, `/api/ledgers` |
+| `adminMiddlewares` | 仅管理员可访问，但仍需收集点过滤 | `/api/users` (创建), `/api/settings` |
+| `[authMiddleware]` | 仅需认证，不需要收集点过滤 | `/api/auth/me`, `/api/auth/logout` |
+| `publicMiddlewares` | 公开接口，无需认证 | `/api/auth/login` |
+
+## 标准模板
+
+### 普通业务接口
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
+
+export async function GET(request: NextRequest) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // ✅ 使用 ctx.prisma - 自动应用收集点过滤
+    const data = await ctx.prisma.store.findMany({
+      where: { status: 'ACTIVE' },
+    });
+    
+    // ctx.user 包含当前用户信息
+    // ctx.user.userId, ctx.user.username, ctx.user.role, ctx.user.collectionPointIds
+    
+    return NextResponse.json({ data });
+  });
+}
+
+export async function POST(request: NextRequest) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    const body = await request.json();
+    
+    // 创建时需要指定 collectionPointId
+    const newRecord = await ctx.prisma.store.create({
+      data: {
+        ...body,
+        collectionPointId: body.collectionPointId,
+      },
+    });
+    
+    return NextResponse.json(newRecord, { status: 201 });
+  });
+}
+```
+
+### 管理员专用接口
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
+
+export async function POST(request: NextRequest) {
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
+    // 只有管理员能访问此接口
+    // ctx.prisma 对管理员不做过滤
+    const body = await request.json();
+    
+    const result = await ctx.prisma.user.create({
+      data: body,
+    });
+    
+    return NextResponse.json(result, { status: 201 });
+  });
+}
+```
+
+### 带动态路由参数的接口
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    const { id } = await params;
+    
+    // findUnique 也会自动检查收集点权限
+    const record = await ctx.prisma.ledgerTask.findUnique({
+      where: { id },
+      include: { collectionPoint: true },
+    });
+    
+    if (!record) {
+      return NextResponse.json({ message: 'Not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json(record);
+  });
+}
+```
+
+### 仅认证无范围过滤
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { withMiddlewares, authMiddleware } from '@/lib/middleware';
+
+export async function GET(request: NextRequest) {
+  return withMiddlewares(request, [authMiddleware], async (ctx) => {
+    // 用户个人信息等不需要收集点过滤的场景
+    return NextResponse.json({
+      userId: ctx.user?.userId,
+      username: ctx.user?.username,
+      role: ctx.user?.role,
+    });
+  });
+}
+```
+
+## 自动过滤的模型
+
+以下模型在非管理员用户访问时会自动过滤：
+
+- `store` - 通过 `collectionPointId` 过滤
+- `vehicle` - 通过 `collectionPointId` 过滤
+- `collectionPoint` - 通过 `id` 过滤（只能看到绑定的收集点）
+- `ledgerTask` - 通过 `collectionPointId` 过滤
+- `transferTask` - 通过 `collectionPointId` 过滤
+- `collectionRecord` - 通过关联的 `task.collectionPointId` 过滤
+- `transferRecord` - 通过关联的 `task.collectionPointId` 过滤
+
+## ⚠️ 禁止事项
+
+```typescript
+// ❌ 错误：直接导入 prisma，绕过权限控制
+import prisma from '@/lib/db';
+const data = await prisma.store.findMany();
+
+// ❌ 错误：使用旧的 withAuth 函数（已废弃）
+import { withAuth, isAdmin } from '@/lib/auth';
+return withAuth(request, async (user) => { ... });
+
+// ✅ 正确：使用 ctx.prisma
+return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+  const data = await ctx.prisma.store.findMany();
+});
+```
+
+## MiddlewareContext 类型
+
+```typescript
+interface MiddlewareContext {
+  user?: {
+    userId: string;
+    username: string;
+    role: string;              // 'ADMIN' | 'USER'
+    collectionPointIds: string[]; // 用户绑定的收集点 ID 列表
+  };
+  prisma: PrismaClient;        // 可能是扩展后的 Prisma 客户端
+  [key: string]: unknown;      // 可扩展其他上下文数据
+}
+```
+
+## 文件位置
+
+中间件相关代码位于 `src/lib/middleware/` 目录：
+
+- `types.ts` - 类型定义
+- `compose.ts` - 洋葱模型组合器
+- `auth.ts` - 认证中间件
+- `collection-point-scope.ts` - 收集点范围过滤中间件
+- `audit-log.ts` - 可选的审计日志中间件
+- `index.ts` - 统一导出和预设组合

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 import { getLocationService, getApiKeyErrorMessage, getQPSDelay } from '@/lib/location-service';
 
 interface GeocodeRequest {
@@ -8,13 +7,9 @@ interface GeocodeRequest {
   address: string;
 }
 
-// 批量地理编码收集点
+// 批量地理编码收集点（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { collectionPoints } = body as { collectionPoints: GeocodeRequest[] };
@@ -56,7 +51,7 @@ export async function POST(request: NextRequest) {
 
         // 如果成功，更新数据库
         if (result.success && result.longitude && result.latitude) {
-          await prisma.collectionPoint.update({
+          await ctx.prisma.collectionPoint.update({
             where: { id: cp.id },
             data: {
               longitude: result.longitude,

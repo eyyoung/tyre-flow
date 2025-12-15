@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
+import { hashPassword } from '@/lib/auth';
 import prisma from '@/lib/db';
-import { withAuth, isAdmin, hashPassword } from '@/lib/auth';
 
-// 获取用户列表
+// 获取用户列表（管理员专用）
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
@@ -33,6 +30,7 @@ export async function GET(request: NextRequest) {
         ],
       };
 
+      // 用户管理需要使用原始 prisma 客户端（不受收集点过滤影响）
       const [total, users] = await Promise.all([
         prisma.user.count({ where }),
         prisma.user.findMany({
@@ -78,13 +76,9 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// 创建用户
+// 创建用户（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { username, password, email, name, role, collectionPointIds } = body;
@@ -163,4 +157,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

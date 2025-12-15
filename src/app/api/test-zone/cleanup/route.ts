@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
-// 清理测试数据
+// 清理测试数据（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { type, collectionPointId, includeNonVirtual } = body;
@@ -31,7 +26,7 @@ export async function POST(request: NextRequest) {
             : (collectionPointId ? { collectionPointId, isVirtual: true } : { isVirtual: true });
           
           // 先获取要删除的门店 ID
-          const storesToDelete = await prisma.store.findMany({
+          const storesToDelete = await ctx.prisma.store.findMany({
             where,
             select: { id: true },
           });
@@ -39,12 +34,12 @@ export async function POST(request: NextRequest) {
 
           if (storeIds.length > 0) {
             // 先删除关联的收集记录
-            await prisma.collectionRecord.deleteMany({
+            await ctx.prisma.collectionRecord.deleteMany({
               where: { storeId: { in: storeIds } },
             });
           }
 
-          const result = await prisma.store.deleteMany({ where });
+          const result = await ctx.prisma.store.deleteMany({ where });
           count = result.count;
           break;
         }
@@ -52,7 +47,7 @@ export async function POST(request: NextRequest) {
         case 'vehicles': {
           // 清理车辆数据
           const where = collectionPointId ? { collectionPointId } : {};
-          const result = await prisma.vehicle.deleteMany({ where });
+          const result = await ctx.prisma.vehicle.deleteMany({ where });
           count = result.count;
           break;
         }
@@ -62,10 +57,10 @@ export async function POST(request: NextRequest) {
           const where = collectionPointId ? { collectionPointId } : {};
 
           // 删除收集台账任务（会级联删除收集记录）
-          const ledgerResult = await prisma.ledgerTask.deleteMany({ where });
+          const ledgerResult = await ctx.prisma.ledgerTask.deleteMany({ where });
 
           // 删除转移台账任务（会级联删除转移记录）
-          const transferResult = await prisma.transferTask.deleteMany({ where });
+          const transferResult = await ctx.prisma.transferTask.deleteMany({ where });
 
           count = ledgerResult.count + transferResult.count;
           break;
@@ -85,4 +80,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

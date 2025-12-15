@@ -1,7 +1,6 @@
 import { compare, hash } from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
-import { NextRequest, NextResponse } from 'next/server';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-secret-key-here-min-32-chars-long-xxxxx'
@@ -14,6 +13,7 @@ export interface JWTPayload {
   userId: string;
   username: string;
   role: string;
+  collectionPointIds: string[];  // 用户绑定的收集点 ID 列表
   exp?: number;
 }
 
@@ -81,34 +81,5 @@ export async function getCurrentUser(): Promise<JWTPayload | null> {
   const token = await getAuthCookie();
   if (!token) return null;
   return verifyToken(token);
-}
-
-// 认证中间件辅助函数
-export function createAuthResponse(message: string, status: number) {
-  return NextResponse.json({ message }, { status });
-}
-
-// 受保护的 API 路由装饰器
-export async function withAuth(
-  request: NextRequest,
-  handler: (user: JWTPayload, request: NextRequest) => Promise<NextResponse>
-): Promise<NextResponse> {
-  const token = request.cookies.get(COOKIE_NAME)?.value;
-
-  if (!token) {
-    return createAuthResponse('Unauthorized', 401);
-  }
-
-  const user = await verifyToken(token);
-  if (!user) {
-    return createAuthResponse('Invalid or expired token', 401);
-  }
-
-  return handler(user, request);
-}
-
-// 检查是否是管理员
-export function isAdmin(user: JWTPayload): boolean {
-  return user.role === 'ADMIN';
 }
 

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 // 获取车辆列表
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
@@ -14,16 +13,7 @@ export async function GET(request: NextRequest) {
       const type = searchParams.get('type') || '';
       const collectionPointId = searchParams.get('collectionPointId') || '';
 
-      // 非管理员只能看到自己绑定的收集点下的车辆
-      let allowedCollectionPointIds: string[] | null = null;
-      if (!isAdmin(user)) {
-        const bindings = await prisma.userCollectionPoint.findMany({
-          where: { userId: user.userId },
-          select: { collectionPointId: true },
-        });
-        allowedCollectionPointIds = bindings.map((b) => b.collectionPointId);
-      }
-
+      // ctx.prisma 已自动带收集点权限过滤，无需手动检查
       const where = {
         AND: [
           search
@@ -38,15 +28,12 @@ export async function GET(request: NextRequest) {
           status ? { status: status as 'ACTIVE' | 'DISABLED' } : {},
           type ? { type: type as 'COLLECTION' | 'TRANSFER' } : {},
           collectionPointId ? { collectionPointId } : {},
-          allowedCollectionPointIds
-            ? { collectionPointId: { in: allowedCollectionPointIds } }
-            : {},
         ],
       };
 
       const [total, vehicles] = await Promise.all([
-        prisma.vehicle.count({ where }),
-        prisma.vehicle.findMany({
+        ctx.prisma.vehicle.count({ where }),
+        ctx.prisma.vehicle.findMany({
           where,
           include: {
             collectionPoint: {
@@ -78,8 +65,9 @@ export async function GET(request: NextRequest) {
 
 // 创建车辆
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以创建车辆
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -107,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查车牌号是否已存在
-      const existing = await prisma.vehicle.findUnique({
+      const existing = await ctx.prisma.vehicle.findUnique({
         where: { plateNumber },
       });
 
@@ -119,7 +107,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查收集点是否存在
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -130,7 +118,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const vehicle = await prisma.vehicle.create({
+      const vehicle = await ctx.prisma.vehicle.create({
         data: {
           plateNumber,
           type,
@@ -155,4 +143,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

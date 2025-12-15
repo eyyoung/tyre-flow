@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 // 获取门店列表
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
@@ -16,16 +15,7 @@ export async function GET(request: NextRequest) {
       const sortField = searchParams.get('sortField') || '';
       const sortOrder = searchParams.get('sortOrder') || '';
 
-      // 非管理员只能看到自己绑定的收集点下的门店
-      let allowedCollectionPointIds: string[] | null = null;
-      if (!isAdmin(user)) {
-        const bindings = await prisma.userCollectionPoint.findMany({
-          where: { userId: user.userId },
-          select: { collectionPointId: true },
-        });
-        allowedCollectionPointIds = bindings.map((b) => b.collectionPointId);
-      }
-
+      // ctx.prisma 已自动带收集点权限过滤，无需手动检查
       const where = {
         AND: [
           search
@@ -43,9 +33,6 @@ export async function GET(request: NextRequest) {
           isVirtual !== null && isVirtual !== ''
             ? { isVirtual: isVirtual === 'true' }
             : {},
-          allowedCollectionPointIds
-            ? { collectionPointId: { in: allowedCollectionPointIds } }
-            : {},
         ],
       };
 
@@ -59,8 +46,8 @@ export async function GET(request: NextRequest) {
       }
 
       const [total, stores] = await Promise.all([
-        prisma.store.count({ where }),
-        prisma.store.findMany({
+        ctx.prisma.store.count({ where }),
+        ctx.prisma.store.findMany({
           where,
           include: {
             collectionPoint: {
@@ -92,8 +79,9 @@ export async function GET(request: NextRequest) {
 
 // 创建门店
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以创建门店
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -125,7 +113,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查编码是否已存在
-      const existing = await prisma.store.findUnique({
+      const existing = await ctx.prisma.store.findUnique({
         where: { code },
       });
 
@@ -137,7 +125,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查收集点是否存在
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -148,7 +136,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const store = await prisma.store.create({
+      const store = await ctx.prisma.store.create({
         data: {
           code,
           name,
@@ -177,4 +165,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

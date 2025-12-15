@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 import { executeLedgerTask } from '@/lib/ledger-generator';
 
 // 获取台账任务列表
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
@@ -20,29 +19,17 @@ export async function GET(request: NextRequest) {
         ? (statusParam as TaskStatus)
         : null;
 
-      // 非管理员只能看到自己绑定的收集点的任务
-      let allowedCollectionPointIds: string[] | null = null;
-      if (!isAdmin(user)) {
-        const bindings = await prisma.userCollectionPoint.findMany({
-          where: { userId: user.userId },
-          select: { collectionPointId: true },
-        });
-        allowedCollectionPointIds = bindings.map((b) => b.collectionPointId);
-      }
-
+      // ctx.prisma 已自动带收集点权限过滤，无需手动检查
       const where = {
         AND: [
           status ? { status } : {},
           collectionPointId ? { collectionPointId } : {},
-          allowedCollectionPointIds
-            ? { collectionPointId: { in: allowedCollectionPointIds } }
-            : {},
         ],
       };
 
       const [total, tasks] = await Promise.all([
-        prisma.ledgerTask.count({ where }),
-        prisma.ledgerTask.findMany({
+        ctx.prisma.ledgerTask.count({ where }),
+        ctx.prisma.ledgerTask.findMany({
           where,
           include: {
             collectionPoint: {
@@ -79,8 +66,9 @@ export async function GET(request: NextRequest) {
 
 // 创建并同步生成收集任务
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以创建任务
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -107,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查收集点是否存在
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -119,7 +107,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查是否已存在相同时间范围的任务
-      const existing = await prisma.ledgerTask.findFirst({
+      const existing = await ctx.prisma.ledgerTask.findFirst({
         where: {
           collectionPointId,
           startDate: start,
@@ -140,7 +128,7 @@ export async function POST(request: NextRequest) {
       const taskNo = `LT-${startStr}-${endStr}-${collectionPoint.code}-${Date.now().toString(36).toUpperCase()}`;
 
       // 创建任务
-      const task = await prisma.ledgerTask.create({
+      const task = await ctx.prisma.ledgerTask.create({
         data: {
           taskNo,
           startDate: start,
@@ -155,7 +143,7 @@ export async function POST(request: NextRequest) {
       const result = await executeLedgerTask(task.id);
 
       // 获取更新后的任务信息
-      const updatedTask = await prisma.ledgerTask.findUnique({
+      const updatedTask = await ctx.prisma.ledgerTask.findUnique({
         where: { id: task.id },
         include: {
           collectionPoint: {
@@ -182,4 +170,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

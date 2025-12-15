@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
 // 车辆品牌和型号数据
 const vehicleBrands = {
@@ -58,13 +57,9 @@ const provinceShorts: Record<string, string> = {
   河南省: '豫',
 };
 
-// 批量生成车辆
+// 批量生成车辆（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { collectionPointId, collectionCount, transferCount } = body;
@@ -95,7 +90,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查收集点是否存在
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -110,7 +105,7 @@ export async function POST(request: NextRequest) {
       const provinceShort = provinceShorts[collectionPoint.province || ''] || '粤';
 
       // 获取现有车牌号避免重复
-      const existingVehicles = await prisma.vehicle.findMany({
+      const existingVehicles = await ctx.prisma.vehicle.findMany({
         where: { collectionPointId },
         select: { plateNumber: true },
       });
@@ -184,7 +179,7 @@ export async function POST(request: NextRequest) {
 
       // 批量插入
       if (vehiclesToCreate.length > 0) {
-        await prisma.vehicle.createMany({
+        await ctx.prisma.vehicle.createMany({
           data: vehiclesToCreate,
           skipDuplicates: true,
         });
@@ -205,4 +200,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

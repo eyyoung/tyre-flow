@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/db";
-import { withAuth } from "@/lib/auth";
+import { withMiddlewares, standardMiddlewares } from "@/lib/middleware";
 import * as fs from "fs";
 import * as path from "path";
 import Docxtemplater from "docxtemplater";
@@ -182,7 +181,7 @@ async function generateIsccDocument(
 
 // 导出 ISCC 声明
 export async function GET(request: NextRequest) {
-  return withAuth(request, async () => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const collectionPointId = searchParams.get("collectionPointId");
@@ -194,7 +193,7 @@ export async function GET(request: NextRequest) {
 
       // 单个门店导出
       if (storeId) {
-        const store = await prisma.store.findUnique({
+        const store = await ctx.prisma.store.findUnique({
           where: { id: storeId },
           include: {
             collectionPoint: true,
@@ -240,8 +239,8 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // 获取收集点信息
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      // 获取收集点信息（通过 ctx.prisma 自动应用收集点过滤）
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -252,8 +251,8 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // 获取所有活跃且非虚拟的门店
-      const stores = await prisma.store.findMany({
+      // 获取所有活跃且非虚拟的门店（通过 ctx.prisma 自动应用收集点过滤）
+      const stores = await ctx.prisma.store.findMany({
         where: {
           collectionPointId,
           status: "ACTIVE",

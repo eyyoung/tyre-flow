@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
-// 批量操作门店
+// 批量操作门店（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { action, ids, reason } = body;
@@ -22,7 +17,7 @@ export async function POST(request: NextRequest) {
 
       if (action === 'disable') {
         // 批量停用
-        const result = await prisma.store.updateMany({
+        const result = await ctx.prisma.store.updateMany({
           where: {
             id: { in: ids },
             status: 'ACTIVE', // 只更新当前启用的
@@ -42,7 +37,7 @@ export async function POST(request: NextRequest) {
 
       if (action === 'enable') {
         // 批量启用
-        const result = await prisma.store.updateMany({
+        const result = await ctx.prisma.store.updateMany({
           where: {
             id: { in: ids },
             status: 'DISABLED', // 只更新当前停用的

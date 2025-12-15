@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 /**
  * 计算建议的目标吨数区间
@@ -19,7 +18,7 @@ import { withAuth } from '@/lib/auth';
  *    - 所以建议范围可以更宽松
  */
 export async function GET(request: NextRequest) {
-  return withAuth(request, async () => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const collectionPointId = searchParams.get('collectionPointId');
@@ -37,8 +36,8 @@ export async function GET(request: NextRequest) {
       const endDate = new Date(endDateStr);
       const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-      // 获取门店数量和平均行程时间
-      const allStores = await prisma.store.findMany({
+      // 获取门店数量和平均行程时间 - ctx.prisma 已自动带收集点权限过滤
+      const allStores = await ctx.prisma.store.findMany({
         where: { collectionPointId, status: 'ACTIVE' },
         select: { estimatedTravelMinutes: true },
       });
@@ -49,7 +48,7 @@ export async function GET(request: NextRequest) {
       );
 
       // 获取收集车辆及其最大载重
-      const vehicles = await prisma.vehicle.findMany({
+      const vehicles = await ctx.prisma.vehicle.findMany({
         where: { collectionPointId, type: 'COLLECTION', status: 'ACTIVE' },
         select: { maxLoad: true },
       });

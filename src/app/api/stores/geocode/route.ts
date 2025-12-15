@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 import { getLocationService, getApiKeyErrorMessage, getQPSDelay } from '@/lib/location-service';
 
 interface GeocodeRequest {
@@ -8,13 +7,9 @@ interface GeocodeRequest {
   address: string;
 }
 
-// 批量地理编码
+// 批量地理编码（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { stores } = body as { stores: GeocodeRequest[] };
@@ -56,7 +51,7 @@ export async function POST(request: NextRequest) {
 
         // 如果成功，更新数据库
         if (result.success && result.longitude && result.latitude) {
-          await prisma.store.update({
+          await ctx.prisma.store.update({
             where: { id: store.id },
             data: {
               longitude: result.longitude,
@@ -83,13 +78,9 @@ export async function POST(request: NextRequest) {
   });
 }
 
-// 批量更新门店状态
+// 批量更新门店状态（管理员专用）
 export async function PUT(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { storeIds, status, disabledReason } = body as {
@@ -121,7 +112,7 @@ export async function PUT(request: NextRequest) {
         updateData.disabledReason = null;
       }
 
-      const result = await prisma.store.updateMany({
+      const result = await ctx.prisma.store.updateMany({
         where: { id: { in: storeIds } },
         data: updateData,
       });

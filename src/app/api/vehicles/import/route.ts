@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
 interface ImportVehicle {
   plateNumber: string;
@@ -14,13 +13,9 @@ interface ImportVehicle {
   driverPhone: string | null;
 }
 
-// 批量导入车辆
+// 批量导入车辆（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { collectionPointId, vehicles } = body as {
@@ -36,7 +31,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -56,7 +51,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 获取已存在的车牌号（用于去重）
-      const existingPlates = await prisma.vehicle.findMany({
+      const existingPlates = await ctx.prisma.vehicle.findMany({
         where: {
           plateNumber: { in: vehicles.map(v => v.plateNumber) },
         },
@@ -133,7 +128,7 @@ export async function POST(request: NextRequest) {
       // 批量创建车辆
       if (vehiclesToCreate.length > 0) {
         try {
-          await prisma.vehicle.createMany({
+          await ctx.prisma.vehicle.createMany({
             data: vehiclesToCreate,
             skipDuplicates: true,
           });
@@ -161,5 +156,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-
-

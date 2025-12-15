@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
 // 中文姓氏库
 const surnames = [
@@ -229,13 +228,9 @@ function generateVirtualStore(
   };
 }
 
-// 批量生成虚拟门店
+// 批量生成虚拟门店（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { collectionPointId, count } = body;
@@ -257,7 +252,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查收集点是否存在
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -269,7 +264,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 获取该收集点已有的门店最大编号
-      const existingStores = await prisma.store.findMany({
+      const existingStores = await ctx.prisma.store.findMany({
         where: { collectionPointId },
         orderBy: { code: 'desc' },
         take: 1,
@@ -311,7 +306,7 @@ export async function POST(request: NextRequest) {
 
       for (let i = 0; i < storesToCreate.length; i += batchSize) {
         const batch = storesToCreate.slice(i, i + batchSize);
-        await prisma.store.createMany({
+        await ctx.prisma.store.createMany({
           data: batch,
           skipDuplicates: true,
         });

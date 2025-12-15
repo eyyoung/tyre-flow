@@ -48,11 +48,18 @@ export async function POST(request: NextRequest) {
       data: { lastLoginAt: new Date() },
     });
 
-    // 生成 JWT Token
+    // 查询用户绑定的收集点
+    const bindings = await prisma.userCollectionPoint.findMany({
+      where: { userId: user.id },
+      select: { collectionPointId: true },
+    });
+
+    // 生成 JWT Token（包含收集点 ID 列表）
     const token = await generateToken({
       userId: user.id,
       username: user.username,
       role: user.role,
+      collectionPointIds: bindings.map(b => b.collectionPointId),
     });
 
     // 设置 Cookie

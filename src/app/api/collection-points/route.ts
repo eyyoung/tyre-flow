@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 // 获取收集点列表
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
       const page = parseInt(searchParams.get('page') || '1');
@@ -13,14 +12,7 @@ export async function GET(request: NextRequest) {
       const status = searchParams.get('status') || '';
       const all = searchParams.get('all') === 'true'; // 获取所有（用于下拉选择）
 
-      // 非管理员只能看到自己绑定的收集点
-      const userBindings = isAdmin(user)
-        ? null
-        : await prisma.userCollectionPoint.findMany({
-            where: { userId: user.userId },
-            select: { collectionPointId: true },
-          });
-
+      // ctx.prisma 已自动带收集点权限过滤，无需手动检查
       const where = {
         AND: [
           search
@@ -33,15 +25,12 @@ export async function GET(request: NextRequest) {
               }
             : {},
           status ? { status: status as 'ACTIVE' | 'DISABLED' } : {},
-          userBindings
-            ? { id: { in: userBindings.map((b) => b.collectionPointId) } }
-            : {},
         ],
       };
 
       if (all) {
         // 返回所有收集点（用于下拉选择）
-        const collectionPoints = await prisma.collectionPoint.findMany({
+        const collectionPoints = await ctx.prisma.collectionPoint.findMany({
           where,
           select: {
             id: true,
@@ -56,8 +45,8 @@ export async function GET(request: NextRequest) {
       }
 
       const [total, collectionPoints] = await Promise.all([
-        prisma.collectionPoint.count({ where }),
-        prisma.collectionPoint.findMany({
+        ctx.prisma.collectionPoint.count({ where }),
+        ctx.prisma.collectionPoint.findMany({
           where,
           include: {
             _count: {
@@ -92,8 +81,9 @@ export async function GET(request: NextRequest) {
 
 // 创建收集点
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以创建收集点
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -124,7 +114,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 检查编码是否已存在
-      const existing = await prisma.collectionPoint.findUnique({
+      const existing = await ctx.prisma.collectionPoint.findUnique({
         where: { code },
       });
 
@@ -135,7 +125,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const collectionPoint = await prisma.collectionPoint.create({
+      const collectionPoint = await ctx.prisma.collectionPoint.create({
         data: {
           code,
           name,
@@ -163,4 +153,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

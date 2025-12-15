@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,27 +7,13 @@ interface RouteParams {
 
 // 获取单个收集点
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     const { id } = await params;
 
     try {
-      // 非管理员检查是否有权限访问
-      if (!isAdmin(user)) {
-        const binding = await prisma.userCollectionPoint.findUnique({
-          where: {
-            userId_collectionPointId: {
-              userId: user.userId,
-              collectionPointId: id,
-            },
-          },
-        });
-
-        if (!binding) {
-          return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-        }
-      }
-
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      // ctx.prisma 已自动带收集点权限过滤
+      // findUnique 会自动检查结果是否在权限范围内
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id },
         include: {
           _count: {
@@ -60,8 +45,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // 更新收集点
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以更新收集点
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -86,7 +72,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       } = body;
 
       // 检查收集点是否存在
-      const existing = await prisma.collectionPoint.findUnique({
+      const existing = await ctx.prisma.collectionPoint.findUnique({
         where: { id },
       });
 
@@ -116,7 +102,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         updateData.contactPhone = contactPhone || null;
       if (status !== undefined) updateData.status = status;
 
-      const collectionPoint = await prisma.collectionPoint.update({
+      const collectionPoint = await ctx.prisma.collectionPoint.update({
         where: { id },
         data: updateData,
       });
@@ -134,15 +120,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 // 删除收集点
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以删除收集点
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
 
     try {
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id },
         include: {
           _count: {
@@ -162,7 +149,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
 
       // 级联删除会自动处理关联的门店和车辆
-      await prisma.collectionPoint.delete({
+      await ctx.prisma.collectionPoint.delete({
         where: { id },
       });
 
@@ -176,4 +163,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
   });
 }
-

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { withAuth, isAdmin, hashPassword } from '@/lib/auth';
+import { withMiddlewares, authOnlyMiddlewares } from '@/lib/middleware';
+import { hashPassword } from '@/lib/auth';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,11 +9,11 @@ interface RouteParams {
 
 // 获取单个用户
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (currentUser) => {
+  return withMiddlewares(request, authOnlyMiddlewares, async (ctx) => {
     const { id } = await params;
 
     // 非管理员只能查看自己
-    if (!isAdmin(currentUser) && currentUser.userId !== id) {
+    if (ctx.user?.role !== 'ADMIN' && ctx.user?.userId !== id) {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -56,11 +57,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // 更新用户
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (currentUser) => {
+  return withMiddlewares(request, authOnlyMiddlewares, async (ctx) => {
     const { id } = await params;
 
     // 非管理员只能更新自己的基本信息
-    if (!isAdmin(currentUser) && currentUser.userId !== id) {
+    if (ctx.user?.role !== 'ADMIN' && ctx.user?.userId !== id) {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -78,7 +79,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
 
       // 非管理员不能修改角色和状态
-      if (!isAdmin(currentUser)) {
+      if (ctx.user?.role !== 'ADMIN') {
         if (role !== undefined || status !== undefined) {
           return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
         }
@@ -102,7 +103,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       const updateData: Record<string, unknown> = {};
       if (email !== undefined) updateData.email = email || null;
       if (name !== undefined) updateData.name = name || null;
-      if (isAdmin(currentUser)) {
+      if (ctx.user?.role === 'ADMIN') {
         if (role !== undefined) updateData.role = role;
         if (status !== undefined) updateData.status = status;
       }
@@ -126,7 +127,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       });
 
       // 如果是管理员且提供了收集点列表，更新绑定关系
-      if (isAdmin(currentUser) && collectionPointIds !== undefined) {
+      if (ctx.user?.role === 'ADMIN' && collectionPointIds !== undefined) {
         // 删除现有绑定
         await prisma.userCollectionPoint.deleteMany({
           where: { userId: id },
@@ -156,15 +157,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 // 删除用户
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (currentUser) => {
-    if (!isAdmin(currentUser)) {
+  return withMiddlewares(request, authOnlyMiddlewares, async (ctx) => {
+    // 只有管理员可以删除用户
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
 
     // 不能删除自己
-    if (currentUser.userId === id) {
+    if (ctx.user?.userId === id) {
       return NextResponse.json(
         { message: 'Cannot delete yourself' },
         { status: 400 }
@@ -194,4 +196,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
   });
 }
-

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/db";
-import { withAuth, isAdmin } from "@/lib/auth";
+import { withMiddlewares, adminMiddlewares } from "@/lib/middleware";
 
 // 旧格式（原有格式，现在也支持经纬度和预估行程）
 interface ImportStoreOld {
@@ -202,13 +201,9 @@ function generateEstimatedTravelMinutes(): number {
   return 0;
 }
 
-// 批量导入门店
+// 批量导入门店（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { collectionPointId, stores: rawStores } = body as {
@@ -242,7 +237,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -276,7 +271,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 获取已存在的营业执照号（收集点内去重）
-      const existingLicenses = await prisma.store.findMany({
+      const existingLicenses = await ctx.prisma.store.findMany({
         where: {
           collectionPointId,
           businessLicense: {
@@ -292,7 +287,7 @@ export async function POST(request: NextRequest) {
       );
 
       // 获取已存在的门店名称+地址组合（收集点内去重）
-      const existingStores = await prisma.store.findMany({
+      const existingStores = await ctx.prisma.store.findMany({
         where: {
           collectionPointId,
           OR: stores.map((s) => ({
@@ -307,7 +302,7 @@ export async function POST(request: NextRequest) {
       );
 
       // 获取已存在的法定代表人+手机组合（收集点内去重）
-      const existingLegalPersonPhones = await prisma.store.findMany({
+      const existingLegalPersonPhones = await ctx.prisma.store.findMany({
         where: {
           collectionPointId,
           OR: stores
@@ -430,7 +425,7 @@ export async function POST(request: NextRequest) {
       // 批量创建门店
       if (storesToCreate.length > 0) {
         try {
-          await prisma.store.createMany({
+          await ctx.prisma.store.createMany({
             data: storesToCreate,
             skipDuplicates: true,
           });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 
 // 默认配置
 const defaultConfigs: Record<string, { value: string; description: string; category: string }> = {
@@ -76,13 +76,9 @@ const defaultConfigs: Record<string, { value: string; description: string; categ
   },
 };
 
-// 获取配置列表
+// 获取配置列表（管理员专用）
 export async function GET(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async () => {
     try {
       const configs = await prisma.systemConfig.findMany({
         orderBy: { key: 'asc' },
@@ -112,13 +108,9 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// 更新配置
+// 更新配置（管理员专用）
 export async function PUT(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async () => {
     try {
       const body = await request.json();
       const configs = body.configs as Record<string, string>;
@@ -157,4 +149,3 @@ export async function PUT(request: NextRequest) {
     }
   });
 }
-

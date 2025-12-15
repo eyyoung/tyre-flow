@@ -1,23 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 import { executeLedgerTask } from '@/lib/ledger-generator';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// 执行台账生成（重新生成）
+// 执行台账生成（重新生成）- 管理员专用
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     const { id } = await params;
 
     try {
-      const task = await prisma.ledgerTask.findUnique({
+      const task = await ctx.prisma.ledgerTask.findUnique({
         where: { id },
       });
 
@@ -34,7 +29,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       // 如果任务已完成或失败，需要先重置状态
       if (task.status === 'COMPLETED' || task.status === 'FAILED') {
-        await prisma.ledgerTask.update({
+        await ctx.prisma.ledgerTask.update({
           where: { id },
           data: {
             status: 'PENDING',
@@ -65,4 +60,3 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
   });
 }
-

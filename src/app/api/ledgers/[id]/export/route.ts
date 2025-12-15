@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/db";
-import { withAuth, isAdmin } from "@/lib/auth";
+import { withMiddlewares, standardMiddlewares } from "@/lib/middleware";
 import { formatDateCN } from "@/lib/timezone";
 import ExcelJS from "exceljs";
 
@@ -10,15 +9,15 @@ interface RouteParams {
 
 // 导出台账数据
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "collection"; // collection only (transfer moved to TransferTask)
     const lang = searchParams.get("lang") || "zh"; // zh | en
 
     try {
-      // 获取任务信息
-      const task = await prisma.ledgerTask.findUnique({
+      // 获取任务信息（通过 ctx.prisma 自动应用收集点过滤）
+      const task = await ctx.prisma.ledgerTask.findUnique({
         where: { id },
         include: {
           collectionPoint: true,
@@ -30,22 +29,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           { message: "Task not found" },
           { status: 404 }
         );
-      }
-
-      // 非管理员检查权限
-      if (!isAdmin(user)) {
-        const binding = await prisma.userCollectionPoint.findUnique({
-          where: {
-            userId_collectionPointId: {
-              userId: user.userId,
-              collectionPointId: task.collectionPointId,
-            },
-          },
-        });
-
-        if (!binding) {
-          return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-        }
       }
 
       // 创建工作簿
@@ -133,7 +116,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       // 收集台账
       if (type === "all" || type === "collection") {
-        const collectionRecords = await prisma.collectionRecord.findMany({
+        const collectionRecords = await ctx.prisma.collectionRecord.findMany({
           where: { taskId: id },
           include: {
             store: { select: { code: true, name: true, address: true } },

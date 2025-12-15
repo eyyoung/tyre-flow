@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, adminMiddlewares } from '@/lib/middleware';
 import { getLocationService, getApiKeyErrorMessage, getQPSDelay } from '@/lib/location-service';
 
 interface RoutePlanRequest {
@@ -9,13 +8,9 @@ interface RoutePlanRequest {
   latitude: number;
 }
 
-// 批量路径规划
+// 批量路径规划（管理员专用）
 export async function POST(request: NextRequest) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-    }
-
+  return withMiddlewares(request, adminMiddlewares, async (ctx) => {
     try {
       const body = await request.json();
       const { stores, collectionPointId } = body as { 
@@ -38,7 +33,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 获取收集点信息
-      const collectionPoint = await prisma.collectionPoint.findUnique({
+      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
       });
 
@@ -78,7 +73,7 @@ export async function POST(request: NextRequest) {
           destLat = geocodeResult.latitude;
 
           // 更新收集点坐标
-          await prisma.collectionPoint.update({
+          await ctx.prisma.collectionPoint.update({
             where: { id: collectionPointId },
             data: { longitude: destLng, latitude: destLat },
           });
@@ -116,7 +111,7 @@ export async function POST(request: NextRequest) {
 
         // 如果成功，更新数据库
         if (result.success && result.duration) {
-          await prisma.store.update({
+          await ctx.prisma.store.update({
             where: { id: store.id },
             data: {
               estimatedTravelMinutes: result.duration,

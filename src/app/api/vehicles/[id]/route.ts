@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { withAuth, isAdmin } from '@/lib/auth';
+import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,11 +7,13 @@ interface RouteParams {
 
 // 获取单个车辆
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     const { id } = await params;
 
     try {
-      const vehicle = await prisma.vehicle.findUnique({
+      // ctx.prisma 已自动带收集点权限过滤
+      // findUnique 会自动检查结果是否在权限范围内
+      const vehicle = await ctx.prisma.vehicle.findUnique({
         where: { id },
         include: {
           collectionPoint: {
@@ -23,22 +24,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       if (!vehicle) {
         return NextResponse.json({ message: 'Vehicle not found' }, { status: 404 });
-      }
-
-      // 非管理员检查权限
-      if (!isAdmin(user)) {
-        const binding = await prisma.userCollectionPoint.findUnique({
-          where: {
-            userId_collectionPointId: {
-              userId: user.userId,
-              collectionPointId: vehicle.collectionPointId,
-            },
-          },
-        });
-
-        if (!binding) {
-          return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-        }
       }
 
       return NextResponse.json({ data: vehicle });
@@ -54,8 +39,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // 更新车辆
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以更新车辆
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -75,7 +61,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         status,
       } = body;
 
-      const existing = await prisma.vehicle.findUnique({
+      const existing = await ctx.prisma.vehicle.findUnique({
         where: { id },
       });
 
@@ -95,7 +81,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (driverPhone !== undefined) updateData.driverPhone = driverPhone || null;
       if (status !== undefined) updateData.status = status;
 
-      const vehicle = await prisma.vehicle.update({
+      const vehicle = await ctx.prisma.vehicle.update({
         where: { id },
         data: updateData,
       });
@@ -113,15 +99,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 // 删除车辆
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  return withAuth(request, async (user) => {
-    if (!isAdmin(user)) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    // 只有管理员可以删除车辆
+    if (ctx.user?.role !== 'ADMIN') {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
 
     try {
-      const vehicle = await prisma.vehicle.findUnique({
+      const vehicle = await ctx.prisma.vehicle.findUnique({
         where: { id },
       });
 
@@ -129,7 +116,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ message: 'Vehicle not found' }, { status: 404 });
       }
 
-      await prisma.vehicle.delete({
+      await ctx.prisma.vehicle.delete({
         where: { id },
       });
 
@@ -143,4 +130,3 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
   });
 }
-
