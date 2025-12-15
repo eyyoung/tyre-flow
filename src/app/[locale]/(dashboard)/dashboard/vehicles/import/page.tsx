@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   Table,
@@ -8,7 +8,6 @@ import {
   Space,
   Typography,
   Upload,
-  Select,
   Steps,
   Result,
   Alert,
@@ -20,7 +19,6 @@ import {
   Col,
 } from 'antd';
 import {
-  UploadOutlined,
   FileExcelOutlined,
   CheckCircleOutlined,
   ImportOutlined,
@@ -31,15 +29,10 @@ import {
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile, RcFile } from 'antd/es/upload/interface';
+import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
-
-interface CollectionPoint {
-  id: string;
-  code: string;
-  name: string;
-}
 
 interface PreviewVehicle {
   key: string;
@@ -108,30 +101,12 @@ const downloadTemplate = () => {
 export default function VehicleImportPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [currentStep, setCurrentStep] = useState(0);
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
-  const [selectedCollectionPoint, setSelectedCollectionPoint] = useState<string>('');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [previewData, setPreviewData] = useState<PreviewVehicle[]>([]);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-
-  // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch('/api/collection-points?all=true');
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
 
   // 解析 CSV 文件
   const parseCSV = (text: string): PreviewVehicle[] => {
@@ -254,8 +229,8 @@ export default function VehicleImportPage() {
 
   // 执行导入
   const handleImport = async () => {
-    if (!selectedCollectionPoint) {
-      message.error(t('vehicleImport.selectCollectionPoint'));
+    if (!currentCollectionPoint) {
+      message.error(t('ledgers.selectCollectionPointRequired'));
       return;
     }
 
@@ -267,7 +242,7 @@ export default function VehicleImportPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionPointId: selectedCollectionPoint,
+          collectionPointId: currentCollectionPoint.id,
           vehicles: validVehicles.map(v => ({
             plateNumber: v.plateNumber,
             type: v.type,
@@ -304,7 +279,6 @@ export default function VehicleImportPage() {
     setFileList([]);
     setPreviewData([]);
     setImportResult(null);
-    setSelectedCollectionPoint('');
   };
 
   // 预览表格列
@@ -433,36 +407,17 @@ export default function VehicleImportPage() {
               style={{ marginBottom: 24 }}
             />
             
-            <Row gutter={24}>
-              <Col span={12}>
-                <div style={{ marginBottom: 16 }}>
-                  <Text strong>{t('vehicleImport.selectCollectionPoint')}</Text>
-                  <span style={{ color: 'red' }}> *</span>
-                </div>
-                <Select
-                  placeholder={t('vehicleImport.selectCollectionPointPlaceholder')}
-                  value={selectedCollectionPoint || undefined}
-                  onChange={setSelectedCollectionPoint}
-                  style={{ width: '100%', marginBottom: 24 }}
-                  options={collectionPoints.map((cp) => ({
-                    value: cp.id,
-                    label: `${cp.name} (${cp.code})`,
-                  }))}
-                />
-              </Col>
-              <Col span={12}>
-                <div style={{ marginBottom: 16 }}>
-                  <Text strong>{t('vehicleImport.downloadTemplate')}</Text>
-                </div>
+            <div style={{ marginBottom: 24 }}>
+              <Text strong>{t('vehicleImport.downloadTemplate')}</Text>
+              <div style={{ marginTop: 8 }}>
                 <Button 
                   icon={<DownloadOutlined />} 
                   onClick={downloadTemplate}
-                  style={{ marginBottom: 24 }}
                 >
                   {t('vehicleImport.downloadTemplateButton')}
                 </Button>
-              </Col>
-            </Row>
+              </div>
+            </div>
 
             <Dragger
               accept=".csv"
@@ -473,7 +428,7 @@ export default function VehicleImportPage() {
                 setPreviewData([]);
               }}
               maxCount={1}
-              disabled={!selectedCollectionPoint}
+              disabled={!currentCollectionPoint}
             >
               <p className="ant-upload-drag-icon">
                 <FileExcelOutlined style={{ fontSize: 48, color: '#1890ff' }} />
@@ -496,7 +451,7 @@ export default function VehicleImportPage() {
 
             <Descriptions bordered size="small" style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t('vehicles.collectionPoint')}>
-                {collectionPoints.find(cp => cp.id === selectedCollectionPoint)?.name || '-'}
+                {currentCollectionPoint?.name || '-'}
               </Descriptions.Item>
               <Descriptions.Item label={t('vehicleImport.totalRecords')}>
                 {previewData.length}

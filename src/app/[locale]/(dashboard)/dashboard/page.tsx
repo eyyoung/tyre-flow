@@ -3,19 +3,18 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Card, Statistic, Typography, Table, Tag, Spin } from "antd";
 import {
-  EnvironmentOutlined,
   ShopOutlined,
   CarOutlined,
   RiseOutlined,
   SwapOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 import styles from "./dashboard.module.css";
 
 const { Title } = Typography;
 
 interface DashboardStats {
-  collectionPoints: number;
   stores: number;
   vehicles: number;
   monthlyCollectionWeight: number;
@@ -25,7 +24,6 @@ interface DashboardStats {
 interface RecentTask {
   key: string;
   taskNo: string;
-  collectionPoint: string;
   targetTonnage: number;
   actualTonnage: number | null;
   status: string;
@@ -34,9 +32,9 @@ interface RecentTask {
 
 export default function DashboardPage() {
   const t = useTranslations();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
-    collectionPoints: 0,
     stores: 0,
     vehicles: 0,
     monthlyCollectionWeight: 0,
@@ -45,9 +43,14 @@ export default function DashboardPage() {
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
 
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
-      const response = await fetch('/api/dashboard');
+      const params = new URLSearchParams({
+        collectionPointId: currentCollectionPoint.id,
+      });
+      const response = await fetch(`/api/dashboard?${params}`);
       const result = await response.json();
       
       if (response.ok) {
@@ -59,21 +62,13 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentCollectionPoint]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const statCards = [
-    {
-      key: "collectionPoints",
-      title: t("dashboard.totalCollectionPoints"),
-      value: stats.collectionPoints,
-      icon: <EnvironmentOutlined />,
-      color: "#1677ff",
-      bgColor: "#e6f4ff",
-    },
     {
       key: "stores",
       title: t("dashboard.totalStores"),
@@ -115,13 +110,7 @@ export default function DashboardPage() {
       title: t("ledgers.taskNo"),
       dataIndex: "taskNo",
       key: "taskNo",
-      width: 200,
-    },
-    {
-      title: t("ledgers.collectionPoint"),
-      dataIndex: "collectionPoint",
-      key: "collectionPoint",
-      width: 150,
+      width: 260,
     },
     {
       title: t("ledgers.targetWeight"),

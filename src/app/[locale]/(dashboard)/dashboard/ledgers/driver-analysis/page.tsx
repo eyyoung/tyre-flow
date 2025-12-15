@@ -22,15 +22,10 @@ import {
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import dayjs from 'dayjs';
+import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
-
-interface CollectionPoint {
-  id: string;
-  code: string;
-  name: string;
-}
 
 interface TripRecord {
   id: string;
@@ -68,39 +63,21 @@ function minutesToTimeStr(minutes: number): string {
 export default function DriverAnalysisPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [tripRecords, setTripRecords] = useState<TripRecord[]>([]);
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
   const [selectedDriverIds, setSelectedDriverIds] = useState<Set<string>>(new Set());
   
-  const [selectedCp, setSelectedCp] = useState<string>('');
   const [recordType, setRecordType] = useState<string>('collection');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
     dayjs().subtract(7, 'day'),
     dayjs(),
   ]);
 
-  // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch('/api/collection-points?all=true');
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
-
   // 查询图表数据
   const fetchChartData = async () => {
-    if (!selectedCp) {
+    if (!currentCollectionPoint) {
       message.warning(t('ledgers.selectCollectionPointRequired'));
       return;
     }
@@ -113,7 +90,7 @@ export default function DriverAnalysisPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        collectionPointId: selectedCp,
+        collectionPointId: currentCollectionPoint.id,
         recordType,
         startDate: dateRange[0].format('YYYY-MM-DD'),
         endDate: dateRange[1].format('YYYY-MM-DD'),
@@ -138,6 +115,13 @@ export default function DriverAnalysisPage() {
       setLoading(false);
     }
   };
+
+  // 当收集点变化时，清空图表数据
+  useEffect(() => {
+    setTripRecords([]);
+    setDrivers([]);
+    setSelectedDriverIds(new Set());
+  }, [currentCollectionPoint]);
 
   // 切换司机选中状态
   const toggleDriver = (driverId: string) => {
@@ -220,18 +204,6 @@ export default function DriverAnalysisPage() {
           <Row gutter={[16, 16]} align="middle">
             <Col xs={24} sm={12} md={6}>
               <Select
-                placeholder={t('ledgers.collectionPoint')}
-                value={selectedCp || undefined}
-                onChange={setSelectedCp}
-                style={{ width: '100%' }}
-                options={collectionPoints.map((cp) => ({
-                  value: cp.id,
-                  label: cp.name,
-                }))}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Select
                 placeholder={t('ledgers.recordType')}
                 value={recordType}
                 onChange={setRecordType}
@@ -242,7 +214,7 @@ export default function DriverAnalysisPage() {
                 ]}
               />
             </Col>
-            <Col xs={24} sm={24} md={8}>
+            <Col xs={24} sm={24} md={10}>
               <RangePicker
                 value={dateRange}
                 onChange={(dates) => setDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null])}

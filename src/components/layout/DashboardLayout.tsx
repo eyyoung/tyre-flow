@@ -10,6 +10,7 @@ import {
   Button,
   theme,
   Drawer,
+  Spin,
 } from "antd";
 import {
   DashboardOutlined,
@@ -31,11 +32,13 @@ import {
   UnorderedListOutlined,
   ImportOutlined,
   ClearOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { locales, localeNames, type Locale } from "@/i18n/config";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 import styles from "./DashboardLayout.module.css";
 
 const { Header, Sider, Content } = Layout;
@@ -55,6 +58,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { token } = theme.useToken();
+  const {
+    collectionPoints,
+    currentCollectionPoint,
+    setCurrentCollectionPoint,
+    loading: cpLoading,
+  } = useCollectionPoint();
 
   // 检测是否为移动端
   useEffect(() => {
@@ -317,6 +326,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     onClick: () => handleLocaleChange(locale),
   }));
 
+  // 收集点切换菜单
+  const cpMenuItems = collectionPoints.map((cp) => ({
+    key: cp.id,
+    label: (
+      <Space>
+        {cp.name}
+        {currentCollectionPoint?.id === cp.id && (
+          <CheckOutlined style={{ color: token.colorPrimary }} />
+        )}
+      </Space>
+    ),
+    onClick: () => setCurrentCollectionPoint(cp),
+  }));
+
   // 侧边栏菜单内容
   const siderContent = (
     <>
@@ -419,6 +442,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           />
 
           <div className={styles.headerRight}>
+            {/* 收集点切换 */}
+            <Dropdown
+              menu={{ items: cpMenuItems }}
+              placement="bottomRight"
+              disabled={cpLoading || collectionPoints.length === 0}
+            >
+              <Button type="text" icon={<EnvironmentOutlined />}>
+                {cpLoading ? (
+                  <Spin size="small" />
+                ) : (
+                  <Space>
+                    {!isMobile && (
+                      <>
+                        {currentCollectionPoint?.name || t("ledgers.collectionPoint")}
+                        <DownOutlined style={{ fontSize: 10 }} />
+                      </>
+                    )}
+                  </Space>
+                )}
+              </Button>
+            </Dropdown>
+
             <Dropdown menu={{ items: langMenuItems }} placement="bottomRight">
               <Button type="text" icon={<GlobalOutlined />}>
                 {!isMobile && (

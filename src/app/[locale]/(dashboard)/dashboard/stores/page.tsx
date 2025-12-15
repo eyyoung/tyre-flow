@@ -24,7 +24,6 @@ import {
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
-  ReloadOutlined,
   ShopOutlined,
   CarOutlined,
   EnvironmentOutlined,
@@ -34,8 +33,9 @@ import {
   FileWordOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import type { ColumnsType, TableProps } from 'antd/es/table';
+import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 
 const { Title } = Typography;
 
@@ -65,15 +65,10 @@ interface Store {
   };
 }
 
-interface CollectionPoint {
-  id: string;
-  code: string;
-  name: string;
-}
-
 export default function StoresPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Store[]>([]);
   const [total, setTotal] = useState(0);
@@ -81,9 +76,7 @@ export default function StoresPage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [cpFilter, setCpFilter] = useState<string>('');
-  const [isVirtualFilter, setIsVirtualFilter] = useState<string>('');
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
+  const [isVirtualFilter] = useState<string>('');
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Store | null>(null);
   const [form] = Form.useForm();
@@ -109,20 +102,9 @@ export default function StoresPage() {
   const [isccForm] = Form.useForm();
   const [exportingIscc, setExportingIscc] = useState(false);
 
-  // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch('/api/collection-points?all=true');
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -130,7 +112,7 @@ export default function StoresPage() {
         pageSize: pageSize.toString(),
         search,
         status: statusFilter,
-        collectionPointId: cpFilter,
+        collectionPointId: currentCollectionPoint.id,
         isVirtual: isVirtualFilter,
         sortField,
         sortOrder,
@@ -150,35 +132,31 @@ export default function StoresPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, cpFilter, isVirtualFilter, sortField, sortOrder, t, message]);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
+  }, [page, pageSize, search, statusFilter, currentCollectionPoint, isVirtualFilter, sortField, sortOrder, t, message]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 当收集点变化时，重置页码
+  useEffect(() => {
+    setPage(1);
+    setSelectedRowKeys([]);
+  }, [currentCollectionPoint]);
 
   const handleSearch = () => {
     setPage(1);
     fetchData();
   };
 
-  const handleReset = () => {
-    setSearch('');
-    setStatusFilter('');
-    setCpFilter('');
-    setIsVirtualFilter('');
-    setSortField('');
-    setSortOrder('');
-    setPage(1);
-  };
-
   const handleAdd = () => {
     setEditingItem(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'ACTIVE', isVirtual: false });
+    form.setFieldsValue({ 
+      status: 'ACTIVE', 
+      isVirtual: false,
+      collectionPointId: currentCollectionPoint?.id,
+    });
     setModalVisible(true);
   };
 
@@ -236,14 +214,17 @@ export default function StoresPage() {
 
   // 导出 Excel
   const handleExport = async () => {
+    if (!currentCollectionPoint) {
+      message.warning(t('ledgers.selectCollectionPointRequired'));
+      return;
+    }
+    
     try {
       const values = await exportForm.validateFields();
       setExporting(true);
 
       const params = new URLSearchParams();
-      if (values.collectionPointId) {
-        params.set('collectionPointId', values.collectionPointId);
-      }
+      params.set('collectionPointId', currentCollectionPoint.id);
       if (values.onlyActive) {
         params.set('status', 'ACTIVE');
       }
@@ -264,7 +245,7 @@ export default function StoresPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `门店列表_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        a.download = `门店列表_${currentCollectionPoint.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -398,12 +379,16 @@ export default function StoresPage() {
 
   // 导出 ISCC 声明（批量）
   const handleExportIscc = async () => {
+    if (!currentCollectionPoint) {
+      message.warning(t('ledgers.selectCollectionPointRequired'));
+      return;
+    }
+    
     try {
-      const values = await isccForm.validateFields();
       setExportingIscc(true);
 
       const params = new URLSearchParams();
-      params.set('collectionPointId', values.collectionPointId);
+      params.set('collectionPointId', currentCollectionPoint.id);
 
       const response = await fetch(`/api/stores/iscc-export?${params}`);
 
@@ -414,7 +399,7 @@ export default function StoresPage() {
         a.href = url;
         // 从 Content-Disposition 获取文件名
         const contentDisposition = response.headers.get('Content-Disposition');
-        let fileName = `ISCC_${new Date().toISOString().slice(0, 10)}.zip`;
+        let fileName = `ISCC_${currentCollectionPoint.name}_${new Date().toISOString().slice(0, 10)}.zip`;
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="?([^"]+)"?/);
           if (match) {
@@ -487,12 +472,6 @@ export default function StoresPage() {
       key: 'name',
       width: 180,
       ellipsis: true,
-    },
-    {
-      title: t('stores.collectionPoint'),
-      dataIndex: ['collectionPoint', 'name'],
-      key: 'collectionPoint',
-      width: 120,
     },
     {
       title: t('stores.businessLicense'),
@@ -603,17 +582,6 @@ export default function StoresPage() {
             onPressEnter={handleSearch}
             style={{ width: 200 }}
             prefix={<SearchOutlined />}
-          />
-          <Select
-            placeholder={t('stores.collectionPoint')}
-            value={cpFilter || undefined}
-            onChange={setCpFilter}
-            style={{ width: 160 }}
-            allowClear
-            options={collectionPoints.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            }))}
           />
           <Select
             placeholder={t('common.status')}
@@ -741,8 +709,12 @@ export default function StoresPage() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          {/* 隐藏的收集点字段 */}
+          <Form.Item name="collectionPointId" hidden>
+            <Input />
+          </Form.Item>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item
                 name="code"
                 label={t('stores.code')}
@@ -754,28 +726,6 @@ export default function StoresPage() {
                 ]}
               >
                 <Input disabled={!!editingItem} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="collectionPointId"
-                label={t('stores.collectionPoint')}
-                rules={[
-                  {
-                    required: true,
-                    message: t('validation.required', {
-                      field: t('stores.collectionPoint'),
-                    }),
-                  },
-                ]}
-              >
-                <Select
-                  disabled={!!editingItem}
-                  options={collectionPoints.map((cp) => ({
-                    value: cp.id,
-                    label: cp.name,
-                  }))}
-                />
               </Form.Item>
             </Col>
           </Row>
@@ -916,16 +866,6 @@ export default function StoresPage() {
         width={500}
       >
         <Form form={exportForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="collectionPointId" label={t('stores.collectionPoint')}>
-            <Select
-              placeholder={t('stores.allCollectionPoints')}
-              allowClear
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
           <Form.Item name="isVirtual" label={t('stores.isVirtual')}>
             <Select
               placeholder={t('common.all')}
@@ -958,29 +898,9 @@ export default function StoresPage() {
         okText={t('stores.export')}
         width={500}
       >
-        <Form form={isccForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-            {t('stores.exportIsccDescription')}
-          </Typography.Paragraph>
-          <Form.Item
-            name="collectionPointId"
-            label={t('stores.collectionPoint')}
-            rules={[
-              {
-                required: true,
-                message: t('validation.required', { field: t('stores.collectionPoint') }),
-              },
-            ]}
-          >
-            <Select
-              placeholder={t('stores.collectionPoint')}
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-        </Form>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
+          {t('stores.exportIsccDescription')}
+        </Typography.Paragraph>
       </Modal>
     </div>
   );

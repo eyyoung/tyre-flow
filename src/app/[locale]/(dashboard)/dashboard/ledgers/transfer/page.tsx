@@ -36,6 +36,7 @@ import {
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -95,14 +96,13 @@ interface GenerationSummary {
 export default function TransferLedgerPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TransferTask[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [cpFilter, setCpFilter] = useState<string>('');
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [creating, setCreating] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
@@ -121,26 +121,16 @@ export default function TransferLedgerPage() {
     return num.toLocaleString('zh-CN', { minimumFractionDigits: precision, maximumFractionDigits: precision });
   };
 
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch('/api/collection-points?all=true');
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: page.toString(),
         pageSize: pageSize.toString(),
         status: statusFilter,
-        collectionPointId: cpFilter,
+        collectionPointId: currentCollectionPoint.id,
       });
 
       const response = await fetch(`/api/transfer-tasks?${params}`);
@@ -157,15 +147,16 @@ export default function TransferLedgerPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, statusFilter, cpFilter, t, message]);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
+  }, [page, pageSize, statusFilter, currentCollectionPoint, t, message]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 当收集点变化时，重置页码
+  useEffect(() => {
+    setPage(1);
+  }, [currentCollectionPoint]);
 
   useEffect(() => {
     const processingTasks = data.filter((t) => t.status === 'PROCESSING');
@@ -192,6 +183,11 @@ export default function TransferLedgerPage() {
   };
 
   const handleCreate = async () => {
+    if (!currentCollectionPoint) {
+      message.warning(t('ledgers.selectCollectionPointRequired'));
+      return;
+    }
+    
     try {
       const values = await form.validateFields();
       const [startDate, endDate] = values.dateRange;
@@ -202,7 +198,7 @@ export default function TransferLedgerPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionPointId: values.collectionPointId,
+          collectionPointId: currentCollectionPoint.id,
           startDate: startDate.format('YYYY-MM-DD'),
           endDate: endDate.format('YYYY-MM-DD'),
           targetTonnage: values.targetTonnage * 1000, // 吨转换为 kg
@@ -353,12 +349,6 @@ export default function TransferLedgerPage() {
       key: 'taskNo',
       width: 260,
       ellipsis: true,
-    },
-    {
-      title: t('ledgers.collectionPoint'),
-      dataIndex: ['collectionPoint', 'name'],
-      key: 'collectionPoint',
-      width: 120,
     },
     {
       title: t('ledgers.dateRange'),
@@ -533,17 +523,6 @@ export default function TransferLedgerPage() {
       <Card variant="borderless">
         <Space style={{ marginBottom: 16 }} wrap>
           <Select
-            placeholder={t('ledgers.collectionPoint')}
-            value={cpFilter || undefined}
-            onChange={setCpFilter}
-            style={{ width: 160 }}
-            allowClear
-            options={collectionPoints.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            }))}
-          />
-          <Select
             placeholder={t('ledgers.status')}
             value={statusFilter || undefined}
             onChange={setStatusFilter}
@@ -596,18 +575,6 @@ export default function TransferLedgerPage() {
       >
         {modalVisible && (
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-            <Form.Item
-              name="collectionPointId"
-              label={t('ledgers.collectionPoint')}
-              rules={[{ required: true }]}
-            >
-              <Select
-                options={collectionPoints.map((cp) => ({
-                  value: cp.id,
-                  label: cp.name,
-                }))}
-              />
-            </Form.Item>
             <Form.Item
               name="dateRange"
               label={t('ledgers.dateRange')}

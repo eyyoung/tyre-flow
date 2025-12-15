@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   Card,
   Table,
@@ -8,7 +8,6 @@ import {
   Space,
   Typography,
   Upload,
-  Select,
   Steps,
   Result,
   Alert,
@@ -20,7 +19,6 @@ import {
   Col,
 } from "antd";
 import {
-  UploadOutlined,
   FileExcelOutlined,
   CheckCircleOutlined,
   ImportOutlined,
@@ -29,15 +27,10 @@ import {
 import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile, RcFile } from "antd/es/upload/interface";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
-
-interface CollectionPoint {
-  id: string;
-  code: string;
-  name: string;
-}
 
 interface PreviewStore {
   key: string;
@@ -68,33 +61,12 @@ interface ImportResult {
 export default function StoreImportPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [currentStep, setCurrentStep] = useState(0);
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(
-    []
-  );
-  const [selectedCollectionPoint, setSelectedCollectionPoint] =
-    useState<string>("");
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [previewData, setPreviewData] = useState<PreviewStore[]>([]);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-
-  // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch("/api/collection-points?all=true");
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
 
   // 清理企业名称：移除括号内的内容（支持中英文括号）
   const cleanCompanyName = (name: string): string => {
@@ -341,8 +313,8 @@ export default function StoreImportPage() {
 
   // 执行导入
   const handleImport = async () => {
-    if (!selectedCollectionPoint) {
-      message.error(t("storeImport.selectCollectionPoint"));
+    if (!currentCollectionPoint) {
+      message.error(t("ledgers.selectCollectionPointRequired"));
       return;
     }
 
@@ -354,7 +326,7 @@ export default function StoreImportPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          collectionPointId: selectedCollectionPoint,
+          collectionPointId: currentCollectionPoint.id,
           stores: validStores.map((s) => ({
             name: s.name,
             businessStatus: s.businessStatus,
@@ -396,7 +368,6 @@ export default function StoreImportPage() {
     setFileList([]);
     setPreviewData([]);
     setImportResult(null);
-    setSelectedCollectionPoint("");
   };
 
   // 预览表格列
@@ -557,27 +528,6 @@ export default function StoreImportPage() {
               style={{ marginBottom: 24 }}
             />
 
-            <Row gutter={24}>
-              <Col span={12}>
-                <div style={{ marginBottom: 16 }}>
-                  <Text strong>{t("storeImport.selectCollectionPoint")}</Text>
-                  <span style={{ color: "red" }}> *</span>
-                </div>
-                <Select
-                  placeholder={t(
-                    "storeImport.selectCollectionPointPlaceholder"
-                  )}
-                  value={selectedCollectionPoint || undefined}
-                  onChange={setSelectedCollectionPoint}
-                  style={{ width: "100%", marginBottom: 24 }}
-                  options={collectionPoints.map((cp) => ({
-                    value: cp.id,
-                    label: `${cp.name} (${cp.code})`,
-                  }))}
-                />
-              </Col>
-            </Row>
-
             <Dragger
               accept=".csv"
               fileList={fileList}
@@ -587,7 +537,7 @@ export default function StoreImportPage() {
                 setPreviewData([]);
               }}
               maxCount={1}
-              disabled={!selectedCollectionPoint}
+              disabled={!currentCollectionPoint}
             >
               <p className="ant-upload-drag-icon">
                 <FileExcelOutlined style={{ fontSize: 48, color: "#52c41a" }} />
@@ -614,9 +564,7 @@ export default function StoreImportPage() {
 
             <Descriptions bordered size="small" style={{ marginBottom: 16 }}>
               <Descriptions.Item label={t("stores.collectionPoint")}>
-                {collectionPoints.find(
-                  (cp) => cp.id === selectedCollectionPoint
-                )?.name || "-"}
+                {currentCollectionPoint?.name || "-"}
               </Descriptions.Item>
               <Descriptions.Item label={t("storeImport.totalRecords")}>
                 {previewData.length}

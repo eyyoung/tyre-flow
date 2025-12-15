@@ -29,6 +29,7 @@ import {
 import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 
 const { Title } = Typography;
 
@@ -61,6 +62,7 @@ interface CollectionPoint {
 export default function VehiclesPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Vehicle[]>([]);
   const [total, setTotal] = useState(0);
@@ -69,32 +71,13 @@ export default function VehiclesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
-  const [cpFilter, setCpFilter] = useState<string>("");
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(
-    []
-  );
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Vehicle | null>(null);
   const [form] = Form.useForm();
 
-  // 获取收集点列表
-  useEffect(() => {
-    const fetchCollectionPoints = async () => {
-      try {
-        const response = await fetch("/api/collection-points?all=true", {});
-        const result = await response.json();
-        if (response.ok) {
-          setCollectionPoints(result.data);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
-        // ignore other errors
-      }
-    };
-    fetchCollectionPoints();
-  }, []);
-
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -103,7 +86,7 @@ export default function VehiclesPage() {
         search,
         status: statusFilter,
         type: typeFilter,
-        collectionPointId: cpFilter,
+        collectionPointId: currentCollectionPoint.id,
       });
 
       const response = await fetch(`/api/vehicles?${params}`);
@@ -121,11 +104,16 @@ export default function VehiclesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, typeFilter, cpFilter, message, t]);
+  }, [page, pageSize, search, statusFilter, typeFilter, currentCollectionPoint, message, t]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 当收集点变化时，重置页码
+  useEffect(() => {
+    setPage(1);
+  }, [currentCollectionPoint]);
 
   const handleSearch = () => {
     setPage(1);
@@ -136,7 +124,6 @@ export default function VehiclesPage() {
     setSearch("");
     setStatusFilter("");
     setTypeFilter("");
-    setCpFilter("");
     setPage(1);
   };
 
@@ -149,6 +136,7 @@ export default function VehiclesPage() {
       tareWeight: 2.5, // 显示吨
       tareWeightVariance: 0.05,
       maxLoad: 4.0, // 显示吨
+      collectionPointId: currentCollectionPoint?.id,
     });
     setModalVisible(true);
   };
@@ -256,12 +244,6 @@ export default function VehiclesPage() {
       ),
     },
     {
-      title: t("vehicles.collectionPoint"),
-      dataIndex: ["collectionPoint", "name"],
-      key: "collectionPoint",
-      width: 120,
-    },
-    {
       title: t("vehicles.brand"),
       dataIndex: "brand",
       key: "brand",
@@ -361,17 +343,6 @@ export default function VehiclesPage() {
             prefix={<SearchOutlined />}
           />
           <Select
-            placeholder={t("vehicles.collectionPoint")}
-            value={cpFilter || undefined}
-            onChange={setCpFilter}
-            style={{ width: 160 }}
-            allowClear
-            options={collectionPoints.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            }))}
-          />
-          <Select
             placeholder={t("vehicles.type")}
             value={typeFilter || undefined}
             onChange={setTypeFilter}
@@ -440,8 +411,12 @@ export default function VehiclesPage() {
       >
         {modalVisible && (
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+            {/* 隐藏的收集点字段 */}
+            <Form.Item name="collectionPointId" hidden>
+              <Input />
+            </Form.Item>
             <Row gutter={16}>
-              <Col span={12}>
+              <Col span={24}>
                 <Form.Item
                   name="plateNumber"
                   label={t("vehicles.plateNumber")}
@@ -457,28 +432,6 @@ export default function VehiclesPage() {
                   <Input
                     disabled={!!editingItem}
                     placeholder="例如：粤A12345"
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="collectionPointId"
-                  label={t("vehicles.collectionPoint")}
-                  rules={[
-                    {
-                      required: true,
-                      message: t("validation.required", {
-                        field: t("vehicles.collectionPoint"),
-                      }),
-                    },
-                  ]}
-                >
-                  <Select
-                    disabled={!!editingItem}
-                    options={collectionPoints.map((cp) => ({
-                      value: cp.id,
-                      label: cp.name,
-                    }))}
                   />
                 </Form.Item>
               </Col>

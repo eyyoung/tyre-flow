@@ -39,6 +39,7 @@ import {
 import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -117,16 +118,13 @@ interface TonnageEstimate {
 export default function CollectionLedgerPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<LedgerTask[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [cpFilter, setCpFilter] = useState<string>("");
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(
-    []
-  );
   const [modalVisible, setModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<LedgerTask | null>(null);
@@ -146,25 +144,10 @@ export default function CollectionLedgerPage() {
     useState<TonnageEstimate | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
 
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch("/api/collection-points?all=true");
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   // 获取建议吨数区间
   const fetchTonnageEstimate = useCallback(
-    async (
-      collectionPointId: string,
-      dateRange: [dayjs.Dayjs, dayjs.Dayjs]
-    ) => {
-      if (!collectionPointId || !dateRange || dateRange.length !== 2) {
+    async (dateRange: [dayjs.Dayjs, dayjs.Dayjs]) => {
+      if (!currentCollectionPoint || !dateRange || dateRange.length !== 2) {
         setTonnageEstimate(null);
         return;
       }
@@ -172,7 +155,7 @@ export default function CollectionLedgerPage() {
       setEstimateLoading(true);
       try {
         const params = new URLSearchParams({
-          collectionPointId,
+          collectionPointId: currentCollectionPoint.id,
           startDate: dateRange[0].format("YYYY-MM-DD"),
           endDate: dateRange[1].format("YYYY-MM-DD"),
         });
@@ -191,17 +174,19 @@ export default function CollectionLedgerPage() {
         setEstimateLoading(false);
       }
     },
-    []
+    [currentCollectionPoint]
   );
 
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: page.toString(),
         pageSize: pageSize.toString(),
         status: statusFilter,
-        collectionPointId: cpFilter,
+        collectionPointId: currentCollectionPoint.id,
       });
 
       const response = await fetch(`/api/ledgers?${params}`);
@@ -218,15 +203,16 @@ export default function CollectionLedgerPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, statusFilter, cpFilter, t, message]);
-
-  useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
+  }, [page, pageSize, statusFilter, currentCollectionPoint, t, message]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 当收集点变化时，重置页码
+  useEffect(() => {
+    setPage(1);
+  }, [currentCollectionPoint]);
 
   useEffect(() => {
     const processingTasks = data.filter((t) => t.status === "PROCESSING");
@@ -262,10 +248,9 @@ export default function CollectionLedgerPage() {
         dateRange: defaultDateRange,
         targetTonnage: 10, // 默认目标重量 10 吨
       });
-      // 如果已选择了收集点，则获取建议吨数
-      const collectionPointId = form.getFieldValue("collectionPointId");
-      if (collectionPointId) {
-        fetchTonnageEstimate(collectionPointId, defaultDateRange);
+      // 使用当前收集点获取建议吨数
+      if (currentCollectionPoint) {
+        fetchTonnageEstimate(defaultDateRange);
       }
     } else {
       // 关闭时重置建议值
@@ -274,6 +259,11 @@ export default function CollectionLedgerPage() {
   };
 
   const handleCreate = async () => {
+    if (!currentCollectionPoint) {
+      message.warning(t("ledgers.selectCollectionPointRequired"));
+      return;
+    }
+    
     try {
       const values = await form.validateFields();
       const [startDate, endDate] = values.dateRange;
@@ -284,7 +274,7 @@ export default function CollectionLedgerPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          collectionPointId: values.collectionPointId,
+          collectionPointId: currentCollectionPoint.id,
           startDate: startDate.format("YYYY-MM-DD"),
           endDate: endDate.format("YYYY-MM-DD"),
           targetTonnage: values.targetTonnage * 1000, // 吨转换为 kg
@@ -430,12 +420,6 @@ export default function CollectionLedgerPage() {
       key: "taskNo",
       width: 260,
       ellipsis: true,
-    },
-    {
-      title: t("ledgers.collectionPoint"),
-      dataIndex: ["collectionPoint", "name"],
-      key: "collectionPoint",
-      width: 120,
     },
     {
       title: t("ledgers.dateRange"),
@@ -621,17 +605,6 @@ export default function CollectionLedgerPage() {
       <Card variant="borderless">
         <Space style={{ marginBottom: 16 }} wrap>
           <Select
-            placeholder={t("ledgers.collectionPoint")}
-            value={cpFilter || undefined}
-            onChange={setCpFilter}
-            style={{ width: 160 }}
-            allowClear
-            options={collectionPoints.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            }))}
-          />
-          <Select
             placeholder={t("ledgers.status")}
             value={statusFilter || undefined}
             onChange={setStatusFilter}
@@ -685,26 +658,6 @@ export default function CollectionLedgerPage() {
         {modalVisible && (
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
             <Form.Item
-              name="collectionPointId"
-              label={t("ledgers.collectionPoint")}
-              rules={[{ required: true }]}
-            >
-              <Select
-                options={collectionPoints.map((cp) => ({
-                  value: cp.id,
-                  label: cp.name,
-                }))}
-                onChange={(value) => {
-                  const dateRange = form.getFieldValue("dateRange");
-                  if (value && dateRange) {
-                    fetchTonnageEstimate(value, dateRange);
-                  } else {
-                    setTonnageEstimate(null);
-                  }
-                }}
-              />
-            </Form.Item>
-            <Form.Item
               name="dateRange"
               label={t("ledgers.dateRange")}
               rules={[{ required: true, message: "请选择时间范围" }]}
@@ -712,13 +665,8 @@ export default function CollectionLedgerPage() {
               <RangePicker
                 style={{ width: "100%" }}
                 onChange={(dates) => {
-                  const collectionPointId =
-                    form.getFieldValue("collectionPointId");
-                  if (collectionPointId && dates && dates.length === 2) {
-                    fetchTonnageEstimate(
-                      collectionPointId,
-                      dates as [dayjs.Dayjs, dayjs.Dayjs]
-                    );
+                  if (dates && dates.length === 2) {
+                    fetchTonnageEstimate(dates as [dayjs.Dayjs, dayjs.Dayjs]);
                   } else {
                     setTonnageEstimate(null);
                   }

@@ -5,6 +5,21 @@ import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 export async function GET(request: NextRequest) {
   return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
+      const { searchParams } = new URL(request.url);
+      const collectionPointId = searchParams.get('collectionPointId') || '';
+
+      if (!collectionPointId) {
+        return NextResponse.json({
+          stats: {
+            stores: 0,
+            vehicles: 0,
+            monthlyCollectionWeight: 0,
+            monthlyTransferWeight: 0,
+          },
+          recentTasks: [],
+        });
+      }
+
       // 获取本月日期范围
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -12,24 +27,25 @@ export async function GET(request: NextRequest) {
 
       // 并行查询统计数据 - ctx.prisma 已自动带收集点权限过滤
       const [
-        collectionPointCount,
         storeCount,
         vehicleCount,
         monthlyCollectionWeight,
         monthlyTransferWeight,
         recentTasks,
       ] = await Promise.all([
-        // 收集点总数
-        ctx.prisma.collectionPoint.count({
-          where: { status: 'ACTIVE' },
-        }),
         // 门店总数
         ctx.prisma.store.count({
-          where: { status: 'ACTIVE' },
+          where: { 
+            status: 'ACTIVE',
+            collectionPointId,
+          },
         }),
         // 车辆总数
         ctx.prisma.vehicle.count({
-          where: { status: 'ACTIVE' },
+          where: { 
+            status: 'ACTIVE',
+            collectionPointId,
+          },
         }),
         // 本月收集重量（使用卸车净重）
         ctx.prisma.collectionRecord.aggregate({
@@ -38,6 +54,7 @@ export async function GET(request: NextRequest) {
               gte: startOfMonth,
               lte: endOfMonth,
             },
+            vehicle: { collectionPointId },
           },
           _sum: {
             unloadingNetWeight: true,
@@ -50,6 +67,7 @@ export async function GET(request: NextRequest) {
               gte: startOfMonth,
               lte: endOfMonth,
             },
+            vehicle: { collectionPointId },
           },
           _sum: {
             unloadingNetWeight: true,
@@ -57,13 +75,9 @@ export async function GET(request: NextRequest) {
         }),
         // 最近的台账任务
         ctx.prisma.ledgerTask.findMany({
+          where: { collectionPointId },
           take: 5,
           orderBy: { createdAt: 'desc' },
-          include: {
-            collectionPoint: {
-              select: { name: true },
-            },
-          },
         }),
       ]);
 
@@ -73,16 +87,14 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         stats: {
-          collectionPoints: collectionPointCount,
           stores: storeCount,
           vehicles: vehicleCount,
           monthlyCollectionWeight: parseFloat((collectionWeightKg / 1000).toFixed(2)),
           monthlyTransferWeight: parseFloat((transferWeightKg / 1000).toFixed(2)),
         },
-        recentTasks: recentTasks.map((task) => ({
+        recentTasks: recentTasks.map((task: { id: string; taskNo: string; targetTonnage: number; actualTonnage: number | null; status: string; createdAt: Date }) => ({
           key: task.id,
           taskNo: task.taskNo,
-          collectionPoint: task.collectionPoint.name,
           targetTonnage: task.targetTonnage,
           actualTonnage: task.actualTonnage,
           status: task.status.toLowerCase(),

@@ -28,6 +28,7 @@ import { useTranslations } from "next-intl";
 import type { ColumnsType, TableProps } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import dayjs from "dayjs";
+import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -71,6 +72,7 @@ interface Summary {
 export default function DriverLedgerPage() {
   const t = useTranslations();
   const { message } = App.useApp();
+  const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<LedgerRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -82,12 +84,8 @@ export default function DriverLedgerPage() {
   });
 
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(
-    []
-  );
 
   const [selectedDriver, setSelectedDriver] = useState<string>("");
-  const [selectedCp, setSelectedCp] = useState<string>("");
   const [recordType, setRecordType] = useState<string>("all");
   const [dateRange, setDateRange] = useState<
     [dayjs.Dayjs | null, dayjs.Dayjs | null]
@@ -100,26 +98,13 @@ export default function DriverLedgerPage() {
   const [exportForm] = Form.useForm();
   const [exporting, setExporting] = useState(false);
 
-  // 获取收集点列表
-  const fetchCollectionPoints = useCallback(async () => {
-    try {
-      const response = await fetch("/api/collection-points?all=true");
-      const result = await response.json();
-      if (response.ok) {
-        setCollectionPoints(result.data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   // 获取司机列表
   const fetchDrivers = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     try {
       const params = new URLSearchParams();
-      if (selectedCp) {
-        params.set("collectionPointId", selectedCp);
-      }
+      params.set("collectionPointId", currentCollectionPoint.id);
       const response = await fetch(`/api/driver-ledger/drivers?${params}`);
       const result = await response.json();
       if (response.ok) {
@@ -128,10 +113,12 @@ export default function DriverLedgerPage() {
     } catch {
       // ignore
     }
-  }, [selectedCp]);
+  }, [currentCollectionPoint]);
 
   // 获取台账数据
   const fetchData = useCallback(async () => {
+    if (!currentCollectionPoint) return;
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -140,13 +127,11 @@ export default function DriverLedgerPage() {
         recordType,
         sortField,
         sortOrder,
+        collectionPointId: currentCollectionPoint.id,
       });
 
       if (selectedDriver) {
         params.set("driverId", selectedDriver);
-      }
-      if (selectedCp) {
-        params.set("collectionPointId", selectedCp);
       }
       if (dateRange[0]) {
         params.set("startDate", dateRange[0].format("YYYY-MM-DD"));
@@ -174,7 +159,7 @@ export default function DriverLedgerPage() {
     page,
     pageSize,
     selectedDriver,
-    selectedCp,
+    currentCollectionPoint,
     recordType,
     dateRange,
     sortField,
@@ -184,10 +169,6 @@ export default function DriverLedgerPage() {
   ]);
 
   useEffect(() => {
-    fetchCollectionPoints();
-  }, [fetchCollectionPoints]);
-
-  useEffect(() => {
     fetchDrivers();
   }, [fetchDrivers]);
 
@@ -195,16 +176,16 @@ export default function DriverLedgerPage() {
     fetchData();
   }, [fetchData]);
 
-  // 当收集点改变时，重置司机选择
+  // 当收集点改变时，重置司机选择和页码
   useEffect(() => {
     setSelectedDriver("");
-  }, [selectedCp]);
+    setPage(1);
+  }, [currentCollectionPoint]);
 
   // 打开导出弹窗
   const handleOpenExportModal = () => {
     // 预填充当前筛选条件
     exportForm.setFieldsValue({
-      collectionPointId: selectedCp || undefined,
       dateRange: dateRange[0] && dateRange[1] ? dateRange : undefined,
       recordType: recordType !== "all" ? recordType : undefined,
     });
@@ -213,13 +194,18 @@ export default function DriverLedgerPage() {
 
   // 执行导出
   const handleExport = async () => {
+    if (!currentCollectionPoint) {
+      message.warning(t("ledgers.selectCollectionPointRequired"));
+      return;
+    }
+    
     try {
       const values = await exportForm.validateFields();
       setExporting(true);
 
       const params = new URLSearchParams({
         recordType: values.recordType,
-        collectionPointId: values.collectionPointId,
+        collectionPointId: currentCollectionPoint.id,
         startDate: values.dateRange[0].format("YYYY-MM-DD"),
         endDate: values.dateRange[1].format("YYYY-MM-DD"),
       });
@@ -237,9 +223,6 @@ export default function DriverLedgerPage() {
         a.href = url;
 
         // 生成文件名：收集点_时间范围_记录类型.xls
-        const cpName =
-          collectionPoints.find((cp) => cp.id === values.collectionPointId)
-            ?.name || "未知收集点";
         const startDate = values.dateRange[0].format("YYYYMMDD");
         const endDate = values.dateRange[1].format("YYYYMMDD");
         const typeLabel =
@@ -248,7 +231,7 @@ export default function DriverLedgerPage() {
             : values.recordType === "transfer"
             ? t("ledgers.transferRecords")
             : t("ledgers.allRecords");
-        a.download = `司机台账_${cpName}_${startDate}-${endDate}_${typeLabel}.xls`;
+        a.download = `司机台账_${currentCollectionPoint.name}_${startDate}-${endDate}_${typeLabel}.xls`;
 
         document.body.appendChild(a);
         a.click();
@@ -406,17 +389,6 @@ export default function DriverLedgerPage() {
       <Card variant="borderless" style={{ marginBottom: 16 }}>
         <Space style={{ marginBottom: 16 }} wrap size="middle">
           <Select
-            placeholder={t("ledgers.collectionPoint")}
-            value={selectedCp || undefined}
-            onChange={setSelectedCp}
-            style={{ width: 160 }}
-            allowClear
-            options={collectionPoints.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            }))}
-          />
-          <Select
             placeholder={t("ledgers.selectDriver")}
             value={selectedDriver || undefined}
             onChange={setSelectedDriver}
@@ -520,20 +492,6 @@ export default function DriverLedgerPage() {
         destroyOnHidden
       >
         <Form form={exportForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item
-            name="collectionPointId"
-            label={t("ledgers.collectionPoint")}
-            rules={[{ required: true, message: "请选择收集点" }]}
-          >
-            <Select
-              placeholder={t("ledgers.collectionPoint")}
-              options={collectionPoints.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              }))}
-            />
-          </Form.Item>
-
           <Form.Item
             name="dateRange"
             label={t("ledgers.dateRange")}
