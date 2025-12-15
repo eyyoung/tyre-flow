@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
           orderBy: { collectionDate: 'desc' },
         });
 
-        collectionRecords = records.map(r => ({
+        collectionRecords = records.map((r: (typeof records)[number]) => ({
           id: r.id,
           recordNo: r.recordNo,
           date: r.collectionDate,
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
           orderBy: { transferDate: 'desc' },
         });
 
-        transferRecords = records.map(r => ({
+        transferRecords = records.map((r: (typeof records)[number]) => ({
           id: r.id,
           recordNo: r.recordNo,
           date: r.transferDate,

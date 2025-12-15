@@ -62,6 +62,11 @@ interface MenuItem {
   children?: MenuItem[];
 }
 
+// 转换为 Ant Design Menu 兼容的类型
+type AntMenuItem = Omit<MenuItem, 'children' | 'permission'> & {
+  children?: AntMenuItem[];
+};
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const t = useTranslations();
   const router = useRouter();
@@ -436,7 +441,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         mode="inline"
         selectedKeys={[getSelectedKey()]}
         defaultOpenKeys={getOpenKeys()}
-        items={menuItems}
+        items={menuItems as AntMenuItem[]}
         className={styles.menu}
         onClick={handleMenuClick}
       />

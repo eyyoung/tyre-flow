@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
       worksheet.getRow(1).height = 25;
 
       // 添加数据
-      stores.forEach((store) => {
+      stores.forEach((store: (typeof stores)[number]) => {
         const rowData: Record<string, unknown> = {
           code: store.code,
           name: store.name,

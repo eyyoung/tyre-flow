@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         },
         select: { plateNumber: true },
       });
-      const existingPlateSet = new Set(existingPlates.map(v => v.plateNumber));
+      const existingPlateSet = new Set(existingPlates.map((v: (typeof existingPlates)[number]) => v.plateNumber));
 
       let success = 0;
       let failed = 0;

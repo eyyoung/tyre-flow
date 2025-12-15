@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
           orderBy: { collectionDate: "asc" },
         });
 
-        collectionRecords = records.map((r) => ({
+        collectionRecords = records.map((r: (typeof records)[number]) => ({
           recordNo: r.recordNo,
           date: r.collectionDate,
           loadingTime: r.loadingTime,
@@ -310,7 +310,7 @@ export async function GET(request: NextRequest) {
           orderBy: { transferDate: "asc" },
         });
 
-        transferRecords = records.map((r) => ({
+        transferRecords = records.map((r: (typeof records)[number]) => ({
           recordNo: r.recordNo,
           date: r.transferDate,
           // TransferRecord 只有 transferDate，用它作为时间参考

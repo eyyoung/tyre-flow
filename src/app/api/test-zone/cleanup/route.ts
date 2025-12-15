@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
             where,
             select: { id: true },
           });
-          const storeIds = storesToDelete.map((s) => s.id);
+          const storeIds = storesToDelete.map((s: (typeof storesToDelete)[number]) => s.id);
 
           if (storeIds.length > 0) {
             // 先删除关联的收集记录

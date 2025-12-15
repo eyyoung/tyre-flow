@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
         select: { businessLicense: true },
       });
       const existingLicenseSet = new Set(
-        existingLicenses.map((s) => s.businessLicense)
+        existingLicenses.map((s: (typeof existingLicenses)[number]) => s.businessLicense)
       );
 
       // 获取已存在的门店名称+地址组合（收集点内去重）
@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
         select: { name: true, address: true },
       });
       const existingStoreSet = new Set(
-        existingStores.map((s) => `${s.name}|${s.address}`)
+        existingStores.map((s: (typeof existingStores)[number]) => `${s.name}|${s.address}`)
       );
 
       // 获取已存在的法定代表人+手机组合（收集点内去重）
@@ -316,8 +316,8 @@ export async function POST(request: NextRequest) {
       });
       const existingLegalPersonPhoneSet = new Set(
         existingLegalPersonPhones
-          .filter((s) => s.legalPerson && s.contactPhone)
-          .map((s) => `${s.legalPerson}|${s.contactPhone}`)
+          .filter((s: (typeof existingLegalPersonPhones)[number]) => s.legalPerson && s.contactPhone)
+          .map((s: (typeof existingLegalPersonPhones)[number]) => `${s.legalPerson}|${s.contactPhone}`)
       );
 
       let success = 0;

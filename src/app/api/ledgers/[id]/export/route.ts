@@ -151,7 +151,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         collectionSheet.getRow(1).height = 25;
 
         // 添加数据
-        collectionRecords.forEach((record) => {
+        collectionRecords.forEach((record: (typeof collectionRecords)[number]) => {
           const row = collectionSheet.addRow({
             date: formatDateCN(record.collectionDate),
             storeName: record.store.name,
@@ -169,16 +169,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         });
 
         // 添加汇总行
+        type CollectionRecord = (typeof collectionRecords)[number];
         const totalTireCount = collectionRecords.reduce(
-          (sum, r) => sum + r.tireCount,
+          (sum: number, r: CollectionRecord) => sum + r.tireCount,
           0
         );
         const totalLoadingNetWeight = collectionRecords.reduce(
-          (sum, r) => sum + (r.loadingNetWeight || 0),
+          (sum: number, r: CollectionRecord) => sum + (r.loadingNetWeight || 0),
           0
         );
         const totalUnloadingNetWeight = collectionRecords.reduce(
-          (sum, r) => sum + (r.unloadingNetWeight || 0),
+          (sum: number, r: CollectionRecord) => sum + (r.unloadingNetWeight || 0),
           0
         );
 
@@ -211,7 +212,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
           // 获取所有唯一日期并排序
           const dateSet = new Set<string>();
-          collectionRecords.forEach((record) => {
+          collectionRecords.forEach((record: CollectionRecord) => {
             dateSet.add(formatDateCN(record.collectionDate));
           });
           const sortedDates = Array.from(dateSet).sort();
@@ -221,7 +222,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             string,
             { name: string; dateData: Map<string, number> }
           >();
-          collectionRecords.forEach((record) => {
+          collectionRecords.forEach((record: CollectionRecord) => {
             const storeId = record.storeId;
             const dateStr = formatDateCN(record.collectionDate);
 

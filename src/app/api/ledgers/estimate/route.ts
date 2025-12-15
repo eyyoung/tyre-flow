@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
       // 过滤掉预估时间为 0 或没有预估时间的门店（与 ledger-generator.ts 保持一致）
       const stores = allStores.filter(
-        (store) => store.estimatedTravelMinutes && store.estimatedTravelMinutes > 0
+        (store: (typeof allStores)[number]) => store.estimatedTravelMinutes && store.estimatedTravelMinutes > 0
       );
 
       // 获取收集车辆及其最大载重
@@ -70,10 +70,11 @@ export async function GET(request: NextRequest) {
       }
 
       // 计算平均行程时间（所有门店都有有效的预估时间）
-      const avgTravelMinutes = stores.reduce((sum, s) => sum + s.estimatedTravelMinutes, 0) / storeCount;
+      type Store = (typeof stores)[number];
+      const avgTravelMinutes = stores.reduce((sum: number, s: Store) => sum + s.estimatedTravelMinutes!, 0) / storeCount;
 
       // 获取车辆最大载重（取最大值，与 ledger-generator.ts 一致）
-      const maxVehicleLoad = Math.max(...vehicles.map(v => v.maxLoad));
+      const maxVehicleLoad = Math.max(...vehicles.map((v: (typeof vehicles)[number]) => v.maxLoad));
       
       // 平均每次收集重量 = 车辆最大载重 * 60%（与动态算法匹配）
       const avgWeightPerCollection = maxVehicleLoad * 0.6;

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         where: { collectionPointId },
         select: { plateNumber: true },
       });
-      const existingPlates = new Set(existingVehicles.map((v) => v.plateNumber));
+      const existingPlates = new Set(existingVehicles.map((v: (typeof existingVehicles)[number]) => v.plateNumber));
 
       // 生成唯一车牌号
       const generateUniquePlate = (): string => {
