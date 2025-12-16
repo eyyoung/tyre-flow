@@ -137,7 +137,7 @@ export async function generateTransferData(
 
   const randomTargetWeightKg = randomFloatBetween(
     targetWeightKg * 1,
-    targetWeightKg * 1.1
+    targetWeightKg * 1.03
   );
   // 计算总共需要多少车次（向上取整确保能达到目标）
   const totalTripsNeeded = Math.ceil(randomTargetWeightKg / avgVehicleCapacity);
