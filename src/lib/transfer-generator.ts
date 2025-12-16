@@ -49,6 +49,13 @@ function randomFloatBetween(
   return parseFloat(value.toFixed(decimals));
 }
 
+/**
+ * 将重量四舍五入到最近的 10kg（模拟磅秤精度）
+ */
+function roundToNearest10(value: number): number {
+  return Math.round(value / 10) * 10;
+}
+
 function generateRecordNo(prefix: string, index: number, date: Date): string {
   const dateStr = formatLocalDate(date).replace(/-/g, "");
   return `${prefix}-${dateStr}-${String(index).padStart(5, "0")}`;
@@ -178,11 +185,9 @@ export async function generateTransferData(
     const vehicle =
       candidateVehicles[randomBetween(0, candidateVehicles.length - 1)];
 
-    // 计算本次转移量（装车净重）
+    // 计算本次转移量（装车净重）- 四舍五入到 10kg（模拟磅秤精度）
     const loadFactor = randomFloatBetween(0.85, 0.98);
-    const loadingNetWeight = parseFloat(
-      (vehicle.maxLoad * loadFactor).toFixed(2)
-    );
+    const loadingNetWeight = roundToNearest10(vehicle.maxLoad * loadFactor);
 
     // 计算折损
     const lossRatio = randomFloatBetween(
@@ -190,19 +195,19 @@ export async function generateTransferData(
       config.lossRatioMax,
       5
     );
-    const loss = parseFloat((loadingNetWeight * lossRatio).toFixed(2));
-    const unloadingNetWeight = parseFloat((loadingNetWeight - loss).toFixed(2));
+    // 卸车净重四舍五入到 10kg（模拟磅秤精度）
+    const rawUnloadingWeight = loadingNetWeight * (1 - lossRatio);
+    const unloadingNetWeight = roundToNearest10(rawUnloadingWeight);
+    // 损耗 = 装车净重 - 卸车净重（根据实际磅秤读数反算）
+    const loss = loadingNetWeight - unloadingNetWeight;
 
-    // 计算皮重（带随机微调）
+    // 计算皮重（带随机微调）- 四舍五入到 10kg（模拟磅秤精度）
     const tareVariance = vehicle.tareWeightVariance || 50;
-    const actualTareWeight = parseFloat(
-      (
-        vehicle.tareWeight + randomFloatBetween(-tareVariance, tareVariance)
-      ).toFixed(2)
+    const actualTareWeight = roundToNearest10(
+      vehicle.tareWeight + randomFloatBetween(-tareVariance, tareVariance)
     );
-    const grossWeight = parseFloat(
-      (unloadingNetWeight + actualTareWeight).toFixed(2)
-    );
+    // 毛重 = 卸车净重 + 皮重（四舍五入到 10kg）
+    const grossWeight = roundToNearest10(unloadingNetWeight + actualTareWeight);
 
     // 计算轮胎条数
     const avgTireWeight = config.tireWeightKg * randomFloatBetween(0.9, 1.1);
@@ -304,17 +309,18 @@ export async function executeTransferTask(
       data: {
         status: "COMPLETED",
         completedAt: new Date(),
-        actualTonnage: parseFloat(totalLoadingWeight.toFixed(2)),
-        unloadingTonnage: parseFloat(totalUnloadingWeight.toFixed(2)),
-        totalLoss: parseFloat(totalLoss.toFixed(2)),
+        // 重量四舍五入到 10kg（模拟磅秤精度）
+        actualTonnage: roundToNearest10(totalLoadingWeight),
+        unloadingTonnage: roundToNearest10(totalUnloadingWeight),
+        totalLoss: roundToNearest10(totalLoss),
       },
     });
 
     return {
       totalRecords: transferRecords.length,
-      totalLoadingWeight: parseFloat(totalLoadingWeight.toFixed(2)),
-      totalUnloadingWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
-      totalLoss: parseFloat(totalLoss.toFixed(2)),
+      totalLoadingWeight: roundToNearest10(totalLoadingWeight),
+      totalUnloadingWeight: roundToNearest10(totalUnloadingWeight),
+      totalLoss: roundToNearest10(totalLoss),
       vehiclesCount: vehicleIds.size,
     };
   } catch (error) {
