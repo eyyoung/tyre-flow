@@ -81,6 +81,81 @@ async function generateSignature(name: string): Promise<string | null> {
   }
 }
 
+/**
+ * 获取或创建门店的缓存签名
+ * 如果数据库中存在签名缓存则直接返回，否则生成新签名并保存到数据库
+ * @param prismaClient Prisma 客户端实例
+ * @param storeId 门店ID
+ * @param signatureFileId 现有签名文件ID（可能为null）
+ * @param signatureName 签名人姓名（法人或门店名）
+ * @returns 签名图片的 Data URL 字符串
+ */
+async function getOrCreateCachedSignature(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prismaClient: any,
+  storeId: string,
+  signatureFileId: string | null,
+  signatureName: string
+): Promise<string | null> {
+  // 如果存在缓存的签名文件，从数据库读取
+  if (signatureFileId) {
+    try {
+      const signatureFile = await prismaClient.signatureFile.findUnique({
+        where: { id: signatureFileId },
+      });
+
+      if (signatureFile) {
+        // 将 Bytes 转换为 Data URL
+        const base64Data = Buffer.from(signatureFile.data).toString("base64");
+        console.log(`[Signature Cache] Hit for store ${storeId}`);
+        return `data:${signatureFile.mimeType};base64,${base64Data}`;
+      }
+    } catch (error) {
+      console.error(`[Signature Cache] Error reading cache for store ${storeId}:`, error);
+    }
+  }
+
+  // 缓存不存在，生成新签名
+  console.log(`[Signature Cache] Miss for store ${storeId}, generating new signature...`);
+  const signatureDataURL = await generateSignature(signatureName);
+
+  if (!signatureDataURL) {
+    return null;
+  }
+
+  // 提取 base64 数据并保存到数据库
+  try {
+    const base64Match = signatureDataURL.match(/^data:([^;]+);base64,(.+)$/);
+    if (base64Match) {
+      const mimeType = base64Match[1];
+      const base64Data = base64Match[2];
+      const binaryData = Buffer.from(base64Data, "base64");
+
+      // 使用事务创建签名文件并更新门店关联
+      await prismaClient.$transaction(async (tx: typeof prismaClient) => {
+        const newSignatureFile = await tx.signatureFile.create({
+          data: {
+            data: binaryData,
+            mimeType,
+          },
+        });
+
+        await tx.store.update({
+          where: { id: storeId },
+          data: { signatureFileId: newSignatureFile.id },
+        });
+      });
+
+      console.log(`[Signature Cache] Created and cached signature for store ${storeId}`);
+    }
+  } catch (error) {
+    console.error(`[Signature Cache] Error saving cache for store ${storeId}:`, error);
+    // 即使保存失败，仍然返回生成的签名供本次使用
+  }
+
+  return signatureDataURL;
+}
+
 // Word XML 命名空间
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -377,228 +452,82 @@ async function generateIsccDocument(
   });
 }
 
-// 导出 ISCC 声明
+// SSE 事件类型定义
+type SSEEvent =
+  | { type: "start"; total: number }
+  | { type: "generating"; current: number; total: number; storeName: string }
+  | { type: "merging"; batch: number; totalBatches: number }
+  | { type: "converting"; batch: number; totalBatches: number }
+  | { type: "complete"; fileName: string; fileType: string; data: string }
+  | { type: "error"; message: string };
+
+// 创建 SSE 格式的消息
+function formatSSE(event: SSEEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+// 导出 ISCC 声明（单个门店导出，保持原有 GET 方式）
 export async function GET(request: NextRequest) {
   return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     try {
       const { searchParams } = new URL(request.url);
-      const collectionPointId = searchParams.get("collectionPointId");
       const storeId = searchParams.get("storeId");
+
+      if (!storeId) {
+        return NextResponse.json(
+          { message: "Store ID is required for GET request. Use POST for batch export." },
+          { status: 400 }
+        );
+      }
 
       // 读取 Word 模板
       const templatePath = path.join(process.cwd(), "template", "ISCC.docx");
       const templateContent = fs.readFileSync(templatePath, "binary");
 
-      // 单个门店导出
-      if (storeId) {
-        const store = await ctx.prisma.store.findUnique({
-          where: { id: storeId },
-          include: {
-            collectionPoint: true,
-          },
-        });
-
-        if (!store) {
-          return NextResponse.json(
-            { message: "Store not found" },
-            { status: 404 }
-          );
-        }
-
-        // 生成签名图片 Data URL
-        const signatureName = store.legalPerson || store.name;
-        const signatureDataURL = await generateSignature(signatureName);
-
-        const docxBuf = await generateIsccDocument(
-          store,
-          store.collectionPoint,
-          templateContent,
-          signatureDataURL
-        );
-
-        // 转换为 PDF
-        const pdfBuf = await convertDocxToPdf(docxBuf);
-        const fileName = `ISCC_${store.name.replace(
-          /[/\\?%*:|"<>]/g,
-          "_"
-        )}.pdf`;
-
-        return new NextResponse(new Uint8Array(pdfBuf), {
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": `attachment; filename="${encodeURIComponent(
-              fileName
-            )}"`,
-            "Content-Length": pdfBuf.length.toString(),
-          },
-        });
-      }
-
-      // 批量导出（按收集点）
-      if (!collectionPointId) {
-        return NextResponse.json(
-          { message: "Collection point ID or Store ID is required" },
-          { status: 400 }
-        );
-      }
-
-      // 获取收集点信息（通过 ctx.prisma 自动应用收集点过滤）
-      const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
-        where: { id: collectionPointId },
-      });
-
-      if (!collectionPoint) {
-        return NextResponse.json(
-          { message: "Collection point not found" },
-          { status: 404 }
-        );
-      }
-
-      // 获取所有活跃且非虚拟的门店（通过 ctx.prisma 自动应用收集点过滤）
-      const stores = await ctx.prisma.store.findMany({
-        where: {
-          collectionPointId,
-          status: "ACTIVE",
-          isVirtual: false,
+      const store = await ctx.prisma.store.findUnique({
+        where: { id: storeId },
+        include: {
+          collectionPoint: true,
         },
-        orderBy: { code: "asc" },
       });
 
-      if (stores.length === 0) {
+      if (!store) {
         return NextResponse.json(
-          { message: "No stores found for this collection point" },
+          { message: "Store not found" },
           { status: 404 }
         );
       }
 
-      console.log(
-        `[ISCC Export] Testing with ${stores.length} stores (limited for testing)`
+      // 获取或创建缓存的签名
+      const signatureName = store.legalPerson || store.name;
+      const signatureDataURL = await getOrCreateCachedSignature(
+        ctx.prisma,
+        store.id,
+        store.signatureFileId,
+        signatureName
       );
 
-      const currentDate = dayjs().format("YYYY-MM-DD");
-
-      // 第一步：为每个门店生成 Word 文档
-      console.log(
-        `[ISCC Export] Generating ${stores.length} Word documents...`
-      );
-      const docxBuffers: Buffer[] = [];
-
-      // 缓存已生成的签名，避免重复请求相同姓名的签名
-      const signatureCache = new Map<string, string | null>();
-
-      for (const store of stores) {
-        try {
-          // 生成或从缓存获取签名
-          const signatureName = store.legalPerson || store.name;
-          let signatureDataURL: string | null;
-
-          if (signatureCache.has(signatureName)) {
-            signatureDataURL = signatureCache.get(signatureName) || null;
-          } else {
-            signatureDataURL = await generateSignature(signatureName);
-            signatureCache.set(signatureName, signatureDataURL);
-          }
-
-          const docxBuf = await generateIsccDocument(
-            store,
-            collectionPoint,
-            templateContent,
-            signatureDataURL
-          );
-          docxBuffers.push(docxBuf);
-        } catch (error) {
-          console.error(
-            `Error generating ISCC Word for store ${store.code}:`,
-            error
-          );
-          // 继续处理其他门店
-        }
-      }
-
-      // 第二步：将 Word 文档分批合并，每批最多 BATCH_SIZE 个
-      const totalBatches = Math.ceil(docxBuffers.length / BATCH_SIZE);
-      console.log(
-        `[ISCC Export] Merging into ${totalBatches} batch(es), ${BATCH_SIZE} docs per batch...`
+      const docxBuf = await generateIsccDocument(
+        store,
+        store.collectionPoint,
+        templateContent,
+        signatureDataURL
       );
 
-      const mergedPdfs: { name: string; buffer: Buffer }[] = [];
+      // 转换为 PDF
+      const pdfBuf = await convertDocxToPdf(docxBuf);
+      const fileName = `ISCC_${store.name.replace(
+        /[/\\?%*:|"<>]/g,
+        "_"
+      )}.pdf`;
 
-      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-        const startIdx = batchIndex * BATCH_SIZE;
-        const endIdx = Math.min(startIdx + BATCH_SIZE, docxBuffers.length);
-        const batchDocx = docxBuffers.slice(startIdx, endIdx);
-
-        console.log(
-          `[ISCC Export] Processing batch ${batchIndex + 1}/${totalBatches} (${
-            batchDocx.length
-          } docs)...`
-        );
-
-        try {
-          // 合并这一批的 Word 文档
-          const mergedDocx = await mergeDocxFiles(batchDocx);
-
-          // 将合并后的 Word 转换为 PDF（只调用一次 LibreOffice）
-          const pdfBuf = await convertDocxToPdf(mergedDocx);
-
-          const batchName =
-            totalBatches === 1
-              ? `ISCC_${collectionPoint.name}_${currentDate}.pdf`
-              : `ISCC_${collectionPoint.name}_${currentDate}_${
-                  batchIndex + 1
-                }.pdf`;
-
-          mergedPdfs.push({
-            name: batchName,
-            buffer: pdfBuf,
-          });
-        } catch (error) {
-          console.error(`Error processing batch ${batchIndex + 1}:`, error);
-        }
-      }
-
-      if (mergedPdfs.length === 0) {
-        return NextResponse.json(
-          { message: "Failed to generate any PDF" },
-          { status: 500 }
-        );
-      }
-
-      // 如果只有一个合并后的 PDF，直接返回
-      if (mergedPdfs.length === 1) {
-        const { name, buffer } = mergedPdfs[0];
-        return new NextResponse(new Uint8Array(buffer), {
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": `attachment; filename="${encodeURIComponent(
-              name
-            )}"`,
-            "Content-Length": buffer.length.toString(),
-          },
-        });
-      }
-
-      // 多个合并后的 PDF，打包成 ZIP
-      const zip = new JSZip();
-      for (const { name, buffer } of mergedPdfs) {
-        zip.file(name, buffer);
-      }
-
-      const zipBuffer = await zip.generateAsync({
-        type: "nodebuffer",
-        compression: "DEFLATE",
-        compressionOptions: { level: 9 },
-      });
-
-      const zipFileName = `ISCC_${collectionPoint.name}_${currentDate}.zip`;
-
-      return new NextResponse(new Uint8Array(zipBuffer), {
+      return new NextResponse(new Uint8Array(pdfBuf), {
         headers: {
-          "Content-Type": "application/zip",
+          "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${encodeURIComponent(
-            zipFileName
+            fileName
           )}"`,
-          "Content-Length": zipBuffer.length.toString(),
+          "Content-Length": pdfBuf.length.toString(),
         },
       });
     } catch (error) {
@@ -608,5 +537,233 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
+  });
+}
+
+// 批量导出 ISCC 声明（SSE 方式，返回进度和最终文件）
+export async function POST(request: NextRequest) {
+  return withMiddlewares(request, standardMiddlewares, async (ctx) => {
+    const encoder = new TextEncoder();
+    
+    // 创建 ReadableStream 用于 SSE
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: SSEEvent) => {
+          controller.enqueue(encoder.encode(formatSSE(event)));
+        };
+
+        try {
+          const body = await request.json();
+          const collectionPointId = body.collectionPointId;
+
+          if (!collectionPointId) {
+            send({ type: "error", message: "Collection point ID is required" });
+            controller.close();
+            return;
+          }
+
+          // 获取收集点信息（通过 ctx.prisma 自动应用收集点过滤）
+          const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
+            where: { id: collectionPointId },
+          });
+
+          if (!collectionPoint) {
+            send({ type: "error", message: "Collection point not found" });
+            controller.close();
+            return;
+          }
+
+          // 获取所有活跃且非虚拟的门店（通过 ctx.prisma 自动应用收集点过滤）
+          const stores = await ctx.prisma.store.findMany({
+            where: {
+              collectionPointId,
+              status: "ACTIVE",
+              isVirtual: false,
+            },
+            orderBy: { code: "asc" },
+          });
+
+          if (stores.length === 0) {
+            send({ type: "error", message: "No stores found for this collection point" });
+            controller.close();
+            return;
+          }
+
+          // 发送开始事件
+          send({ type: "start", total: stores.length });
+
+          // 读取 Word 模板
+          const templatePath = path.join(process.cwd(), "template", "ISCC.docx");
+          const templateContent = fs.readFileSync(templatePath, "binary");
+
+          const currentDate = dayjs().format("YYYY-MM-DD");
+
+          // 第一步：为每个门店生成 Word 文档
+          console.log(`[ISCC Export] Generating ${stores.length} Word documents...`);
+          const docxBuffers: Buffer[] = [];
+
+          for (let i = 0; i < stores.length; i++) {
+            const store = stores[i];
+            try {
+              // 发送进度事件
+              send({
+                type: "generating",
+                current: i + 1,
+                total: stores.length,
+                storeName: store.name,
+              });
+
+              // 获取或创建缓存的签名（使用数据库缓存）
+              const signatureName = store.legalPerson || store.name;
+              const signatureDataURL = await getOrCreateCachedSignature(
+                ctx.prisma,
+                store.id,
+                store.signatureFileId,
+                signatureName
+              );
+
+              const docxBuf = await generateIsccDocument(
+                store,
+                collectionPoint,
+                templateContent,
+                signatureDataURL
+              );
+              docxBuffers.push(docxBuf);
+            } catch (error) {
+              console.error(
+                `Error generating ISCC Word for store ${store.code}:`,
+                error
+              );
+              // 继续处理其他门店
+            }
+          }
+
+          if (docxBuffers.length === 0) {
+            send({ type: "error", message: "Failed to generate any documents" });
+            controller.close();
+            return;
+          }
+
+          // 第二步：将 Word 文档分批合并，每批最多 BATCH_SIZE 个
+          const totalBatches = Math.ceil(docxBuffers.length / BATCH_SIZE);
+          console.log(
+            `[ISCC Export] Merging into ${totalBatches} batch(es), ${BATCH_SIZE} docs per batch...`
+          );
+
+          const mergedPdfs: { name: string; buffer: Buffer }[] = [];
+
+          for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            const startIdx = batchIndex * BATCH_SIZE;
+            const endIdx = Math.min(startIdx + BATCH_SIZE, docxBuffers.length);
+            const batchDocx = docxBuffers.slice(startIdx, endIdx);
+
+            // 发送合并进度
+            send({
+              type: "merging",
+              batch: batchIndex + 1,
+              totalBatches,
+            });
+
+            console.log(
+              `[ISCC Export] Processing batch ${batchIndex + 1}/${totalBatches} (${
+                batchDocx.length
+              } docs)...`
+            );
+
+            try {
+              // 合并这一批的 Word 文档
+              const mergedDocx = await mergeDocxFiles(batchDocx);
+
+              // 发送转换进度
+              send({
+                type: "converting",
+                batch: batchIndex + 1,
+                totalBatches,
+              });
+
+              // 将合并后的 Word 转换为 PDF（只调用一次 LibreOffice）
+              const pdfBuf = await convertDocxToPdf(mergedDocx);
+
+              const batchName =
+                totalBatches === 1
+                  ? `ISCC_${collectionPoint.name}_${currentDate}.pdf`
+                  : `ISCC_${collectionPoint.name}_${currentDate}_${
+                      batchIndex + 1
+                    }.pdf`;
+
+              mergedPdfs.push({
+                name: batchName,
+                buffer: pdfBuf,
+              });
+            } catch (error) {
+              console.error(`Error processing batch ${batchIndex + 1}:`, error);
+            }
+          }
+
+          if (mergedPdfs.length === 0) {
+            send({ type: "error", message: "Failed to generate any PDF" });
+            controller.close();
+            return;
+          }
+
+          // 准备最终文件
+          let finalFileName: string;
+          let finalFileType: string;
+          let finalBuffer: Buffer;
+
+          if (mergedPdfs.length === 1) {
+            // 单个 PDF 文件
+            finalFileName = mergedPdfs[0].name;
+            finalFileType = "application/pdf";
+            finalBuffer = mergedPdfs[0].buffer;
+          } else {
+            // 多个 PDF，打包成 ZIP
+            const zip = new JSZip();
+            for (const { name, buffer } of mergedPdfs) {
+              zip.file(name, buffer);
+            }
+
+            finalBuffer = await zip.generateAsync({
+              type: "nodebuffer",
+              compression: "DEFLATE",
+              compressionOptions: { level: 9 },
+            });
+
+            finalFileName = `ISCC_${collectionPoint.name}_${currentDate}.zip`;
+            finalFileType = "application/zip";
+          }
+
+          // 发送完成事件，包含 base64 编码的文件数据
+          send({
+            type: "complete",
+            fileName: finalFileName,
+            fileType: finalFileType,
+            data: finalBuffer.toString("base64"),
+          });
+
+          controller.close();
+        } catch (error) {
+          console.error("Export ISCC SSE error:", error);
+          controller.enqueue(
+            encoder.encode(
+              formatSSE({
+                type: "error",
+                message: error instanceof Error ? error.message : "Internal server error",
+              })
+            )
+          );
+          controller.close();
+        }
+      },
+    });
+
+    // 返回 SSE 流响应（需要类型断言因为 SSE 需要原始 Response）
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    }) as unknown as NextResponse;
   });
 }

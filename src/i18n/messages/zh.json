@@ -185,7 +185,12 @@
     "exportIsccDescription": "选择收集点后，批量生成所有门店的 ISCC 自我声明文件，打包成 ZIP 下载。",
     "exportIsccConfirm": "确定要导出该收集点所有门店的 ISCC 声明吗？",
     "exporting": "正在导出...",
-    "exportIsccSuccess": "成功导出 {count} 份 ISCC 声明"
+    "exportIsccSuccess": "成功导出 {count} 份 ISCC 声明",
+    "exportProgress": {
+      "generating": "正在生成文档",
+      "merging": "正在合并文档",
+      "converting": "正在转换 PDF"
+    }
   },
   "vehicles": {
     "title": "车辆管理",

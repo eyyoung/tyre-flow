@@ -102,6 +102,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
       }
 
+      // 如果法人姓名发生变化，使签名缓存失效
+      const newLegalPerson = legalPerson !== undefined ? (legalPerson || null) : existing.legalPerson;
+      if (newLegalPerson !== existing.legalPerson && existing.signatureFileId) {
+        // 删除旧的签名文件并断开关联
+        updateData.signatureFileId = null;
+        // 异步删除签名文件（不阻塞主流程）
+        ctx.prisma.signatureFile.delete({
+          where: { id: existing.signatureFileId },
+        }).catch((err: unknown) => {
+          console.error('Failed to delete old signature file:', err);
+        });
+        console.log(`[Signature Cache] Invalidated for store ${id} due to legalPerson change`);
+      }
+
       const store = await ctx.prisma.store.update({
         where: { id },
         data: updateData,

@@ -18,6 +18,7 @@ import {
   App,
   Descriptions,
   Checkbox,
+  Progress,
 } from 'antd';
 import {
   PlusOutlined,
@@ -105,6 +106,12 @@ export default function StoresPage() {
   const [isccModalVisible, setIsccModalVisible] = useState(false);
   const [isccForm] = Form.useForm();
   const [exportingIscc, setExportingIscc] = useState(false);
+  const [isccProgress, setIsccProgress] = useState<{
+    stage: 'generating' | 'merging' | 'converting' | '';
+    current: number;
+    total: number;
+    storeName?: string;
+  }>({ stage: '', current: 0, total: 0 });
 
   const fetchData = useCallback(async () => {
     if (!currentCollectionPoint) return;
@@ -381,7 +388,7 @@ export default function StoresPage() {
     }
   };
 
-  // 导出 ISCC 声明（批量）
+  // 导出 ISCC 声明（批量，SSE 方式）
   const handleExportIscc = async () => {
     if (!currentCollectionPoint) {
       message.warning(t('ledgers.selectCollectionPointRequired'));
@@ -390,41 +397,106 @@ export default function StoresPage() {
     
     try {
       setExportingIscc(true);
+      setIsccProgress({ stage: '', current: 0, total: 0 });
 
-      const params = new URLSearchParams();
-      params.set('collectionPointId', currentCollectionPoint.id);
+      const response = await fetch('/api/stores/iscc-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionPointId: currentCollectionPoint.id }),
+      });
 
-      const response = await fetch(`/api/stores/iscc-export?${params}`);
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        // 从 Content-Disposition 获取文件名
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let fileName = `ISCC_${currentCollectionPoint.name}_${new Date().toISOString().slice(0, 10)}.zip`;
-        if (contentDisposition) {
-          const match = contentDisposition.match(/filename="?([^"]+)"?/);
-          if (match) {
-            fileName = decodeURIComponent(match[1]);
-          }
-        }
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        setIsccModalVisible(false);
-        message.success(t('common.success'));
-      } else {
+      if (!response.ok) {
         const result = await response.json();
         message.error(result.message || t('common.error'));
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        message.error(t('common.error'));
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        
+        // 解析 SSE 事件
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留未完整的行
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              
+              switch (event.type) {
+                case 'start':
+                  setIsccProgress({ stage: 'generating', current: 0, total: event.total });
+                  break;
+                case 'generating':
+                  setIsccProgress({
+                    stage: 'generating',
+                    current: event.current,
+                    total: event.total,
+                    storeName: event.storeName,
+                  });
+                  break;
+                case 'merging':
+                  setIsccProgress({
+                    stage: 'merging',
+                    current: event.batch,
+                    total: event.totalBatches,
+                  });
+                  break;
+                case 'converting':
+                  setIsccProgress({
+                    stage: 'converting',
+                    current: event.batch,
+                    total: event.totalBatches,
+                  });
+                  break;
+                case 'complete': {
+                  // 下载文件
+                  const byteCharacters = atob(event.data);
+                  const byteNumbers = new Array(byteCharacters.length);
+                  for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                  }
+                  const byteArray = new Uint8Array(byteNumbers);
+                  const blob = new Blob([byteArray], { type: event.fileType });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = event.fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                  setIsccModalVisible(false);
+                  message.success(t('common.success'));
+                  break;
+                }
+                case 'error':
+                  message.error(event.message || t('common.error'));
+                  break;
+              }
+            } catch {
+              // 忽略解析错误
+            }
+          }
+        }
       }
     } catch {
       message.error(t('common.error'));
     } finally {
       setExportingIscc(false);
+      setIsccProgress({ stage: '', current: 0, total: 0 });
     }
   };
 
@@ -938,14 +1010,46 @@ export default function StoresPage() {
         title={t('stores.exportIsccTitle')}
         open={isccModalVisible}
         onOk={handleExportIscc}
-        onCancel={() => setIsccModalVisible(false)}
+        onCancel={() => !exportingIscc && setIsccModalVisible(false)}
         confirmLoading={exportingIscc}
         okText={t('stores.export')}
+        cancelButtonProps={{ disabled: exportingIscc }}
+        closable={!exportingIscc}
+        maskClosable={!exportingIscc}
         width={500}
       >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 16 }}>
           {t('stores.exportIsccDescription')}
         </Typography.Paragraph>
+        
+        {/* 导出进度显示 */}
+        {exportingIscc && isccProgress.total > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Progress
+              percent={Math.round((isccProgress.current / isccProgress.total) * 100)}
+              status="active"
+              size="small"
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {isccProgress.stage === 'generating' && (
+                <>
+                  {t('stores.exportProgress.generating')} ({isccProgress.current}/{isccProgress.total})
+                  {isccProgress.storeName && `: ${isccProgress.storeName}`}
+                </>
+              )}
+              {isccProgress.stage === 'merging' && (
+                <>
+                  {t('stores.exportProgress.merging')} ({isccProgress.current}/{isccProgress.total})
+                </>
+              )}
+              {isccProgress.stage === 'converting' && (
+                <>
+                  {t('stores.exportProgress.converting')} ({isccProgress.current}/{isccProgress.total})
+                </>
+              )}
+            </Typography.Text>
+          </div>
+        )}
       </Modal>
     </div>
   );

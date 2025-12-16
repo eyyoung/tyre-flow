@@ -84,6 +84,19 @@ model UserCollectionPoint {
   @@map("user_collection_points")
 }
 
+// ==================== 签名文件存储 ====================
+
+model SignatureFile {
+  id        String   @id @default(cuid())
+  data      Bytes    // 签名图片二进制数据 (PNG)
+  mimeType  String   @default("image/png")
+  createdAt DateTime @default(now())
+
+  store Store?
+
+  @@map("signature_files")
+}
+
 // ==================== 门店管理 ====================
 
 model Store {
@@ -107,6 +120,8 @@ model Store {
   isVirtual              Boolean     @default(true) // 是否虚拟生成
   collectionPointId      String
   collectionPoint        CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  signatureFileId        String?     @unique // ISCC 签名文件缓存
+  signatureFile          SignatureFile? @relation(fields: [signatureFileId], references: [id], onDelete: SetNull)
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
