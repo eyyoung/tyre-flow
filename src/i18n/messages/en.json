@@ -327,6 +327,7 @@
     "activeStoreCount": "Active Stores",
     "avgTravelMinutes": "Avg. Travel",
     "tripsPerVehiclePerDay": "Trips/Vehicle/Day",
+    "maxTripsPerVehiclePerDay": "Max Trips/Vehicle/Day",
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "Calculating suggestions...",
     "selectDateFirst": "Please select date range first",

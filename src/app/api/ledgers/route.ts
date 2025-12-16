@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const body = await request.json();
-      const { collectionPointId, startDate, endDate, targetTonnage } = body;
+      const { collectionPointId, startDate, endDate, targetTonnage, maxTripsPerVehiclePerDay = 2 } = body;
 
       // 验证必填字段
       if (!collectionPointId || !startDate || !endDate || !targetTonnage) {
@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
           startDate: start,
           endDate: end,
           targetTonnage: parseFloat(targetTonnage),
+          maxTripsPerVehiclePerDay: parseInt(maxTripsPerVehiclePerDay) || 2,
           collectionPointId,
           status: 'PENDING',
         },

@@ -754,9 +754,10 @@ function assignVehicleAndGenerateTrip(
   month: number,
   day: number,
   targetWeight: number,
-  collectionDate: Date
+  collectionDate: Date,
+  maxTripsPerVehiclePerDay: number = 2
 ): MultiStopTrip | null {
-  // 司机工作时间：8:00-18:00
+  // 司机工作时间：6:00-20:00
   const startHour = 6;
   const endHour = 20;
 
@@ -768,8 +769,8 @@ function assignVehicleAndGenerateTrip(
   });
 
   for (const vehicle of sortedVehicles) {
-    // 每辆车每天最多 8 趟（多站点行程时间更长）
-    if (scheduler.getTripCountForDay(vehicle.id, year, month, day) >= 8) {
+    // 每辆车每天最多 maxTripsPerVehiclePerDay 趟（从出发到卸车算一趟）
+    if (scheduler.getTripCountForDay(vehicle.id, year, month, day) >= maxTripsPerVehiclePerDay) {
       continue;
     }
 
@@ -1164,13 +1165,15 @@ function redistributeRecordsToEmptyDays(
  * @param startDate 开始日期
  * @param endDate 结束日期
  * @param targetTonnage 目标吨数
+ * @param maxTripsPerVehiclePerDay 每辆车每天最大趟数（从出发到卸车算一趟）
  */
 export async function generateLedgerData(
   taskId: string,
   collectionPointId: string,
   startDate: Date,
   endDate: Date,
-  targetTonnage: number
+  targetTonnage: number,
+  maxTripsPerVehiclePerDay: number = 2
 ): Promise<{ collectionRecords: CollectionRecordData[] }> {
   const config = await getConfig();
   const totalDays = getDaysInRange(startDate, endDate);
@@ -1286,7 +1289,8 @@ export async function generateLedgerData(
         month,
         day,
         tripTargetWeight,
-        collectionDate
+        collectionDate,
+        maxTripsPerVehiclePerDay
       );
 
       if (!trip) {
@@ -1396,7 +1400,8 @@ export async function executeLedgerTask(
       task.collectionPointId,
       task.startDate,
       task.endDate,
-      randomTargetTonnage // 单位: kg
+      randomTargetTonnage, // 单位: kg
+      task.maxTripsPerVehiclePerDay ?? 2 // 每车每日最大趟数，默认 2
     );
 
     // 在保存前调整时间为中国时区

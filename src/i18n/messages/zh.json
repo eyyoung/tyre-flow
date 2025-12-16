@@ -327,6 +327,7 @@
     "activeStoreCount": "活跃门店",
     "avgTravelMinutes": "平均行程",
     "tripsPerVehiclePerDay": "每车每日趟数",
+    "maxTripsPerVehiclePerDay": "每车每日最大趟数",
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "正在计算建议值...",
     "selectDateFirst": "请先选择时间范围",

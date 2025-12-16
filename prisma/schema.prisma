@@ -170,24 +170,25 @@ model SystemConfig {
 // ==================== 台账管理（Phase 3） ====================
 
 model LedgerTask {
-  id                String          @id @default(cuid())
-  taskNo            String          @unique // 任务编号
-  year              Int?            // 保留兼容旧数据
-  month             Int?            // 保留兼容旧数据
-  startDate         DateTime        // 开始日期
-  endDate           DateTime        // 结束日期
-  targetTonnage     Float           // 目标吨数
-  actualTonnage     Float?          // 实际吨数（装车净重合计）
-  unloadingTonnage  Float?          // 卸车净重合计
-  totalLoss         Float?          // 折损合计
-  status            TaskStatus      @default(PENDING)
-  errorMessage      String?
-  startedAt         DateTime?
-  completedAt       DateTime?
-  collectionPointId String
-  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id])
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                        String          @id @default(cuid())
+  taskNo                    String          @unique // 任务编号
+  year                      Int?            // 保留兼容旧数据
+  month                     Int?            // 保留兼容旧数据
+  startDate                 DateTime        // 开始日期
+  endDate                   DateTime        // 结束日期
+  targetTonnage             Float           // 目标吨数
+  actualTonnage             Float?          // 实际吨数（装车净重合计）
+  unloadingTonnage          Float?          // 卸车净重合计
+  totalLoss                 Float?          // 折损合计
+  maxTripsPerVehiclePerDay  Int             @default(2) // 每车每日最大趟数
+  status                    TaskStatus      @default(PENDING)
+  errorMessage              String?
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  collectionPointId         String
+  collectionPoint           CollectionPoint @relation(fields: [collectionPointId], references: [id])
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
 
   collectionRecords CollectionRecord[]
 
