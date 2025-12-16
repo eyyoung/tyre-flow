@@ -203,7 +203,14 @@
     "driverName": "Driver Name",
     "driverPhone": "Driver Phone",
     "collectionPoint": "Collection Point",
-    "deleteConfirm": "Are you sure you want to delete vehicle {plateNumber}?"
+    "deleteConfirm": "Are you sure you want to delete vehicle {plateNumber}?",
+    "batchUpdate": "Batch Update",
+    "batchUpdateTitle": "Batch Update Vehicles",
+    "batchUpdateType": "Vehicle Type",
+    "batchUpdateOptional": "Leave empty to keep original value",
+    "batchUpdateKeepOriginal": "Keep original",
+    "batchUpdateAtLeastOne": "At least one of tare weight or max load must be provided",
+    "batchUpdateSuccess": "Successfully updated {count} vehicles"
   },
   "settings": {
     "title": "System Settings",

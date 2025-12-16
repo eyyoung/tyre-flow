@@ -25,6 +25,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   CarOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
@@ -74,6 +75,9 @@ export default function VehiclesPage() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Vehicle | null>(null);
   const [form] = Form.useForm();
+  const [batchModalVisible, setBatchModalVisible] = useState(false);
+  const [batchForm] = Form.useForm();
+  const [batchLoading, setBatchLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!currentCollectionPoint) return;
@@ -133,7 +137,7 @@ export default function VehiclesPage() {
     form.setFieldsValue({
       status: "ACTIVE",
       type: "COLLECTION",
-      tareWeight: 2.5, // 显示吨
+      tareWeight: 1.5, // 显示吨
       tareWeightVariance: 0.05,
       maxLoad: 4.0, // 显示吨
       collectionPointId: currentCollectionPoint?.id,
@@ -211,14 +215,90 @@ export default function VehiclesPage() {
   const handleTypeChange = (type: string) => {
     if (type === "COLLECTION") {
       form.setFieldsValue({
-        tareWeight: 2.5,
+        tareWeight: 1.5,
         maxLoad: 4.0,
       });
     } else if (type === "TRANSFER") {
       form.setFieldsValue({
         tareWeight: 15.0,
+        maxLoad: 35.0,
+      });
+    }
+  };
+
+  // 打开批量修改弹窗
+  const handleBatchEdit = () => {
+    batchForm.resetFields();
+    batchForm.setFieldsValue({
+      type: "COLLECTION", // 默认收集车辆
+      tareWeight: 1.5,
+      maxLoad: 4.0,
+    });
+    setBatchModalVisible(true);
+  };
+
+  // 批量修改车辆类型变化时更新默认值
+  const handleBatchTypeChange = (type: string) => {
+    if (type === "COLLECTION") {
+      batchForm.setFieldsValue({
+        tareWeight: 2.5,
+        maxLoad: 4.0,
+      });
+    } else if (type === "TRANSFER") {
+      batchForm.setFieldsValue({
+        tareWeight: 15.0,
         maxLoad: 33.0,
       });
+    }
+  };
+
+  // 执行批量修改
+  const handleBatchModalOk = async () => {
+    try {
+      const values = await batchForm.validateFields();
+      
+      // 至少需要填写一个字段
+      if (values.tareWeight === undefined && values.maxLoad === undefined) {
+        message.error(t("vehicles.batchUpdateAtLeastOne"));
+        return;
+      }
+
+      setBatchLoading(true);
+
+      // 将吨转换为 kg
+      const dataToSubmit: Record<string, unknown> = {
+        collectionPointId: currentCollectionPoint?.id,
+        type: values.type, // 车辆类型必填
+      };
+
+      if (values.tareWeight !== undefined && values.tareWeight !== null) {
+        dataToSubmit.tareWeight = values.tareWeight * 1000;
+      }
+      if (values.maxLoad !== undefined && values.maxLoad !== null) {
+        dataToSubmit.maxLoad = values.maxLoad * 1000;
+      }
+
+      const response = await fetch("/api/vehicles/batch-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSubmit),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        message.success(
+          t("vehicles.batchUpdateSuccess", { count: result.count })
+        );
+        setBatchModalVisible(false);
+        fetchData();
+      } else {
+        message.error(result.message || t("common.error"));
+      }
+    } catch {
+      // 表单验证失败
+    } finally {
+      setBatchLoading(false);
     }
   };
 
@@ -376,6 +456,9 @@ export default function VehiclesPage() {
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             {t("vehicles.addVehicle")}
+          </Button>
+          <Button icon={<SettingOutlined />} onClick={handleBatchEdit}>
+            {t("vehicles.batchUpdate")}
           </Button>
         </Space>
 
@@ -548,6 +631,75 @@ export default function VehiclesPage() {
                 />
               </Form.Item>
             )}
+          </Form>
+        )}
+      </Modal>
+
+      {/* 批量修改弹窗 */}
+      <Modal
+        title={t("vehicles.batchUpdateTitle")}
+        open={batchModalVisible}
+        onOk={handleBatchModalOk}
+        onCancel={() => setBatchModalVisible(false)}
+        confirmLoading={batchLoading}
+        width={500}
+        destroyOnHidden
+      >
+        {batchModalVisible && (
+          <Form form={batchForm} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="type"
+              label={t("vehicles.batchUpdateType")}
+              rules={[
+                {
+                  required: true,
+                  message: t("validation.required", {
+                    field: t("vehicles.type"),
+                  }),
+                },
+              ]}
+            >
+              <Select
+                onChange={handleBatchTypeChange}
+                options={[
+                  {
+                    value: "COLLECTION",
+                    label: t("vehicles.typeCollection"),
+                  },
+                  { value: "TRANSFER", label: t("vehicles.typeTransfer") },
+                ]}
+              />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="tareWeight"
+                  label={`${t("vehicles.tareWeight")} (t)`}
+                  extra={t("vehicles.batchUpdateOptional")}
+                >
+                  <InputNumber
+                    min={0}
+                    step={0.1}
+                    style={{ width: "100%" }}
+                    placeholder={t("vehicles.batchUpdateKeepOriginal")}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="maxLoad"
+                  label={`${t("vehicles.maxLoad")} (t)`}
+                  extra={t("vehicles.batchUpdateOptional")}
+                >
+                  <InputNumber
+                    min={0}
+                    step={0.5}
+                    style={{ width: "100%" }}
+                    placeholder={t("vehicles.batchUpdateKeepOriginal")}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
           </Form>
         )}
       </Modal>

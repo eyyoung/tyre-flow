@@ -203,7 +203,14 @@
     "driverName": "司机姓名",
     "driverPhone": "司机电话",
     "collectionPoint": "所属收集点",
-    "deleteConfirm": "确定要删除车辆 {plateNumber} 吗？"
+    "deleteConfirm": "确定要删除车辆 {plateNumber} 吗？",
+    "batchUpdate": "批量修改",
+    "batchUpdateTitle": "批量修改车辆",
+    "batchUpdateType": "车辆类型",
+    "batchUpdateOptional": "留空则保持原值不变",
+    "batchUpdateKeepOriginal": "保持原值",
+    "batchUpdateAtLeastOne": "皮重和最大载重至少需要填写一项",
+    "batchUpdateSuccess": "成功修改 {count} 辆车"
   },
   "settings": {
     "title": "系统设置",

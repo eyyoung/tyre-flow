@@ -128,8 +128,8 @@ export async function generateTransferData(
     throw new Error("所选日期范围内没有工作日");
   }
 
-  // 计算车辆平均载重（考虑装载系数 85%-98%）
-  const avgLoadFactor = 0.92; // 平均装载系数
+  // 计算车辆平均载重（考虑装载系数 95%-105%，转移任务会尽量装满）
+  const avgLoadFactor = 1.0; // 平均装载系数
   const avgVehicleCapacity =
     (transferVehicles.reduce((sum, v) => sum + v.maxLoad, 0) /
       transferVehicles.length) *
@@ -186,7 +186,8 @@ export async function generateTransferData(
       candidateVehicles[randomBetween(0, candidateVehicles.length - 1)];
 
     // 计算本次转移量（装车净重）- 四舍五入到 10kg（模拟磅秤精度）
-    const loadFactor = randomFloatBetween(0.85, 0.98);
+    // 转移任务会尽量装满，甚至有一定超载（95%~105%）
+    const loadFactor = randomFloatBetween(0.95, 1.05);
     const loadingNetWeight = roundToNearest10(vehicle.maxLoad * loadFactor);
 
     // 计算折损
