@@ -7,9 +7,79 @@ import PizZip from "pizzip";
 import JSZip from "jszip";
 import dayjs from "dayjs";
 import { convertDocxToPdf } from "@/lib/docx-to-pdf";
+import sizeOf from "image-size";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ImageModule = require("docxtemplater-image-module-free");
+
+// 签名生成服务地址
+const SIGNATURE_SERVICE_URL =
+  process.env.SIGNATURE_SERVICE_URL || "http://localhost:3333/generate";
+
+/**
+ * 将 base64 Data URL 转换为 ArrayBuffer
+ * 来源: https://github.com/evilc0des/docxtemplater-image-module-free
+ */
+function base64DataURLToArrayBuffer(dataURL: string): ArrayBuffer | false {
+  const base64Regex = /^data:image\/(png|jpg|jpeg|svg|svg\+xml);base64,/;
+  if (!base64Regex.test(dataURL)) {
+    return false;
+  }
+  const stringBase64 = dataURL.replace(base64Regex, "");
+  const binaryString = Buffer.from(stringBase64, "base64").toString("binary");
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    const ascii = binaryString.charCodeAt(i);
+    bytes[i] = ascii;
+  }
+  return bytes.buffer;
+}
 
 // 每个合并文档包含的最大门店数量
 const BATCH_SIZE = 500;
+
+/**
+ * 调用签名生成服务获取签名图片
+ * @param name 签名人姓名
+ * @returns 签名图片的 Data URL 字符串 (data:image/png;base64,xxx)
+ */
+async function generateSignature(name: string): Promise<string | null> {
+  try {
+    const response = await fetch(SIGNATURE_SERVICE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, stroke_scale: Math.random() * 0.1 + 0.9 }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `Signature service error: ${response.status} ${response.statusText}`
+      );
+      return null;
+    }
+
+    // 签名服务返回 JSON 格式：{ font: "xxx.ttf", image: "base64..." }
+    const data = await response.json();
+
+    if (!data.image) {
+      console.error("Signature service response missing image field");
+      return null;
+    }
+
+    // 获取 base64 数据
+    let base64Data = data.image;
+    // 如果已经有 data URI 前缀，去掉它
+    if (base64Data.includes(",")) {
+      base64Data = base64Data.split(",")[1];
+    }
+
+    // 返回完整的 Data URL 格式
+    return `data:image/png;base64,${base64Data}`;
+  } catch (error) {
+    console.error("Failed to generate signature:", error);
+    return null;
+  }
+}
 
 // Word XML 命名空间
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -49,6 +119,7 @@ function createPageBreak(): string {
 /**
  * 合并多个 Word 文档为一个（基于 XML 操作，更可靠）
  * 使用第一个文档作为基础，保留其样式和设置
+ * 正确处理每个文档中的图片资源
  */
 function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
   if (docxBuffers.length === 0) {
@@ -74,13 +145,100 @@ function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
   // 收集所有文档的 body 内容
   const allBodyContents: string[] = [baseBodyContent];
 
+  // 跟踪图片资源，用于重命名避免冲突
+  let imageCounter = 1;
+  // 获取基础文档已有的图片数量
+  const baseMediaFiles = Object.keys(baseZip.files).filter((f) =>
+    f.startsWith("word/media/")
+  );
+  imageCounter = baseMediaFiles.length + 1;
+
+  // 读取基础文档的 relationships
+  let baseRelsXml =
+    baseZip.file("word/_rels/document.xml.rels")?.asText() || "";
+
   for (let i = 1; i < docxBuffers.length; i++) {
     try {
       const docZip = new PizZip(docxBuffers[i]);
       const docXml = docZip.file("word/document.xml")?.asText();
 
       if (docXml) {
-        const bodyContent = extractBodyContent(docXml);
+        let bodyContent = extractBodyContent(docXml);
+
+        // 处理这个文档中的图片
+        const mediaFiles = Object.keys(docZip.files).filter((f) =>
+          f.startsWith("word/media/")
+        );
+
+        // 读取这个文档的 relationships 来找到图片引用
+        const docRelsXml =
+          docZip.file("word/_rels/document.xml.rels")?.asText() || "";
+
+        for (const mediaPath of mediaFiles) {
+          const oldFileName = mediaPath.split("/").pop() || "";
+          const extension = oldFileName.split(".").pop() || "png";
+          const newFileName = `image${imageCounter}.${extension}`;
+          const newMediaPath = `word/media/${newFileName}`;
+
+          // 复制图片到基础文档
+          const mediaContent = docZip.file(mediaPath)?.asUint8Array();
+          if (mediaContent) {
+            baseZip.file(newMediaPath, mediaContent);
+          }
+
+          // 找到旧的 relationship ID
+          const oldRelMatch = docRelsXml.match(
+            new RegExp(
+              `<Relationship[^>]*Target="media/${oldFileName}"[^>]*Id="([^"]+)"`,
+              "i"
+            )
+          );
+          if (!oldRelMatch) {
+            // 尝试另一种格式
+            const altMatch = docRelsXml.match(
+              new RegExp(
+                `<Relationship[^>]*Id="([^"]+)"[^>]*Target="media/${oldFileName}"`,
+                "i"
+              )
+            );
+            if (altMatch) {
+              const oldRelId = altMatch[1];
+              const newRelId = `rId${1000 + imageCounter}`;
+
+              // 更新 body 内容中的引用
+              bodyContent = bodyContent.replace(
+                new RegExp(`r:embed="${oldRelId}"`, "g"),
+                `r:embed="${newRelId}"`
+              );
+
+              // 添加新的 relationship
+              const newRel = `<Relationship Id="${newRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${newFileName}"/>`;
+              baseRelsXml = baseRelsXml.replace(
+                "</Relationships>",
+                `${newRel}</Relationships>`
+              );
+            }
+          } else {
+            const oldRelId = oldRelMatch[1];
+            const newRelId = `rId${1000 + imageCounter}`;
+
+            // 更新 body 内容中的引用
+            bodyContent = bodyContent.replace(
+              new RegExp(`r:embed="${oldRelId}"`, "g"),
+              `r:embed="${newRelId}"`
+            );
+
+            // 添加新的 relationship
+            const newRel = `<Relationship Id="${newRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${newFileName}"/>`;
+            baseRelsXml = baseRelsXml.replace(
+              "</Relationships>",
+              `${newRel}</Relationships>`
+            );
+          }
+
+          imageCounter++;
+        }
+
         if (bodyContent) {
           allBodyContents.push(bodyContent);
         }
@@ -94,7 +252,6 @@ function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
   const mergedBodyContent = allBodyContents.join(createPageBreak());
 
   // 重建 document.xml
-  // 保留原始文档的声明和根元素属性
   const xmlDeclaration =
     baseDocXml.match(/<\?xml[^?]*\?>/)?.[0] ||
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -106,8 +263,9 @@ ${documentStart}
 <w:body>${mergedBodyContent}${baseSectPr}</w:body>
 </w:document>`;
 
-  // 更新 ZIP 中的 document.xml
+  // 更新 ZIP 中的文件
   baseZip.file("word/document.xml", mergedDocXml);
+  baseZip.file("word/_rels/document.xml.rels", baseRelsXml);
 
   // 生成合并后的文档
   return baseZip.generate({
@@ -135,15 +293,47 @@ async function generateIsccDocument(
     province: string | null;
     postcode: string | null;
   },
-  templateContent: string
+  templateContent: string,
+  signatureDataURL: string | null // 签名图片的 Data URL (data:image/png;base64,xxx)
 ): Promise<Buffer> {
   // 创建新的 PizZip 实例
   const zipDoc = new PizZip(templateContent);
+
+  // 配置图片模块（按照 GitHub 文档的方式）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modules: any[] = [];
+  if (signatureDataURL) {
+    try {
+      const imageModuleOptions = {
+        centered: false,
+        fileType: "docx",
+        getImage: (tagValue: string) => {
+          const result = base64DataURLToArrayBuffer(tagValue);
+          if (result === false) {
+            throw new Error("Invalid image data URL");
+          }
+          return result;
+        },
+        getSize: (img: ArrayBuffer): [number, number] => {
+          const buffer = Buffer.from(img);
+          const dimensions = sizeOf(buffer);
+          const width = dimensions.width || 150;
+          const height = dimensions.height || 50;
+          // 固定高度 40，按比例计算宽度
+          return [(40 * width) / height, 40];
+        },
+      };
+      modules.push(new ImageModule(imageModuleOptions));
+    } catch (e) {
+      console.error("[ImageModule] Failed to create module:", e);
+    }
+  }
 
   // 创建 Docxtemplater 实例
   const doc = new Docxtemplater(zipDoc, {
     paragraphLoop: true,
     linebreaks: true,
+    modules,
   });
 
   // 使用门店导入时间，格式为 yyyy/mm/dd
@@ -161,8 +351,8 @@ async function generateIsccDocument(
   // 构造完整地址
   const fullAddress = store.address;
 
-  // 填充数据（使用公司名，如果没有则回退到简称）
-  doc.render({
+  // 构建渲染数据
+  const renderData: Record<string, unknown> = {
     storeName: store.name,
     legalPerson: store.legalPerson || "-",
     address: fullAddress || store.address,
@@ -170,7 +360,15 @@ async function generateIsccDocument(
     country: "China",
     collectionPoint: collectionPoint.companyName || collectionPoint.name,
     placeDate: placeDate,
-  });
+  };
+
+  // 只有当签名图片存在时才添加（传入 Data URL 字符串）
+  if (signatureDataURL) {
+    renderData.signature = signatureDataURL;
+  }
+
+  // 填充数据
+  doc.render(renderData);
 
   // 生成文件
   return doc.getZip().generate({
@@ -207,10 +405,15 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        // 生成签名图片 Data URL
+        const signatureName = store.legalPerson || store.name;
+        const signatureDataURL = await generateSignature(signatureName);
+
         const docxBuf = await generateIsccDocument(
           store,
           store.collectionPoint,
-          templateContent
+          templateContent,
+          signatureDataURL
         );
 
         // 转换为 PDF
@@ -279,12 +482,28 @@ export async function GET(request: NextRequest) {
         `[ISCC Export] Generating ${stores.length} Word documents...`
       );
       const docxBuffers: Buffer[] = [];
+
+      // 缓存已生成的签名，避免重复请求相同姓名的签名
+      const signatureCache = new Map<string, string | null>();
+
       for (const store of stores) {
         try {
+          // 生成或从缓存获取签名
+          const signatureName = store.legalPerson || store.name;
+          let signatureDataURL: string | null;
+
+          if (signatureCache.has(signatureName)) {
+            signatureDataURL = signatureCache.get(signatureName) || null;
+          } else {
+            signatureDataURL = await generateSignature(signatureName);
+            signatureCache.set(signatureName, signatureDataURL);
+          }
+
           const docxBuf = await generateIsccDocument(
             store,
             collectionPoint,
-            templateContent
+            templateContent,
+            signatureDataURL
           );
           docxBuffers.push(docxBuf);
         } catch (error) {
