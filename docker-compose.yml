@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  # 手写签名生成服务
+  signature:
+    build:
+      context: ./handwriting-simulator
+      dockerfile: Dockerfile
+    image: tyre-flow-signature:latest
+    container_name: tyre-flow-signature
+    restart: unless-stopped
+    ports:
+      - "${SIGNATURE_PORT:-3333}:3333"
+    volumes:
+      # 挂载字体目录，方便动态添加字体
+      - ./handwriting-simulator/fonts:/app/fonts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3333/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # PostgreSQL Database
   db:
     image: postgres:16-alpine
@@ -43,8 +63,12 @@ services:
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
       # 高德地图 API Key（用于地理编码和路径规划）
       - AMAP_API_KEY=${AMAP_API_KEY:-}
+      # 手写签名服务地址
+      - SIGNATURE_SERVICE_URL=${SIGNATURE_SERVICE_URL:-http://signature:3333}
     depends_on:
       db:
+        condition: service_healthy
+      signature:
         condition: service_healthy
     profiles:
       - internal-db
@@ -70,6 +94,11 @@ services:
       - LBS_PROVIDER=${LBS_PROVIDER:-tencent}
       - TENCENT_LBS_KEY=${TENCENT_LBS_KEY:-}
       - TENCENT_LBS_SK=${TENCENT_LBS_SK:-}
+      # 手写签名服务地址
+      - SIGNATURE_SERVICE_URL=${SIGNATURE_SERVICE_URL:-http://signature:3333}
+    depends_on:
+      signature:
+        condition: service_healthy
     profiles:
       - external-db
 
