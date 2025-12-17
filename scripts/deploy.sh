@@ -180,11 +180,14 @@ info "🏗️  开始构建 Docker 镜像..."
 if [ "$USE_SCP" = true ]; then
     APP_IMAGE="tyre-flow-app:latest"
     MIGRATE_IMAGE="tyre-flow-migrate:latest"
+    SIGNATURE_IMAGE="tyre-flow-signature:latest"
 else
     APP_IMAGE="${REGISTRY_HOST}/tyre-flow-app:${GIT_SHA}"
     APP_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-app:latest"
     MIGRATE_IMAGE="${REGISTRY_HOST}/tyre-flow-migrate:${GIT_SHA}"
     MIGRATE_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-migrate:latest"
+    SIGNATURE_IMAGE="${REGISTRY_HOST}/tyre-flow-signature:${GIT_SHA}"
+    SIGNATURE_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-signature:latest"
 fi
 
 # 构建应用镜像
@@ -203,6 +206,14 @@ else
     docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" -t "$MIGRATE_IMAGE_LATEST" .
 fi
 
+# 构建签名服务镜像
+info "构建签名服务镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" ./handwriting-simulator
+else
+    docker build --platform linux/amd64 -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" -t "$SIGNATURE_IMAGE_LATEST" ./handwriting-simulator
+fi
+
 success "镜像构建完成"
 docker images | grep tyre-flow
 
@@ -218,18 +229,22 @@ if [ "$USE_SCP" = true ]; then
     TEMP_MIGRATE_FILE=$(mktemp /tmp/tyre-flow-migrate.XXXXXX.tar.gz)
     docker save tyre-flow-migrate:latest | gzip > "$TEMP_MIGRATE_FILE"
 
-    ls -lh "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
+    TEMP_SIGNATURE_FILE=$(mktemp /tmp/tyre-flow-signature.XXXXXX.tar.gz)
+    docker save tyre-flow-signature:latest | gzip > "$TEMP_SIGNATURE_FILE"
+
+    ls -lh "$TEMP_FILE" "$TEMP_MIGRATE_FILE" "$TEMP_SIGNATURE_FILE"
     success "镜像保存完成"
 
     info "📤 传输镜像到服务器 (${SERVER_IP})..."
 
     scp -o StrictHostKeyChecking=no "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
     scp -o StrictHostKeyChecking=no "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
+    scp -o StrictHostKeyChecking=no "$TEMP_SIGNATURE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-signature.tar.gz"
 
     success "镜像传输完成"
 
     # 清理本地临时文件
-    rm -f "$TEMP_FILE" "$TEMP_MIGRATE_FILE"
+    rm -f "$TEMP_FILE" "$TEMP_MIGRATE_FILE" "$TEMP_SIGNATURE_FILE"
 else
     # ===========================================
     # Registry 模式: 增量推送到远程 Registry
@@ -269,6 +284,11 @@ REGISTRY_SETUP
     docker push "$MIGRATE_IMAGE"
     docker push "$MIGRATE_IMAGE_LATEST"
     
+    # 推送签名服务镜像
+    info "推送签名服务镜像 (只传输变化的层)..."
+    docker push "$SIGNATURE_IMAGE"
+    docker push "$SIGNATURE_IMAGE_LATEST"
+    
     success "镜像推送完成（增量传输）"
 fi
 
@@ -287,16 +307,22 @@ rm -f /tmp/tyre-flow-app.tar.gz
 echo "📥 加载迁移镜像..."
 docker load < /tmp/tyre-flow-migrate.tar.gz
 rm -f /tmp/tyre-flow-migrate.tar.gz
+
+echo "📥 加载签名服务镜像..."
+docker load < /tmp/tyre-flow-signature.tar.gz
+rm -f /tmp/tyre-flow-signature.tar.gz
 '
 else
     LOAD_IMAGES_CMD="
 echo \"📥 从 Registry 拉取镜像（增量下载）...\"
 docker pull localhost:${REGISTRY_PORT}/tyre-flow-app:latest
 docker pull localhost:${REGISTRY_PORT}/tyre-flow-migrate:latest
+docker pull localhost:${REGISTRY_PORT}/tyre-flow-signature:latest
 
 echo \"📥 重新标记镜像...\"
 docker tag localhost:${REGISTRY_PORT}/tyre-flow-app:latest tyre-flow-app:latest
 docker tag localhost:${REGISTRY_PORT}/tyre-flow-migrate:latest tyre-flow-migrate:latest
+docker tag localhost:${REGISTRY_PORT}/tyre-flow-signature:latest tyre-flow-signature:latest
 "
 fi
 
