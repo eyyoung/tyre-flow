@@ -45,7 +45,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# 创建用户时指定 home 目录，并确保目录存在
+RUN adduser --system --uid 1001 --home /home/nextjs nextjs
+RUN mkdir -p /home/nextjs/.cache && chown -R nextjs:nodejs /home/nextjs
+
+# 设置 HOME 环境变量，确保 LibreOffice 能正确写入缓存
+ENV HOME=/home/nextjs
 
 # Copy necessary files
 COPY --from=builder /app/public ./public

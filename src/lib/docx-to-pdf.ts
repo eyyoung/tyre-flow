@@ -44,9 +44,16 @@ export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
     // --headless: 无界面模式
     // --convert-to pdf: 转换为 PDF
     // --outdir: 输出目录
+    // 设置环境变量确保在容器中正常运行
+    const env = {
+      ...process.env,
+      HOME: process.env.HOME || '/tmp',
+      // 禁用 dconf 写入，避免权限问题
+      DCONF_PROFILE: '',
+    };
     await execAsync(
       `${libreOfficeCmd} --headless --convert-to pdf --outdir "${tempDir}" "${inputPath}"`,
-      { timeout: 60000 } // 60秒超时
+      { timeout: 60000, env } // 60秒超时
     );
 
     // 读取生成的 PDF 文件
