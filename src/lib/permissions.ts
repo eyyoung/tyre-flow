@@ -196,3 +196,4 @@ export function getRolePermissions(role: string | undefined): Permission[] {
   if (!role) return [];
   return rolePermissions[role] ?? [];
 }
+
