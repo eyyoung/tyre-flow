@@ -20,15 +20,22 @@ function getLibreOfficeCommand(): string {
   return 'libreoffice';
 }
 
+// 转换超时时间（毫秒）- 大文档可能需要较长时间
+const CONVERSION_TIMEOUT = 5 * 60 * 1000; // 5 分钟
+
 /**
  * 使用 LibreOffice 将 Word 文档转换为 PDF
  * @param docxBuffer - Word 文档的 Buffer
  * @returns PDF 文件的 Buffer
  */
 export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
-  // 创建临时目录
-  const tempDir = path.join(os.tmpdir(), `docx-pdf-${crypto.randomUUID()}`);
+  // 创建临时目录（同时用于文档和 LibreOffice 用户配置）
+  const sessionId = crypto.randomUUID();
+  const tempDir = path.join(os.tmpdir(), `docx-pdf-${sessionId}`);
+  const userInstallDir = path.join(os.tmpdir(), `lo-profile-${sessionId}`);
+  
   fs.mkdirSync(tempDir, { recursive: true });
+  fs.mkdirSync(userInstallDir, { recursive: true });
 
   const inputPath = path.join(tempDir, 'input.docx');
   const outputPath = path.join(tempDir, 'input.pdf');
@@ -40,10 +47,6 @@ export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
     // 获取对应平台的 LibreOffice 命令
     const libreOfficeCmd = getLibreOfficeCommand();
 
-    // 使用 LibreOffice 转换
-    // --headless: 无界面模式
-    // --convert-to pdf: 转换为 PDF
-    // --outdir: 输出目录
     // 设置环境变量确保在容器中正常运行
     const env = {
       ...process.env,
@@ -51,10 +54,30 @@ export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
       // 禁用 dconf 写入，避免权限问题
       DCONF_PROFILE: '',
     };
-    await execAsync(
-      `${libreOfficeCmd} --headless --convert-to pdf --outdir "${tempDir}" "${inputPath}"`,
-      { timeout: 60000, env } // 60秒超时
-    );
+
+    // 使用 LibreOffice 转换
+    // --headless: 无界面模式
+    // --convert-to pdf: 转换为 PDF
+    // --outdir: 输出目录
+    // -env:UserInstallation: 独立的用户配置目录，避免并发冲突
+    // --nofirststartwizard: 跳过首次启动向导
+    // --norestore: 不恢复之前的会话
+    const command = [
+      libreOfficeCmd,
+      '--headless',
+      '--nofirststartwizard',
+      '--norestore',
+      `-env:UserInstallation=file://${userInstallDir}`,
+      '--convert-to pdf',
+      `--outdir "${tempDir}"`,
+      `"${inputPath}"`,
+    ].join(' ');
+
+    await execAsync(command, { 
+      timeout: CONVERSION_TIMEOUT,
+      env,
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large outputs
+    });
 
     // 读取生成的 PDF 文件
     if (!fs.existsSync(outputPath)) {
@@ -67,6 +90,11 @@ export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer> {
     // 清理临时文件
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // 忽略清理错误
+    }
+    try {
+      fs.rmSync(userInstallDir, { recursive: true, force: true });
     } catch {
       // 忽略清理错误
     }
