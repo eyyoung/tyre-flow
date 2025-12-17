@@ -37,9 +37,14 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Install LibreOffice for Word to PDF conversion
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# fonts-liberation: Microsoft font alternatives (Arial -> Liberation Sans, etc.)
+# fonts-wqy-*: Chinese fonts
+RUN rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --fix-missing \
     libreoffice-writer \
     libreoffice-calc \
+    fonts-liberation \
     fonts-wqy-zenhei \
     fonts-wqy-microhei \
     && rm -rf /var/lib/apt/lists/*
@@ -47,10 +52,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN addgroup --system --gid 1001 nodejs
 # 创建用户时指定 home 目录，并确保目录存在
 RUN adduser --system --uid 1001 --home /home/nextjs nextjs
-RUN mkdir -p /home/nextjs/.cache && chown -R nextjs:nodejs /home/nextjs
 
-# 设置 HOME 环境变量，确保 LibreOffice 能正确写入缓存
+# 创建 LibreOffice 运行时所需的目录
+RUN mkdir -p /home/nextjs/.cache/dconf \
+    && mkdir -p /home/nextjs/.config/libreoffice \
+    && chown -R nextjs:nodejs /home/nextjs
+
+# 设置环境变量，确保 LibreOffice 能正确运行
 ENV HOME=/home/nextjs
+ENV XDG_CACHE_HOME=/home/nextjs/.cache
+ENV XDG_CONFIG_HOME=/home/nextjs/.config
 
 # Copy necessary files
 COPY --from=builder /app/public ./public
@@ -65,7 +76,7 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy node_modules for prisma
+# Copy node_modules for prisma (pre-generated with correct binary targets)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
