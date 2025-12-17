@@ -349,6 +349,32 @@ ${documentStart}
   }) as Buffer;
 }
 
+/**
+ * 计算 ISCC 签署日期
+ * 优先级：1. 缓存的签署日期 -> 2. 第一次收集日期 -> 3. 随机生成（导入时间前15-45天）
+ * @returns { signDate: Date, isNewlyCalculated: boolean }
+ */
+function calculateSignDate(
+  cachedSignDate: Date | null | undefined,
+  firstCollectionDate: Date | null | undefined,
+  storeCreatedAt: Date
+): { signDate: Date; isNewlyCalculated: boolean } {
+  // 1. 优先使用缓存的签署日期
+  if (cachedSignDate) {
+    return { signDate: cachedSignDate, isNewlyCalculated: false };
+  }
+
+  // 2. 使用第一次收集日期
+  if (firstCollectionDate) {
+    return { signDate: firstCollectionDate, isNewlyCalculated: true };
+  }
+
+  // 3. 随机生成：导入时间往前15天到45天（半个月到一个半月）
+  const daysBack = Math.floor(Math.random() * 31) + 15; // 15-45天
+  const signDate = dayjs(storeCreatedAt).subtract(daysBack, "day").toDate();
+  return { signDate, isNewlyCalculated: true };
+}
+
 // 生成单个门店的 ISCC 声明 Word 文件
 async function generateIsccDocument(
   store: {
@@ -359,7 +385,6 @@ async function generateIsccDocument(
     province: string | null;
     city: string | null;
     district: string | null;
-    createdAt: Date;
   },
   collectionPoint: {
     name: string;
@@ -369,7 +394,8 @@ async function generateIsccDocument(
     postcode: string | null;
   },
   templateContent: string,
-  signatureDataURL: string | null // 签名图片的 Data URL (data:image/png;base64,xxx)
+  signatureDataURL: string | null, // 签名图片的 Data URL (data:image/png;base64,xxx)
+  signDate: Date // ISCC 签署日期
 ): Promise<Buffer> {
   // 创建新的 PizZip 实例
   const zipDoc = new PizZip(templateContent);
@@ -411,8 +437,8 @@ async function generateIsccDocument(
     modules,
   });
 
-  // 使用门店导入时间，格式为 yyyy/mm/dd
-  const importDate = dayjs(store.createdAt).format("YYYY/MM/DD");
+  // 使用传入的签署日期
+  const importDate = dayjs(signDate).format("YYYY/MM/DD");
   // 地点精确到市
   const place = collectionPoint.city || collectionPoint.province || "China";
   const placeDate = `${place}, ${importDate}`;
@@ -498,6 +524,32 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      // 计算签署日期（优先使用缓存，其次首次收集日期，最后随机生成）
+      let firstCollectionDate: Date | null = null;
+      if (!store.isccSignDate) {
+        // 只有在没有缓存时才查询首次收集日期
+        const firstCollectionRecord = await ctx.prisma.collectionRecord.findFirst({
+          where: { storeId },
+          orderBy: { loadingTime: "asc" },
+          select: { loadingTime: true },
+        });
+        firstCollectionDate = firstCollectionRecord?.loadingTime ?? null;
+      }
+
+      const { signDate, isNewlyCalculated } = calculateSignDate(
+        store.isccSignDate,
+        firstCollectionDate,
+        store.createdAt
+      );
+
+      // 如果是新计算的签署日期，保存到数据库缓存
+      if (isNewlyCalculated) {
+        await ctx.prisma.store.update({
+          where: { id: storeId },
+          data: { isccSignDate: signDate },
+        });
+      }
+
       // 获取或创建缓存的签名
       const signatureName = store.legalPerson || store.name;
       const signatureDataURL = await getOrCreateCachedSignature(
@@ -511,7 +563,8 @@ export async function GET(request: NextRequest) {
         store,
         store.collectionPoint,
         templateContent,
-        signatureDataURL
+        signatureDataURL,
+        signDate
       );
 
       // 转换为 PDF
@@ -592,11 +645,37 @@ export async function POST(request: NextRequest) {
           // 发送开始事件
           send({ type: "start", total: stores.length });
 
+          // 筛选出没有缓存签署日期的门店，只对这些门店查询首次收集日期
+          const storesWithoutCachedDate = stores.filter(
+            (s: { isccSignDate: Date | null }) => !s.isccSignDate
+          );
+          const storeIdsWithoutCachedDate = storesWithoutCachedDate.map(
+            (s: { id: string }) => s.id
+          );
+
+          // 批量查询需要的门店的第一次收集记录时间
+          const firstCollectionDateMap = new Map<string, Date>();
+          if (storeIdsWithoutCachedDate.length > 0) {
+            const firstCollectionRecords = await ctx.prisma.collectionRecord.groupBy({
+              by: ["storeId"],
+              where: { storeId: { in: storeIdsWithoutCachedDate } },
+              _min: { loadingTime: true },
+            });
+            for (const record of firstCollectionRecords) {
+              if (record._min.loadingTime) {
+                firstCollectionDateMap.set(record.storeId, record._min.loadingTime);
+              }
+            }
+          }
+
           // 读取 Word 模板
           const templatePath = path.join(process.cwd(), "template", "ISCC.docx");
           const templateContent = fs.readFileSync(templatePath, "binary");
 
           const currentDate = dayjs().format("YYYY-MM-DD");
+
+          // 收集需要更新签署日期的门店
+          const storesToUpdateSignDate: { id: string; signDate: Date }[] = [];
 
           // 第一步：为每个门店生成 Word 文档
           console.log(`[ISCC Export] Generating ${stores.length} Word documents...`);
@@ -613,6 +692,19 @@ export async function POST(request: NextRequest) {
                 storeName: store.name,
               });
 
+              // 计算签署日期
+              const firstCollectionDate = firstCollectionDateMap.get(store.id) ?? null;
+              const { signDate, isNewlyCalculated } = calculateSignDate(
+                store.isccSignDate,
+                firstCollectionDate,
+                store.createdAt
+              );
+
+              // 记录需要更新的门店
+              if (isNewlyCalculated) {
+                storesToUpdateSignDate.push({ id: store.id, signDate });
+              }
+
               // 获取或创建缓存的签名（使用数据库缓存）
               const signatureName = store.legalPerson || store.name;
               const signatureDataURL = await getOrCreateCachedSignature(
@@ -626,7 +718,8 @@ export async function POST(request: NextRequest) {
                 store,
                 collectionPoint,
                 templateContent,
-                signatureDataURL
+                signatureDataURL,
+                signDate
               );
               docxBuffers.push(docxBuf);
             } catch (error) {
@@ -636,6 +729,19 @@ export async function POST(request: NextRequest) {
               );
               // 继续处理其他门店
             }
+          }
+
+          // 批量更新新计算的签署日期到数据库
+          if (storesToUpdateSignDate.length > 0) {
+            console.log(`[ISCC Export] Updating ${storesToUpdateSignDate.length} store sign dates...`);
+            await Promise.all(
+              storesToUpdateSignDate.map((item) =>
+                ctx.prisma.store.update({
+                  where: { id: item.id },
+                  data: { isccSignDate: item.signDate },
+                })
+              )
+            );
           }
 
           if (docxBuffers.length === 0) {

@@ -122,6 +122,7 @@ model Store {
   collectionPoint        CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
   signatureFileId        String?     @unique // ISCC 签名文件缓存
   signatureFile          SignatureFile? @relation(fields: [signatureFileId], references: [id], onDelete: SetNull)
+  isccSignDate           DateTime?   // ISCC 声明签署日期缓存
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
