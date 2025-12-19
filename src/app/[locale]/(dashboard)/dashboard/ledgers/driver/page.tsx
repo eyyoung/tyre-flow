@@ -33,6 +33,17 @@ import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
+// 获取翻译后的值
+function getTranslatedValue(
+  original: string | null | undefined,
+  translations: TranslationCache | null | undefined,
+  lang: string
+): string {
+  if (!original) return '';
+  if (lang === 'zh') return original;
+  return translations?.[lang] || original;
+}
+
 interface Driver {
   id: string;
   vehicleId: string;
@@ -48,6 +59,11 @@ interface CollectionPoint {
   name: string;
 }
 
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
+
 interface LedgerRecord {
   id: string;
   recordNo: string;
@@ -56,11 +72,13 @@ interface LedgerRecord {
   unloadingTime: string;
   type: "collection" | "transfer";
   driverName: string;
+  driverNameTranslations: TranslationCache | null;
   driverPhone: string;
   vehiclePlate: string;
   weight: number; // kg
   tireCount: number;
   storeName: string | null;
+  storeNameTranslations: TranslationCache | null;
   destination: string | null;
 }
 
@@ -241,10 +259,10 @@ export default function DriverLedgerPage() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        message.success("导出成功");
+        message.success(t("common.success"));
         setExportModalOpen(false);
       } else {
-        message.error("导出失败");
+        message.error(t("common.error"));
       }
     } catch {
       // 表单验证失败不显示错误
@@ -313,7 +331,7 @@ export default function DriverLedgerPage() {
       ),
     },
     {
-      title: "日期",
+      title: t("ledgers.collectionDate"),
       dataIndex: "date",
       key: "date",
       width: 120,
@@ -346,6 +364,7 @@ export default function DriverLedgerPage() {
       key: "driverName",
       width: 110,
       ellipsis: true,
+      render: (_, record) => getTranslatedValue(record.driverName, record.driverNameTranslations, locale),
     },
     {
       title: t("ledgers.driverPhone"),
@@ -364,7 +383,12 @@ export default function DriverLedgerPage() {
       key: "location",
       width: 200,
       ellipsis: true,
-      render: (_, record) => record.storeName || record.destination || "-",
+      render: (_, record) => {
+        if (record.storeName) {
+          return getTranslatedValue(record.storeName, record.storeNameTranslations, locale);
+        }
+        return record.destination || "-";
+      },
     },
     {
       title: t("ledgers.tireCount"),
@@ -445,7 +469,7 @@ export default function DriverLedgerPage() {
                 title={t("ledgers.totalTrips")}
                 value={summary.totalTrips}
                 prefix={<CarOutlined />}
-                suffix="趟"
+                suffix={t("ledgers.tripUnit")}
               />
             </Card>
           </Col>
@@ -499,7 +523,7 @@ export default function DriverLedgerPage() {
           <Form.Item
             name="dateRange"
             label={t("ledgers.dateRange")}
-            rules={[{ required: true, message: "请选择时间范围" }]}
+            rules={[{ required: true, message: t("ledgers.selectDateRangeRequired") }]}
           >
             <RangePicker style={{ width: "100%" }} />
           </Form.Item>
@@ -507,7 +531,7 @@ export default function DriverLedgerPage() {
           <Form.Item
             name="recordType"
             label={t("ledgers.recordType")}
-            rules={[{ required: true, message: "请选择记录类型" }]}
+            rules={[{ required: true, message: t("ledgers.selectRecordTypeRequired") }]}
           >
             <Select
               placeholder={t("ledgers.recordType")}

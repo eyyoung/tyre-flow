@@ -105,12 +105,15 @@ model SignatureFile {
 // ==================== 门店管理 ====================
 
 model Store {
-  id                     String      @id @default(cuid())
-  code                   String      @unique // 门店编码
-  name                   String
-  businessLicense        String?     // 营业执照号（统一社会信用代码）
-  legalPerson            String?     // 法人代表
-  address                String
+  id                       String      @id @default(cuid())
+  code                     String      @unique // 门店编码
+  name                     String
+  nameTranslations         Json?       // { "en": "...", "fr": "...", "de": "..." }
+  businessLicense          String?     // 营业执照号（统一社会信用代码）
+  legalPerson              String?     // 法人代表
+  legalPersonTranslations  Json?       // { "en": "...", "fr": "...", "de": "..." }
+  address                  String
+  addressTranslations      Json?       // { "en": "...", "fr": "...", "de": "..." }
   province               String?
   city                   String?
   district               String?
@@ -146,16 +149,17 @@ enum StoreStatus {
 // ==================== 车辆管理 ====================
 
 model Vehicle {
-  id                 String      @id @default(cuid())
-  plateNumber        String      @unique // 车牌号
-  type               VehicleType
-  brand              String?     // 品牌
-  model              String?     // 型号
-  tareWeight         Float       // 皮重（kg）
-  tareWeightVariance Float       @default(0.05) // 皮重随机微调范围（kg）
-  maxLoad            Float       // 最大载重（kg）
-  driverName         String?
-  driverPhone        String?
+  id                      String      @id @default(cuid())
+  plateNumber             String      @unique // 车牌号
+  type                    VehicleType
+  brand                   String?     // 品牌
+  model                   String?     // 型号
+  tareWeight              Float       // 皮重（kg）
+  tareWeightVariance      Float       @default(0.05) // 皮重随机微调范围（kg）
+  maxLoad                 Float       // 最大载重（kg）
+  driverName              String?
+  driverNameTranslations  Json?       // { "en": "...", "fr": "...", "de": "..." }
+  driverPhone             String?
   collectionPointId  String
   collectionPoint    CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
   status             Status      @default(ACTIVE)

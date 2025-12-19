@@ -34,6 +34,7 @@ import {
   ImportOutlined,
   ClearOutlined,
   CheckOutlined,
+  TranslationOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
@@ -173,6 +174,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </Link>
           ),
         },
+        {
+          key: "/dashboard/stores/translate",
+          icon: <TranslationOutlined />,
+          permission: MENU.STORES_TRANSLATE,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/stores/translate`}>
+              {t("menu.storeTranslate")}
+            </Link>
+          ),
+        },
       ],
     },
     {
@@ -198,6 +209,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           label: (
             <Link href={`/${currentLocale}/dashboard/vehicles/import`}>
               {t("menu.vehicleImport")}
+            </Link>
+          ),
+        },
+        {
+          key: "/dashboard/vehicles/translate",
+          icon: <TranslationOutlined />,
+          permission: MENU.VEHICLES_TRANSLATE,
+          label: (
+            <Link href={`/${currentLocale}/dashboard/vehicles/translate`}>
+              {t("menu.vehicleTranslate")}
             </Link>
           ),
         },

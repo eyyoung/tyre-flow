@@ -67,8 +67,8 @@ export async function GET(request: NextRequest) {
         const records = await ctx.prisma.collectionRecord.findMany({
           where: collectionWhere,
           include: {
-            vehicle: { select: { id: true, plateNumber: true, driverName: true, driverPhone: true, collectionPointId: true } },
-            store: { select: { name: true } },
+            vehicle: { select: { id: true, plateNumber: true, driverName: true, driverNameTranslations: true, driverPhone: true, collectionPointId: true } },
+            store: { select: { name: true, nameTranslations: true } },
           },
           orderBy: { collectionDate: 'desc' },
         });
@@ -81,11 +81,13 @@ export async function GET(request: NextRequest) {
           unloadingTime: r.unloadingTime,
           type: 'collection' as const,
           driverName: r.vehicle.driverName || '',
+          driverNameTranslations: r.vehicle.driverNameTranslations as Record<string, string> | null,
           driverPhone: r.vehicle.driverPhone || '',
           vehiclePlate: r.vehicle.plateNumber,
           weight: r.unloadingNetWeight,
           tireCount: r.tireCount,
           storeName: r.store.name,
+          storeNameTranslations: r.store.nameTranslations as Record<string, string> | null,
           destination: null,
         }));
       }
@@ -126,7 +128,7 @@ export async function GET(request: NextRequest) {
         const records = await ctx.prisma.transferRecord.findMany({
           where: transferWhere,
           include: {
-            vehicle: { select: { id: true, plateNumber: true, driverName: true, driverPhone: true, collectionPointId: true } },
+            vehicle: { select: { id: true, plateNumber: true, driverName: true, driverNameTranslations: true, driverPhone: true, collectionPointId: true } },
           },
           orderBy: { transferDate: 'desc' },
         });
@@ -140,11 +142,13 @@ export async function GET(request: NextRequest) {
           unloadingTime: null,
           type: 'transfer' as const,
           driverName: r.vehicle.driverName || '',
+          driverNameTranslations: r.vehicle.driverNameTranslations as Record<string, string> | null,
           driverPhone: r.vehicle.driverPhone || '',
           vehiclePlate: r.vehicle.plateNumber,
           weight: r.unloadingNetWeight,
           tireCount: r.tireCount,
           storeName: null,
+          storeNameTranslations: null,
           destination: r.destination,
         }));
       }
