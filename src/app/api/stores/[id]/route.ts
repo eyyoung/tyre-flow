@@ -51,9 +51,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       const body = await request.json();
       const {
         name,
+        nameTranslations,
         businessLicense,
         legalPerson,
+        legalPersonTranslations,
         address,
+        addressTranslations,
         province,
         city,
         district,
@@ -75,10 +78,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       const updateData: Record<string, unknown> = {};
       if (name !== undefined) updateData.name = name;
+      if (nameTranslations !== undefined) updateData.nameTranslations = nameTranslations;
       if (businessLicense !== undefined)
         updateData.businessLicense = businessLicense || null;
       if (legalPerson !== undefined) updateData.legalPerson = legalPerson || null;
+      if (legalPersonTranslations !== undefined) updateData.legalPersonTranslations = legalPersonTranslations;
       if (address !== undefined) updateData.address = address;
+      if (addressTranslations !== undefined) updateData.addressTranslations = addressTranslations;
       if (province !== undefined) updateData.province = province || null;
       if (city !== undefined) updateData.city = city || null;
       if (district !== undefined) updateData.district = district || null;

@@ -33,7 +33,7 @@ import {
   EyeOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
@@ -97,6 +97,7 @@ interface GenerationSummary {
 
 export default function TransferLedgerPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
   const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
   const { can } = useAuth();
@@ -263,7 +264,7 @@ export default function TransferLedgerPage() {
 
   const handleExport = async (id: string) => {
     try {
-      const response = await fetch(`/api/transfer-tasks/${id}/export`);
+      const response = await fetch(`/api/transfer-tasks/${id}/export?lang=${locale}`);
 
       if (response.ok) {
         const blob = await response.blob();
@@ -272,7 +273,7 @@ export default function TransferLedgerPage() {
         a.href = url;
         // 从响应头获取文件名
         const contentDisposition = response.headers.get('Content-Disposition');
-        let fileName = `转移台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        let fileName = `${t('ledgers.transferLedger')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         if (contentDisposition) {
           const match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
           if (match) {
@@ -285,10 +286,10 @@ export default function TransferLedgerPage() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        message.error('导出失败');
+        message.error(t('common.error'));
       }
     } catch {
-      message.error('导出失败');
+      message.error(t('common.error'));
     }
   };
 

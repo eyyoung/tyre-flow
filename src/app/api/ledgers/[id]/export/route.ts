@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withMiddlewares, standardMiddlewares } from "@/lib/middleware";
 import { formatDateCN } from "@/lib/timezone";
+import { getTranslatedValue, TranslationCache } from "@/lib/translations";
 import ExcelJS from "exceljs";
 
 interface RouteParams {
@@ -119,8 +120,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const collectionRecords = await ctx.prisma.collectionRecord.findMany({
           where: { taskId: id },
           include: {
-            store: { select: { code: true, name: true, address: true } },
-            vehicle: { select: { plateNumber: true } },
+            store: { 
+              select: { 
+                code: true, 
+                name: true, 
+                nameTranslations: true,
+                address: true,
+                addressTranslations: true,
+                legalPerson: true,
+                legalPersonTranslations: true,
+              } 
+            },
+            vehicle: { 
+              select: { 
+                plateNumber: true,
+                driverName: true,
+                driverNameTranslations: true,
+              } 
+            },
           },
           orderBy: { collectionDate: "asc" },
         });
@@ -154,14 +171,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         collectionRecords.forEach((record: (typeof collectionRecords)[number]) => {
           const row = collectionSheet.addRow({
             date: formatDateCN(record.collectionDate),
-            storeName: record.store.name,
+            storeName: getTranslatedValue(
+              record.store.name,
+              record.store.nameTranslations as TranslationCache | null,
+              lang
+            ),
             vehiclePlate: record.vehicle.plateNumber,
             tireCount: record.tireCount,
             loadingNetWeight: record.loadingNetWeight,
             unloadingNetWeight: record.unloadingNetWeight,
             loss: record.loss,
             remarks: record.remarks || "",
-            storeAddress: record.store.address,
+            storeAddress: getTranslatedValue(
+              record.store.address,
+              record.store.addressTranslations as TranslationCache | null,
+              lang
+            ),
           });
           row.eachCell((cell) => {
             cell.style = cellStyle;
@@ -228,7 +253,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
             if (!storeMap.has(storeId)) {
               storeMap.set(storeId, {
-                name: record.store.name,
+                name: getTranslatedValue(
+                  record.store.name,
+                  record.store.nameTranslations as TranslationCache | null,
+                  lang
+                ),
                 dateData: new Map(),
               });
             }

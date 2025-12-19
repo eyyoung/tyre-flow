@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
+import { getTranslatedValue } from '@/lib/translations';
 
 // 获取司机列表（从车辆中提取）
 export async function GET(request: NextRequest) {
@@ -7,6 +8,7 @@ export async function GET(request: NextRequest) {
     try {
       const { searchParams } = new URL(request.url);
       const collectionPointId = searchParams.get('collectionPointId') || '';
+      const lang = searchParams.get('lang') || 'zh';
 
       const where: Record<string, unknown> = {
         driverName: { not: null },
@@ -23,6 +25,7 @@ export async function GET(request: NextRequest) {
           id: true,
           plateNumber: true,
           driverName: true,
+          driverNameTranslations: true,
           driverPhone: true,
           type: true,
           collectionPoint: {
@@ -44,11 +47,18 @@ export async function GET(request: NextRequest) {
 
       for (const v of vehicles) {
         const key = `${v.driverName}-${v.driverPhone}`;
+        // 获取翻译后的司机姓名
+        const translatedName = getTranslatedValue(
+          v.driverName,
+          v.driverNameTranslations as Record<string, string> | null,
+          lang
+        );
+        
         if (!driverMap.has(key)) {
           driverMap.set(key, {
             id: v.id,
             vehicleId: v.id,
-            name: v.driverName || '',
+            name: translatedName || '',
             phone: v.driverPhone || '',
             vehicles: [],
             collectionPointName: v.collectionPoint.name,

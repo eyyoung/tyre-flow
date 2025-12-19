@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withMiddlewares, standardMiddlewares } from "@/lib/middleware";
 import { formatDateCN } from "@/lib/timezone";
+import { getTranslatedValue } from "@/lib/translations";
 import ExcelJS from "exceljs";
 
 // 记录类型定义
@@ -60,25 +61,94 @@ const cellStyle: Partial<ExcelJS.Style> = {
   },
 };
 
+// 多语言标签类型
+interface Labels {
+  recordNo: string;
+  date: string;
+  driverName: string;
+  driverPhone: string;
+  vehiclePlate: string;
+  storeName: string;
+  tireCount: string;
+  loadingNetWeight: string;
+  unloadingNetWeight: string;
+  loss: string;
+  destination: string;
+  grossWeight: string;
+  tareWeight: string;
+  weighbridgeNo: string;
+  total: string;
+  collectionRecords: string;
+  transferRecords: string;
+  collectionSummary: string;
+  transferSummary: string;
+}
+
+// 获取多语言标签
+function getLabels(lang: string): Labels {
+  return lang === 'zh' ? {
+    recordNo: '记录编号',
+    date: '日期',
+    driverName: '司机姓名',
+    driverPhone: '司机电话',
+    vehiclePlate: '车牌号',
+    storeName: '门店',
+    tireCount: '轮胎条数',
+    loadingNetWeight: '装车净重（kg）',
+    unloadingNetWeight: '卸车净重（kg）',
+    loss: '折损（kg）',
+    destination: '目的地',
+    grossWeight: '毛重（kg）',
+    tareWeight: '皮重（kg）',
+    weighbridgeNo: '磅单号',
+    total: '合计',
+    collectionRecords: '【收集记录】',
+    transferRecords: '【转移记录】',
+    collectionSummary: '收集记录汇总',
+    transferSummary: '转移记录汇总',
+  } : {
+    recordNo: 'Record No.',
+    date: 'Date',
+    driverName: 'Driver Name',
+    driverPhone: 'Driver Phone',
+    vehiclePlate: 'Vehicle Plate',
+    storeName: 'Store',
+    tireCount: 'Tire Count',
+    loadingNetWeight: 'Loading Net (kg)',
+    unloadingNetWeight: 'Unloading Net (kg)',
+    loss: 'Loss (kg)',
+    destination: 'Destination',
+    grossWeight: 'Gross (kg)',
+    tareWeight: 'Tare (kg)',
+    weighbridgeNo: 'Weighbridge No.',
+    total: 'Total',
+    collectionRecords: '【Collection Records】',
+    transferRecords: '【Transfer Records】',
+    collectionSummary: 'Collection Summary',
+    transferSummary: 'Transfer Summary',
+  };
+}
+
 // 添加收集记录到工作表的辅助函数
 function addCollectionRecordsToSheet(
   sheet: ExcelJS.Worksheet,
   records: CollectionRecord[],
+  labels: Labels,
   startRow: number = 1,
   addHeader: boolean = true
 ): number {
   if (addHeader) {
     sheet.columns = [
-      { header: "记录编号", key: "recordNo", width: 25 },
-      { header: "日期", key: "date", width: 12 },
-      { header: "司机姓名", key: "driverName", width: 12 },
-      { header: "司机电话", key: "driverPhone", width: 15 },
-      { header: "车牌号", key: "vehiclePlate", width: 12 },
-      { header: "门店", key: "storeName", width: 25 },
-      { header: "轮胎条数", key: "tireCount", width: 10 },
-      { header: "装车净重（kg）", key: "loadingNetWeight", width: 15 },
-      { header: "卸车净重（kg）", key: "unloadingNetWeight", width: 15 },
-      { header: "折损（kg）", key: "loss", width: 12 },
+      { header: labels.recordNo, key: "recordNo", width: 25 },
+      { header: labels.date, key: "date", width: 12 },
+      { header: labels.driverName, key: "driverName", width: 12 },
+      { header: labels.driverPhone, key: "driverPhone", width: 15 },
+      { header: labels.vehiclePlate, key: "vehiclePlate", width: 12 },
+      { header: labels.storeName, key: "storeName", width: 25 },
+      { header: labels.tireCount, key: "tireCount", width: 10 },
+      { header: labels.loadingNetWeight, key: "loadingNetWeight", width: 15 },
+      { header: labels.unloadingNetWeight, key: "unloadingNetWeight", width: 15 },
+      { header: labels.loss, key: "loss", width: 12 },
     ];
     sheet.getRow(startRow).eachCell((cell) => {
       cell.style = headerStyle;
@@ -112,7 +182,7 @@ function addCollectionRecordsToSheet(
     );
     const totalLoss = records.reduce((sum, r) => sum + r.loss, 0);
     const totalRow = sheet.addRow({
-      recordNo: "合计",
+      recordNo: labels.total,
       tireCount: records.reduce((sum, r) => sum + r.tireCount, 0),
       unloadingNetWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
       loss: parseFloat(totalLoss.toFixed(2)),
@@ -127,24 +197,25 @@ function addCollectionRecordsToSheet(
 function addTransferRecordsToSheet(
   sheet: ExcelJS.Worksheet,
   records: TransferRecord[],
+  labels: Labels,
   startRow: number = 1,
   addHeader: boolean = true
 ): number {
   if (addHeader) {
     sheet.columns = [
-      { header: "记录编号", key: "recordNo", width: 25 },
-      { header: "日期", key: "date", width: 12 },
-      { header: "司机姓名", key: "driverName", width: 12 },
-      { header: "司机电话", key: "driverPhone", width: 15 },
-      { header: "车牌号", key: "vehiclePlate", width: 12 },
-      { header: "目的地", key: "destination", width: 20 },
-      { header: "轮胎条数", key: "tireCount", width: 10 },
-      { header: "装车净重（kg）", key: "loadingNetWeight", width: 15 },
-      { header: "毛重（kg）", key: "grossWeight", width: 12 },
-      { header: "皮重（kg）", key: "tareWeight", width: 12 },
-      { header: "卸车净重（kg）", key: "unloadingNetWeight", width: 15 },
-      { header: "折损（kg）", key: "loss", width: 12 },
-      { header: "磅单号", key: "weighbridgeNo", width: 18 },
+      { header: labels.recordNo, key: "recordNo", width: 25 },
+      { header: labels.date, key: "date", width: 12 },
+      { header: labels.driverName, key: "driverName", width: 12 },
+      { header: labels.driverPhone, key: "driverPhone", width: 15 },
+      { header: labels.vehiclePlate, key: "vehiclePlate", width: 12 },
+      { header: labels.destination, key: "destination", width: 20 },
+      { header: labels.tireCount, key: "tireCount", width: 10 },
+      { header: labels.loadingNetWeight, key: "loadingNetWeight", width: 15 },
+      { header: labels.grossWeight, key: "grossWeight", width: 12 },
+      { header: labels.tareWeight, key: "tareWeight", width: 12 },
+      { header: labels.unloadingNetWeight, key: "unloadingNetWeight", width: 15 },
+      { header: labels.loss, key: "loss", width: 12 },
+      { header: labels.weighbridgeNo, key: "weighbridgeNo", width: 18 },
     ];
     sheet.getRow(startRow).eachCell((cell) => {
       cell.style = headerStyle;
@@ -181,7 +252,7 @@ function addTransferRecordsToSheet(
     );
     const totalLoss = records.reduce((sum, r) => sum + r.loss, 0);
     const totalRow = sheet.addRow({
-      recordNo: "合计",
+      recordNo: labels.total,
       tireCount: records.reduce((sum, r) => sum + r.tireCount, 0),
       unloadingNetWeight: parseFloat(totalUnloadingWeight.toFixed(2)),
       loss: parseFloat(totalLoss.toFixed(2)),
@@ -208,6 +279,10 @@ export async function GET(request: NextRequest) {
       const recordType = searchParams.get("recordType") || "all";
       const startDate = searchParams.get("startDate") || "";
       const endDate = searchParams.get("endDate") || "";
+      const lang = searchParams.get("lang") || "zh";
+      
+      // 获取多语言标签
+      const labels = getLabels(lang);
 
       // 构建日期条件
       // 用户输入的日期代表中国时区（UTC+8）的那一天
@@ -227,11 +302,15 @@ export async function GET(request: NextRequest) {
       if (driverId) {
         const vehicle = await ctx.prisma.vehicle.findUnique({
           where: { id: driverId },
-          select: { driverName: true, driverPhone: true },
+          select: { driverName: true, driverNameTranslations: true, driverPhone: true },
         });
         if (vehicle) {
           driverInfo = {
-            name: vehicle.driverName || "",
+            name: getTranslatedValue(
+              vehicle.driverName,
+              vehicle.driverNameTranslations as Record<string, string> | null,
+              lang
+            ) || "",
             phone: vehicle.driverPhone || "",
           };
         }
@@ -259,9 +338,19 @@ export async function GET(request: NextRequest) {
           where: collectionWhere,
           include: {
             vehicle: {
-              select: { plateNumber: true, driverName: true, driverPhone: true },
+              select: { 
+                plateNumber: true, 
+                driverName: true, 
+                driverNameTranslations: true,
+                driverPhone: true,
+              },
             },
-            store: { select: { name: true } },
+            store: { 
+              select: { 
+                name: true,
+                nameTranslations: true,
+              } 
+            },
           },
           orderBy: { collectionDate: "asc" },
         });
@@ -271,10 +360,18 @@ export async function GET(request: NextRequest) {
           date: r.collectionDate,
           loadingTime: r.loadingTime,
           unloadingTime: r.unloadingTime,
-          driverName: r.vehicle.driverName || "",
+          driverName: getTranslatedValue(
+            r.vehicle.driverName,
+            r.vehicle.driverNameTranslations as Record<string, string> | null,
+            lang
+          ) || "",
           driverPhone: r.vehicle.driverPhone || "",
           vehiclePlate: r.vehicle.plateNumber,
-          storeName: r.store.name,
+          storeName: getTranslatedValue(
+            r.store.name,
+            r.store.nameTranslations as Record<string, string> | null,
+            lang
+          ),
           tireCount: r.tireCount,
           loadingNetWeight: r.loadingNetWeight,
           unloadingNetWeight: r.unloadingNetWeight,
@@ -304,7 +401,12 @@ export async function GET(request: NextRequest) {
           where: transferWhere,
           include: {
             vehicle: {
-              select: { plateNumber: true, driverName: true, driverPhone: true },
+              select: { 
+                plateNumber: true, 
+                driverName: true, 
+                driverNameTranslations: true,
+                driverPhone: true,
+              },
             },
           },
           orderBy: { transferDate: "asc" },
@@ -316,7 +418,11 @@ export async function GET(request: NextRequest) {
           // TransferRecord 只有 transferDate，用它作为时间参考
           loadingTime: r.transferDate,
           unloadingTime: null,
-          driverName: r.vehicle.driverName || "",
+          driverName: getTranslatedValue(
+            r.vehicle.driverName,
+            r.vehicle.driverNameTranslations as Record<string, string> | null,
+            lang
+          ) || "",
           driverPhone: r.vehicle.driverPhone || "",
           vehiclePlate: r.vehicle.plateNumber,
           destination: r.destination,
@@ -379,14 +485,14 @@ export async function GET(request: NextRequest) {
 
       // 1. 创建主表（收集记录汇总）
       if (collectionRecords.length > 0) {
-        const mainCollectionSheet = workbook.addWorksheet("收集记录汇总");
-        addCollectionRecordsToSheet(mainCollectionSheet, collectionRecords);
+        const mainCollectionSheet = workbook.addWorksheet(labels.collectionSummary);
+        addCollectionRecordsToSheet(mainCollectionSheet, collectionRecords, labels);
       }
 
       // 2. 创建主表（转移记录汇总）
       if (transferRecords.length > 0) {
-        const mainTransferSheet = workbook.addWorksheet("转移记录汇总");
-        addTransferRecordsToSheet(mainTransferSheet, transferRecords);
+        const mainTransferSheet = workbook.addWorksheet(labels.transferSummary);
+        addTransferRecordsToSheet(mainTransferSheet, transferRecords, labels);
       }
 
       // 3. 为每个司机创建独立的子表
@@ -422,7 +528,7 @@ export async function GET(request: NextRequest) {
         if (driverCollection.length > 0) {
           // 添加标题
           const titleRow = driverSheet.getRow(currentRow);
-          titleRow.getCell(1).value = "【收集记录】";
+          titleRow.getCell(1).value = labels.collectionRecords;
           titleRow.getCell(1).font = { bold: true, size: 14 };
           titleRow.height = 25;
           currentRow++;
@@ -444,16 +550,16 @@ export async function GET(request: NextRequest) {
           // 添加表头
           const headerRowCollection = driverSheet.getRow(currentRow);
           headerRowCollection.values = [
-            "记录编号",
-            "日期",
-            "司机姓名",
-            "司机电话",
-            "车牌号",
-            "门店",
-            "轮胎条数",
-            "装车净重（kg）",
-            "卸车净重（kg）",
-            "折损（kg）",
+            labels.recordNo,
+            labels.date,
+            labels.driverName,
+            labels.driverPhone,
+            labels.vehiclePlate,
+            labels.storeName,
+            labels.tireCount,
+            labels.loadingNetWeight,
+            labels.unloadingNetWeight,
+            labels.loss,
           ];
           headerRowCollection.eachCell((cell) => {
             cell.style = headerStyle;
@@ -489,7 +595,7 @@ export async function GET(request: NextRequest) {
           );
           const totalLoss = driverCollection.reduce((sum, r) => sum + r.loss, 0);
           const totalRow = driverSheet.getRow(currentRow);
-          totalRow.getCell(1).value = "合计";
+          totalRow.getCell(1).value = labels.total;
           totalRow.getCell(7).value = driverCollection.reduce(
             (sum, r) => sum + r.tireCount,
             0
@@ -504,7 +610,7 @@ export async function GET(request: NextRequest) {
         if (driverTransfer.length > 0) {
           // 添加标题
           const titleRow = driverSheet.getRow(currentRow);
-          titleRow.getCell(1).value = "【转移记录】";
+          titleRow.getCell(1).value = labels.transferRecords;
           titleRow.getCell(1).font = { bold: true, size: 14 };
           titleRow.height = 25;
           currentRow++;
@@ -512,19 +618,19 @@ export async function GET(request: NextRequest) {
           // 添加表头
           const headerRowTransfer = driverSheet.getRow(currentRow);
           headerRowTransfer.values = [
-            "记录编号",
-            "日期",
-            "司机姓名",
-            "司机电话",
-            "车牌号",
-            "目的地",
-            "轮胎条数",
-            "装车净重（kg）",
-            "毛重（kg）",
-            "皮重（kg）",
-            "卸车净重（kg）",
-            "折损（kg）",
-            "磅单号",
+            labels.recordNo,
+            labels.date,
+            labels.driverName,
+            labels.driverPhone,
+            labels.vehiclePlate,
+            labels.destination,
+            labels.tireCount,
+            labels.loadingNetWeight,
+            labels.grossWeight,
+            labels.tareWeight,
+            labels.unloadingNetWeight,
+            labels.loss,
+            labels.weighbridgeNo,
           ];
           headerRowTransfer.eachCell((cell) => {
             cell.style = headerStyle;
@@ -563,7 +669,7 @@ export async function GET(request: NextRequest) {
           );
           const totalLoss = driverTransfer.reduce((sum, r) => sum + r.loss, 0);
           const totalRow = driverSheet.getRow(currentRow);
-          totalRow.getCell(1).value = "合计";
+          totalRow.getCell(1).value = labels.total;
           totalRow.getCell(7).value = driverTransfer.reduce(
             (sum, r) => sum + r.tireCount,
             0
@@ -584,14 +690,29 @@ export async function GET(request: NextRequest) {
         startDate && endDate
           ? `${startDate}_${endDate}`
           : new Date().toISOString().slice(0, 10);
-      const driverName = driverInfo?.name || "全部司机";
+      
+      const fileNameLabels = lang === 'zh' ? {
+        driverLedger: '司机台账',
+        allDrivers: '全部司机',
+        allRecords: '全部记录',
+        collectionRecords: '收集记录',
+        transferRecords: '转移记录',
+      } : {
+        driverLedger: 'Driver_Ledger',
+        allDrivers: 'All_Drivers',
+        allRecords: 'All_Records',
+        collectionRecords: 'Collection_Records',
+        transferRecords: 'Transfer_Records',
+      };
+      
+      const driverName = driverInfo?.name || fileNameLabels.allDrivers;
       const recordTypeLabel =
         recordType === "all"
-          ? "全部记录"
+          ? fileNameLabels.allRecords
           : recordType === "collection"
-          ? "收集记录"
-          : "转移记录";
-      const fileName = `司机台账_${driverName}_${dateRange}_${recordTypeLabel}.xlsx`;
+          ? fileNameLabels.collectionRecords
+          : fileNameLabels.transferRecords;
+      const fileName = `${fileNameLabels.driverLedger}_${driverName}_${dateRange}_${recordTypeLabel}.xlsx`;
       const encodedFileName = encodeURIComponent(fileName);
 
       return new NextResponse(buffer, {

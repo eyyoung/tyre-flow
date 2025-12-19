@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { formatDateCN } from '@/lib/timezone';
+import { getTranslatedValue } from '@/lib/translations';
 import ExcelJS from 'exceljs';
 
 interface RouteParams {
@@ -11,6 +12,8 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const lang = searchParams.get('lang') || 'zh';
 
     // 获取任务信息
     const task = await prisma.transferTask.findUnique({
@@ -28,7 +31,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const transferRecords = await prisma.transferRecord.findMany({
       where: { taskId: id },
       include: {
-        vehicle: { select: { plateNumber: true, driverName: true, driverPhone: true } },
+        vehicle: { 
+          select: { 
+            plateNumber: true, 
+            driverName: true, 
+            driverNameTranslations: true,
+            driverPhone: true,
+          } 
+        },
       },
       orderBy: { transferDate: 'asc' },
     });
@@ -61,23 +71,56 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     };
 
+    // 多语言标签
+    const labels = lang === 'zh' ? {
+      sheetName: '转移台账',
+      recordNo: '记录编号',
+      date: '日期',
+      vehiclePlate: '车牌号',
+      driverName: '司机姓名',
+      driverPhone: '司机电话',
+      tireCount: '轮胎条数',
+      loadingNetWeight: '装车净重（kg）',
+      grossWeight: '毛重（kg）',
+      tareWeight: '皮重（kg）',
+      unloadingNetWeight: '卸车净重（kg）',
+      loss: '折损（kg）',
+      weighbridgeNo: '磅单号',
+      total: '合计',
+    } : {
+      sheetName: 'Transfer Records',
+      recordNo: 'Record No.',
+      date: 'Date',
+      vehiclePlate: 'Vehicle Plate',
+      driverName: 'Driver Name',
+      driverPhone: 'Driver Phone',
+      tireCount: 'Tire Count',
+      loadingNetWeight: 'Loading Net (kg)',
+      grossWeight: 'Gross (kg)',
+      tareWeight: 'Tare (kg)',
+      unloadingNetWeight: 'Unloading Net (kg)',
+      loss: 'Loss (kg)',
+      weighbridgeNo: 'Weighbridge No.',
+      total: 'Total',
+    };
+
     // 创建工作表
-    const sheet = workbook.addWorksheet('转移台账');
+    const sheet = workbook.addWorksheet(labels.sheetName);
 
     // 设置列
     sheet.columns = [
-      { header: '记录编号', key: 'recordNo', width: 25 },
-      { header: '日期', key: 'date', width: 12 },
-      { header: '车牌号', key: 'vehiclePlate', width: 12 },
-      { header: '司机姓名', key: 'driverName', width: 12 },
-      { header: '司机电话', key: 'driverPhone', width: 15 },
-      { header: '轮胎条数', key: 'tireCount', width: 10 },
-      { header: '装车净重（kg）', key: 'loadingNetWeight', width: 15 },
-      { header: '毛重（kg）', key: 'grossWeight', width: 12 },
-      { header: '皮重（kg）', key: 'tareWeight', width: 12 },
-      { header: '卸车净重（kg）', key: 'unloadingNetWeight', width: 15 },
-      { header: '折损（kg）', key: 'loss', width: 12 },
-      { header: '磅单号', key: 'weighbridgeNo', width: 18 },
+      { header: labels.recordNo, key: 'recordNo', width: 25 },
+      { header: labels.date, key: 'date', width: 12 },
+      { header: labels.vehiclePlate, key: 'vehiclePlate', width: 12 },
+      { header: labels.driverName, key: 'driverName', width: 12 },
+      { header: labels.driverPhone, key: 'driverPhone', width: 15 },
+      { header: labels.tireCount, key: 'tireCount', width: 10 },
+      { header: labels.loadingNetWeight, key: 'loadingNetWeight', width: 15 },
+      { header: labels.grossWeight, key: 'grossWeight', width: 12 },
+      { header: labels.tareWeight, key: 'tareWeight', width: 12 },
+      { header: labels.unloadingNetWeight, key: 'unloadingNetWeight', width: 15 },
+      { header: labels.loss, key: 'loss', width: 12 },
+      { header: labels.weighbridgeNo, key: 'weighbridgeNo', width: 18 },
     ];
 
     // 设置表头样式
@@ -88,11 +131,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // 添加数据
     transferRecords.forEach((record) => {
+      // 获取翻译后的司机姓名
+      const driverName = getTranslatedValue(
+        record.vehicle.driverName,
+        record.vehicle.driverNameTranslations as Record<string, string> | null,
+        lang
+      );
+
       const row = sheet.addRow({
         recordNo: record.recordNo,
         date: formatDateCN(record.transferDate),
         vehiclePlate: record.vehicle.plateNumber,
-        driverName: record.vehicle.driverName || '',
+        driverName: driverName || '',
         driverPhone: record.vehicle.driverPhone || '',
         tireCount: record.tireCount,
         loadingNetWeight: record.loadingNetWeight,
@@ -114,7 +164,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const totalLoss = transferRecords.reduce((sum, r) => sum + r.loss, 0);
     
     const totalRow = sheet.addRow({
-      recordNo: '合计',
+      recordNo: labels.total,
       tireCount: totalTireCount,
       loadingNetWeight: parseFloat(totalLoadingWeight.toFixed(2)),
       unloadingNetWeight: parseFloat(totalUnloadingWeight.toFixed(2)),

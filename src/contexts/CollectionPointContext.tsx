@@ -8,11 +8,18 @@ import React, {
   useCallback,
   ReactNode,
 } from "react";
+import { useLocale } from "next-intl";
+
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
 
 interface CollectionPoint {
   id: string;
   code: string;
   name: string;
+  nameTranslations?: TranslationCache | null;
 }
 
 interface CollectionPointContextType {
@@ -21,6 +28,7 @@ interface CollectionPointContextType {
   setCurrentCollectionPoint: (cp: CollectionPoint | null) => void;
   loading: boolean;
   refetch: () => Promise<void>;
+  getTranslatedName: (cp: CollectionPoint | null) => string;
 }
 
 const CollectionPointContext = createContext<CollectionPointContextType | null>(
@@ -30,12 +38,20 @@ const CollectionPointContext = createContext<CollectionPointContextType | null>(
 const STORAGE_KEY = "tyre-flow-current-cp";
 
 export function CollectionPointProvider({ children }: { children: ReactNode }) {
+  const locale = useLocale();
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(
     []
   );
   const [currentCollectionPoint, setCurrentCollectionPointState] =
     useState<CollectionPoint | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // 获取翻译后的收集点名称
+  const getTranslatedName = useCallback((cp: CollectionPoint | null): string => {
+    if (!cp) return '';
+    if (locale === 'zh') return cp.name;
+    return cp.nameTranslations?.[locale] || cp.name;
+  }, [locale]);
 
   // 当收集点列表加载完成后，设置默认收集点
   useEffect(() => {
@@ -99,6 +115,7 @@ export function CollectionPointProvider({ children }: { children: ReactNode }) {
         setCurrentCollectionPoint,
         loading,
         refetch: fetchCollectionPoints,
+        getTranslatedName,
       }}
     >
       {children}

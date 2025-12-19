@@ -8,6 +8,7 @@ import JSZip from "jszip";
 import dayjs from "dayjs";
 import { convertDocxToPdf } from "@/lib/docx-to-pdf";
 import sizeOf from "image-size";
+import { getTranslatedValue, type TranslationCache } from "@/lib/translations";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ImageModule = require("docxtemplater-image-module-free");
 
@@ -380,22 +381,29 @@ async function generateIsccDocument(
   store: {
     code: string;
     name: string;
+    nameTranslations?: TranslationCache | null;
     legalPerson: string | null;
+    legalPersonTranslations?: TranslationCache | null;
     address: string;
+    addressTranslations?: TranslationCache | null;
     province: string | null;
     city: string | null;
     district: string | null;
   },
   collectionPoint: {
     name: string;
+    nameTranslations?: TranslationCache | null;
     companyName: string | null;
+    companyNameTranslations?: TranslationCache | null;
     city: string | null;
+    cityTranslations?: TranslationCache | null;
     province: string | null;
     postcode: string | null;
   },
   templateContent: string,
   signatureDataURL: string | null, // 签名图片的 Data URL (data:image/png;base64,xxx)
-  signDate: Date // ISCC 签署日期
+  signDate: Date, // ISCC 签署日期
+  lang: string = 'zh' // 导出语言
 ): Promise<Buffer> {
   // 创建新的 PizZip 实例
   const zipDoc = new PizZip(templateContent);
@@ -439,27 +447,38 @@ async function generateIsccDocument(
 
   // 使用传入的签署日期
   const importDate = dayjs(signDate).format("YYYY/MM/DD");
-  // 地点精确到市
-  const place = collectionPoint.city || collectionPoint.province || "China";
+  // 地点精确到市（使用翻译后的值）
+  const translatedCity = collectionPoint.city 
+    ? getTranslatedValue(collectionPoint.city, collectionPoint.cityTranslations, lang)
+    : null;
+  const place = translatedCity || collectionPoint.province || "China";
   const placeDate = `${place}, ${importDate}`;
 
-  // 邮编+城市
+  // 邮编+城市（使用翻译后的值）
   const postcodeCity =
-    [collectionPoint.postcode, collectionPoint.city]
+    [collectionPoint.postcode, translatedCity]
       .filter(Boolean)
       .join(", ") || "-";
 
-  // 构造完整地址
-  const fullAddress = store.address;
+  // 构造完整地址（使用翻译后的值）
+  const fullAddress = getTranslatedValue(store.address, store.addressTranslations, lang);
+
+  // 获取翻译后的收集点名称/公司名称
+  const cpCompanyName = collectionPoint.companyName 
+    ? getTranslatedValue(collectionPoint.companyName, collectionPoint.companyNameTranslations, lang)
+    : null;
+  const cpName = getTranslatedValue(collectionPoint.name, collectionPoint.nameTranslations, lang);
 
   // 构建渲染数据
   const renderData: Record<string, unknown> = {
-    storeName: store.name,
-    legalPerson: store.legalPerson || "-",
-    address: fullAddress || store.address,
+    storeName: getTranslatedValue(store.name, store.nameTranslations, lang),
+    legalPerson: store.legalPerson 
+      ? getTranslatedValue(store.legalPerson, store.legalPersonTranslations, lang)
+      : "-",
+    address: fullAddress,
     postcodeCity: postcodeCity,
     country: "China",
-    collectionPoint: collectionPoint.companyName || collectionPoint.name,
+    collectionPoint: cpCompanyName || cpName,
     placeDate: placeDate,
   };
 
@@ -498,6 +517,7 @@ export async function GET(request: NextRequest) {
     try {
       const { searchParams } = new URL(request.url);
       const storeId = searchParams.get("storeId");
+      const lang = searchParams.get("lang") || "zh";
 
       if (!storeId) {
         return NextResponse.json(
@@ -513,7 +533,18 @@ export async function GET(request: NextRequest) {
       const store = await ctx.prisma.store.findUnique({
         where: { id: storeId },
         include: {
-          collectionPoint: true,
+          collectionPoint: {
+            select: {
+              name: true,
+              nameTranslations: true,
+              companyName: true,
+              companyNameTranslations: true,
+              city: true,
+              cityTranslations: true,
+              province: true,
+              postcode: true,
+            },
+          },
         },
       });
 
@@ -564,12 +595,14 @@ export async function GET(request: NextRequest) {
         store.collectionPoint,
         templateContent,
         signatureDataURL,
-        signDate
+        signDate,
+        lang
       );
 
       // 转换为 PDF
       const pdfBuf = await convertDocxToPdf(docxBuf);
-      const fileName = `ISCC_${store.name.replace(
+      const translatedStoreName = getTranslatedValue(store.name, store.nameTranslations, lang);
+      const fileName = `ISCC_${translatedStoreName.replace(
         /[/\\?%*:|"<>]/g,
         "_"
       )}.pdf`;
@@ -608,6 +641,7 @@ export async function POST(request: NextRequest) {
         try {
           const body = await request.json();
           const collectionPointId = body.collectionPointId;
+          const lang = body.lang || "zh";
 
           if (!collectionPointId) {
             send({ type: "error", message: "Collection point ID is required" });
@@ -618,6 +652,18 @@ export async function POST(request: NextRequest) {
           // 获取收集点信息（通过 ctx.prisma 自动应用收集点过滤）
           const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
             where: { id: collectionPointId },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              nameTranslations: true,
+              companyName: true,
+              companyNameTranslations: true,
+              city: true,
+              cityTranslations: true,
+              province: true,
+              postcode: true,
+            },
           });
 
           if (!collectionPoint) {
@@ -632,6 +678,22 @@ export async function POST(request: NextRequest) {
               collectionPointId,
               status: "ACTIVE",
               isVirtual: false,
+            },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              nameTranslations: true,
+              legalPerson: true,
+              legalPersonTranslations: true,
+              address: true,
+              addressTranslations: true,
+              province: true,
+              city: true,
+              district: true,
+              isccSignDate: true,
+              signatureFileId: true,
+              createdAt: true,
             },
             orderBy: { code: "asc" },
           });
@@ -689,7 +751,7 @@ export async function POST(request: NextRequest) {
                 type: "generating",
                 current: i + 1,
                 total: stores.length,
-                storeName: store.name,
+                storeName: getTranslatedValue(store.name, store.nameTranslations, lang),
               });
 
               // 计算签署日期
@@ -719,7 +781,8 @@ export async function POST(request: NextRequest) {
                 collectionPoint,
                 templateContent,
                 signatureDataURL,
-                signDate
+                signDate,
+                lang
               );
               docxBuffers.push(docxBuf);
             } catch (error) {
@@ -790,10 +853,11 @@ export async function POST(request: NextRequest) {
               // 将合并后的 Word 转换为 PDF（只调用一次 LibreOffice）
               const pdfBuf = await convertDocxToPdf(mergedDocx);
 
+              const cpNameForBatch = getTranslatedValue(collectionPoint.name, collectionPoint.nameTranslations, lang);
               const batchName =
                 totalBatches === 1
-                  ? `ISCC_${collectionPoint.name}_${currentDate}.pdf`
-                  : `ISCC_${collectionPoint.name}_${currentDate}_${
+                  ? `ISCC_${cpNameForBatch}_${currentDate}.pdf`
+                  : `ISCC_${cpNameForBatch}_${currentDate}_${
                       batchIndex + 1
                     }.pdf`;
 
@@ -835,7 +899,8 @@ export async function POST(request: NextRequest) {
               compressionOptions: { level: 9 },
             });
 
-            finalFileName = `ISCC_${collectionPoint.name}_${currentDate}.zip`;
+            const cpNameForFile = getTranslatedValue(collectionPoint.name, collectionPoint.nameTranslations, lang);
+            finalFileName = `ISCC_${cpNameForFile}_${currentDate}.zip`;
             finalFileType = "application/zip";
           }
 

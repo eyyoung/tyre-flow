@@ -24,6 +24,7 @@
     "updatedAt": "Updated At",
     "success": "Operation successful",
     "error": "Operation failed",
+    "language": "Language",
     "yes": "Yes",
     "no": "No",
     "all": "All",
@@ -132,7 +133,8 @@
     "resettingGeocode": "Locating...",
     "resetGeocodeConfirm": "Are you sure you want to get new coordinates based on the address?",
     "resetGeocodeSuccess": "Coordinates updated successfully",
-    "resetGeocodeFailed": "Failed to update coordinates"
+    "resetGeocodeFailed": "Failed to update coordinates",
+    "translationSection": "Translations (for export)"
   },
   "stores": {
     "title": "Store Management",
@@ -190,7 +192,9 @@
       "generating": "Generating documents",
       "merging": "Merging documents",
       "converting": "Converting to PDF"
-    }
+    },
+    "exportFileName": "Store_List",
+    "translationSection": "Translations (for export)"
   },
   "vehicles": {
     "title": "Vehicle Management",
@@ -215,7 +219,8 @@
     "batchUpdateOptional": "Leave empty to keep original value",
     "batchUpdateKeepOriginal": "Keep original",
     "batchUpdateAtLeastOne": "At least one of tare weight or max load must be provided",
-    "batchUpdateSuccess": "Successfully updated {count} vehicles"
+    "batchUpdateSuccess": "Successfully updated {count} vehicles",
+    "translationSection": "Translations (for export)"
   },
   "settings": {
     "title": "System Settings",
@@ -343,7 +348,11 @@
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "Calculating suggestions...",
     "selectDateFirst": "Please select date range first",
-    "timeOfDay": "Time"
+    "timeOfDay": "Time",
+    "collectionLedgerFileName": "Collection_Ledger",
+    "transferLedgerFileName": "Transfer_Ledger",
+    "driverLedger": "Driver_Ledger",
+    "transferLedger": "Transfer_Ledger"
   },
   "validation": {
     "required": "{field} is required",

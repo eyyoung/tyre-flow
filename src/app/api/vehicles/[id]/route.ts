@@ -57,6 +57,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         tareWeightVariance,
         maxLoad,
         driverName,
+        driverNameTranslations,
         driverPhone,
         status,
       } = body;
@@ -78,6 +79,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         updateData.tareWeightVariance = parseFloat(tareWeightVariance);
       if (maxLoad !== undefined) updateData.maxLoad = parseFloat(maxLoad);
       if (driverName !== undefined) updateData.driverName = driverName || null;
+      if (driverNameTranslations !== undefined) updateData.driverNameTranslations = driverNameTranslations;
       if (driverPhone !== undefined) updateData.driverPhone = driverPhone || null;
       if (status !== undefined) updateData.status = status;
 

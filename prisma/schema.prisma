@@ -44,23 +44,28 @@ enum Status {
 // ==================== 收集点管理 ====================
 
 model CollectionPoint {
-  id           String   @id @default(cuid())
-  code         String   @unique // 收集点编码
-  name         String            // 收集点名称（简称）
-  companyName  String?           // 收集点公司名（用于 ISCC 声明）
-  address      String
-  province     String?
-  city         String?
-  district     String?
-  postcode     String?  // 邮编
-  longitude    Float?
-  latitude     Float?
-  certScope    String?  // 认证范围
-  contactName  String?
-  contactPhone String?
-  status       Status   @default(ACTIVE)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  code                    String   @unique // 收集点编码
+  name                    String            // 收集点名称（简称）
+  nameTranslations        Json?    // { "en": "...", "fr": "...", "de": "..." }
+  companyName             String?           // 收集点公司名（用于 ISCC 声明）
+  companyNameTranslations Json?    // { "en": "...", "fr": "...", "de": "..." }
+  address                 String
+  addressTranslations     Json?    // { "en": "...", "fr": "...", "de": "..." }
+  province                String?
+  city                    String?
+  cityTranslations        Json?    // { "en": "...", "fr": "...", "de": "..." }
+  district                String?
+  postcode                String?  // 邮编
+  longitude               Float?
+  latitude                Float?
+  certScope               String?  // 认证范围
+  contactName             String?
+  contactPhone            String?
+  status                  Status   @default(ACTIVE)
+  translatedAt            DateTime?  // 翻译缓存时间
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   stores        Store[]
   vehicles      Vehicle[]

@@ -34,15 +34,21 @@ import {
   CheckCircleOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { LEDGER_TASK } from "@/lib/permissions";
+import { getTranslatedValue } from "@/lib/translations";
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
+
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
 
 interface LedgerTask {
   id: string;
@@ -63,6 +69,7 @@ interface LedgerTask {
   collectionPoint: {
     id: string;
     name: string;
+    nameTranslations?: TranslationCache | null;
     code: string;
   };
   _count: {
@@ -101,6 +108,7 @@ interface GenerationSummary {
 
 export default function CollectionLedgerPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
   const { currentCollectionPoint } = useCollectionPoint();
   const { can } = useAuth();
@@ -279,7 +287,7 @@ export default function CollectionLedgerPage() {
 
   const handleExport = async (task: LedgerTask) => {
     const response = await fetch(
-      `/api/ledgers/${task.id}/export?type=collection`
+      `/api/ledgers/${task.id}/export?type=collection&lang=${locale}`
     );
 
     if (response.ok) {
@@ -287,10 +295,15 @@ export default function CollectionLedgerPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const filename = `${task.collectionPoint.name}_${formatDateRange(
+      const cpName = getTranslatedValue(
+        task.collectionPoint.name,
+        task.collectionPoint.nameTranslations,
+        locale
+      );
+      const filename = `${cpName}_${formatDateRange(
         task.startDate,
         task.endDate
-      ).replace(" ~ ", "-")}_收集台账.xlsx`;
+      ).replace(" ~ ", "-")}_${t("ledgers.collectionLedgerFileName")}.xlsx`;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
@@ -761,7 +774,11 @@ export default function CollectionLedgerPage() {
                 {selectedTask.taskNo}
               </Descriptions.Item>
               <Descriptions.Item label={t("ledgers.collectionPoint")}>
-                {selectedTask.collectionPoint.name}
+                {getTranslatedValue(
+                  selectedTask.collectionPoint.name,
+                  selectedTask.collectionPoint.nameTranslations,
+                  locale
+                )}
               </Descriptions.Item>
               <Descriptions.Item label={t("ledgers.dateRange")}>
                 {formatDateRange(selectedTask.startDate, selectedTask.endDate)}

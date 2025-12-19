@@ -24,7 +24,7 @@ import {
   CarOutlined,
   ScissorOutlined,
 } from "@ant-design/icons";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import type { ColumnsType, TableProps } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import dayjs from "dayjs";
@@ -71,8 +71,9 @@ interface Summary {
 
 export default function DriverLedgerPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
-  const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
+  const { currentCollectionPoint, collectionPoints, getTranslatedName } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<LedgerRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -105,6 +106,7 @@ export default function DriverLedgerPage() {
     try {
       const params = new URLSearchParams();
       params.set("collectionPointId", currentCollectionPoint.id);
+      params.set("lang", locale);
       const response = await fetch(`/api/driver-ledger/drivers?${params}`);
       const result = await response.json();
       if (response.ok) {
@@ -113,7 +115,7 @@ export default function DriverLedgerPage() {
     } catch {
       // ignore
     }
-  }, [currentCollectionPoint]);
+  }, [currentCollectionPoint, locale]);
 
   // 获取台账数据
   const fetchData = useCallback(async () => {
@@ -208,6 +210,7 @@ export default function DriverLedgerPage() {
         collectionPointId: currentCollectionPoint.id,
         startDate: values.dateRange[0].format("YYYY-MM-DD"),
         endDate: values.dateRange[1].format("YYYY-MM-DD"),
+        lang: locale,
       });
 
       if (selectedDriver) {
@@ -222,7 +225,7 @@ export default function DriverLedgerPage() {
         const a = document.createElement("a");
         a.href = url;
 
-        // 生成文件名：收集点_时间范围_记录类型.xls
+        // 生成文件名：司机台账_收集点_时间范围_记录类型.xls
         const startDate = values.dateRange[0].format("YYYYMMDD");
         const endDate = values.dateRange[1].format("YYYYMMDD");
         const typeLabel =
@@ -231,7 +234,8 @@ export default function DriverLedgerPage() {
             : values.recordType === "transfer"
             ? t("ledgers.transferRecords")
             : t("ledgers.allRecords");
-        a.download = `司机台账_${currentCollectionPoint.name}_${startDate}-${endDate}_${typeLabel}.xls`;
+        const cpName = getTranslatedName(currentCollectionPoint);
+        a.download = `${t("ledgers.driverLedger")}_${cpName}_${startDate}-${endDate}_${typeLabel}.xls`;
 
         document.body.appendChild(a);
         a.click();

@@ -19,6 +19,8 @@ import {
   Descriptions,
   Checkbox,
   Progress,
+  Collapse,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -33,8 +35,9 @@ import {
   StopOutlined,
   FileWordOutlined,
   EyeOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
@@ -43,13 +46,21 @@ import { STORE } from '@/lib/permissions';
 
 const { Title } = Typography;
 
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
+
 interface Store {
   id: string;
   code: string;
   name: string;
+  nameTranslations: TranslationCache | null;
   businessLicense: string | null;
   legalPerson: string | null;
+  legalPersonTranslations: TranslationCache | null;
   address: string;
+  addressTranslations: TranslationCache | null;
   province: string | null;
   city: string | null;
   district: string | null;
@@ -71,8 +82,9 @@ interface Store {
 
 export default function StoresPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
-  const { currentCollectionPoint } = useCollectionPoint();
+  const { currentCollectionPoint, getTranslatedName } = useCollectionPoint();
   const { can } = useAuth();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Store[]>([]);
@@ -112,6 +124,27 @@ export default function StoresPage() {
     total: number;
     storeName?: string;
   }>({ stage: '', current: 0, total: 0 });
+  
+  // 翻译编辑相关状态
+  const [translationLang, setTranslationLang] = useState<string>('en');
+  
+  // 支持的翻译语言列表
+  const translationLanguages = [
+    { value: 'en', label: 'English' },
+    { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' },
+    { value: 'es', label: 'Español' },
+  ];
+
+  // 获取翻译值的辅助函数
+  const getTranslatedValue = (
+    original: string | null | undefined,
+    translations: TranslationCache | null | undefined
+  ): string => {
+    if (!original) return '';
+    if (locale === 'zh') return original;
+    return translations?.[locale] || original;
+  };
 
   const fetchData = useCallback(async () => {
     if (!currentCollectionPoint) return;
@@ -162,20 +195,29 @@ export default function StoresPage() {
 
   const handleAdd = () => {
     setEditingItem(null);
+    setTranslationLang('en'); // 重置为默认语言
     form.resetFields();
     form.setFieldsValue({ 
       status: 'ACTIVE', 
       isVirtual: false,
       collectionPointId: currentCollectionPoint?.id,
+      nameTranslations: {},
+      legalPersonTranslations: {},
+      addressTranslations: {},
     });
     setModalVisible(true);
   };
 
   const handleEdit = (item: Store) => {
     setEditingItem(item);
+    setTranslationLang('en'); // 重置为默认语言
     form.setFieldsValue({
       ...item,
       collectionPointId: item.collectionPoint.id,
+      // 翻译字段 - 存储整个翻译对象
+      nameTranslations: item.nameTranslations || {},
+      legalPersonTranslations: item.legalPersonTranslations || {},
+      addressTranslations: item.addressTranslations || {},
     });
     setModalVisible(true);
   };
@@ -203,10 +245,26 @@ export default function StoresPage() {
       const url = isEditing ? `/api/stores/${editingItem.id}` : '/api/stores';
       const method = isEditing ? 'PUT' : 'POST';
 
+      // 清理空的翻译对象
+      const cleanTranslations = (obj: TranslationCache | undefined) => {
+        if (!obj) return null;
+        const cleaned = Object.fromEntries(
+          Object.entries(obj).filter(([, v]) => v && v.trim() !== '')
+        );
+        return Object.keys(cleaned).length > 0 ? cleaned : null;
+      };
+
+      const dataToSubmit = {
+        ...values,
+        nameTranslations: cleanTranslations(values.nameTranslations),
+        legalPersonTranslations: cleanTranslations(values.legalPersonTranslations),
+        addressTranslations: cleanTranslations(values.addressTranslations),
+      };
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(dataToSubmit),
       });
 
       const result = await response.json();
@@ -236,6 +294,7 @@ export default function StoresPage() {
 
       const params = new URLSearchParams();
       params.set('collectionPointId', currentCollectionPoint.id);
+      params.set('lang', locale); // 添加语言参数
       if (values.onlyActive) {
         params.set('status', 'ACTIVE');
       }
@@ -256,7 +315,7 @@ export default function StoresPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `门店列表_${currentCollectionPoint.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        a.download = `${t('stores.exportFileName')}_${getTranslatedName(currentCollectionPoint)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -358,7 +417,7 @@ export default function StoresPage() {
   // 导出单个门店 ISCC 声明
   const handleExportSingleIscc = async (storeId: string, storeName: string) => {
     try {
-      const response = await fetch(`/api/stores/iscc-export?storeId=${storeId}`);
+      const response = await fetch(`/api/stores/iscc-export?storeId=${storeId}&lang=${locale}`);
 
       if (response.ok) {
         const blob = await response.blob();
@@ -402,7 +461,7 @@ export default function StoresPage() {
       const response = await fetch('/api/stores/iscc-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collectionPointId: currentCollectionPoint.id }),
+        body: JSON.stringify({ collectionPointId: currentCollectionPoint.id, lang: locale }),
       });
 
       if (!response.ok) {
@@ -548,6 +607,7 @@ export default function StoresPage() {
       key: 'name',
       width: 180,
       ellipsis: true,
+      render: (_, record) => getTranslatedValue(record.name, record.nameTranslations),
     },
     {
       title: t('stores.businessLicense'),
@@ -562,6 +622,7 @@ export default function StoresPage() {
       key: 'address',
       width: 250,
       ellipsis: true,
+      render: (_, record) => getTranslatedValue(record.address, record.addressTranslations),
     },
     {
       title: t('stores.estimatedTravelMinutes'),
@@ -969,6 +1030,59 @@ export default function StoresPage() {
               />
             </Form.Item>
           )}
+          
+          {/* 翻译编辑区域 */}
+          <Divider style={{ margin: '16px 0 8px' }} />
+          <Collapse
+            ghost
+            items={[
+              {
+                key: 'translations',
+                label: (
+                  <Space>
+                    <TranslationOutlined />
+                    {t('stores.translationSection')}
+                  </Space>
+                ),
+                children: (
+                  <div style={{ paddingTop: 8 }}>
+                    <Form.Item label={t('common.language')} style={{ marginBottom: 16 }}>
+                      <Select
+                        value={translationLang}
+                        onChange={setTranslationLang}
+                        style={{ width: 150 }}
+                        options={translationLanguages}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label={t('stores.name')}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Form.Item name={['nameTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('stores.name')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                    <Form.Item
+                      label={t('stores.legalPerson')}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Form.Item name={['legalPersonTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('stores.legalPerson')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                    <Form.Item
+                      label={t('stores.address')}
+                      style={{ marginBottom: 8 }}
+                    >
+                      <Form.Item name={['addressTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('stores.address')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
 

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
           where,
           include: {
             collectionPoint: {
-              select: { id: true, name: true, code: true },
+              select: { id: true, name: true, nameTranslations: true, code: true },
             },
             _count: {
               select: {

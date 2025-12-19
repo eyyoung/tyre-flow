@@ -17,6 +17,8 @@ import {
   Col,
   InputNumber,
   App,
+  Collapse,
+  Divider,
 } from "antd";
 import {
   PlusOutlined,
@@ -26,13 +28,19 @@ import {
   ReloadOutlined,
   CarOutlined,
   SettingOutlined,
+  TranslationOutlined,
 } from "@ant-design/icons";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useCollectionPoint } from "@/contexts/CollectionPointContext";
 
 const { Title } = Typography;
+
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
 
 interface Vehicle {
   id: string;
@@ -44,6 +52,7 @@ interface Vehicle {
   tareWeightVariance: number;
   maxLoad: number;
   driverName: string | null;
+  driverNameTranslations: TranslationCache | null;
   driverPhone: string | null;
   status: "ACTIVE" | "DISABLED";
   createdAt: string;
@@ -62,6 +71,7 @@ interface CollectionPoint {
 
 export default function VehiclesPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
   const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
   const [loading, setLoading] = useState(false);
@@ -78,6 +88,27 @@ export default function VehiclesPage() {
   const [batchModalVisible, setBatchModalVisible] = useState(false);
   const [batchForm] = Form.useForm();
   const [batchLoading, setBatchLoading] = useState(false);
+  
+  // 翻译编辑相关状态
+  const [translationLang, setTranslationLang] = useState<string>('en');
+  
+  // 支持的翻译语言列表
+  const translationLanguages = [
+    { value: 'en', label: 'English' },
+    { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' },
+    { value: 'es', label: 'Español' },
+  ];
+
+  // 获取翻译值的辅助函数
+  const getTranslatedValue = (
+    original: string | null | undefined,
+    translations: TranslationCache | null | undefined
+  ): string => {
+    if (!original) return '';
+    if (locale === 'zh') return original;
+    return translations?.[locale] || original;
+  };
 
   const fetchData = useCallback(async () => {
     if (!currentCollectionPoint) return;
@@ -133,6 +164,7 @@ export default function VehiclesPage() {
 
   const handleAdd = () => {
     setEditingItem(null);
+    setTranslationLang('en'); // 重置为默认语言
     form.resetFields();
     form.setFieldsValue({
       status: "ACTIVE",
@@ -141,12 +173,14 @@ export default function VehiclesPage() {
       tareWeightVariance: 0.05,
       maxLoad: 4.0, // 显示吨
       collectionPointId: currentCollectionPoint?.id,
+      driverNameTranslations: {},
     });
     setModalVisible(true);
   };
 
   const handleEdit = (item: Vehicle) => {
     setEditingItem(item);
+    setTranslationLang('en'); // 重置为默认语言
     form.setFieldsValue({
       ...item,
       collectionPointId: item.collectionPoint.id,
@@ -154,6 +188,8 @@ export default function VehiclesPage() {
       tareWeight: item.tareWeight / 1000,
       tareWeightVariance: item.tareWeightVariance / 1000,
       maxLoad: item.maxLoad / 1000,
+      // 翻译字段 - 存储整个翻译对象
+      driverNameTranslations: item.driverNameTranslations || {},
     });
     setModalVisible(true);
   };
@@ -183,12 +219,22 @@ export default function VehiclesPage() {
         : "/api/vehicles";
       const method = isEditing ? "PUT" : "POST";
 
+      // 清理空的翻译对象
+      const cleanTranslations = (obj: TranslationCache | undefined) => {
+        if (!obj) return null;
+        const cleaned = Object.fromEntries(
+          Object.entries(obj).filter(([, v]) => v && v.trim() !== '')
+        );
+        return Object.keys(cleaned).length > 0 ? cleaned : null;
+      };
+
       // 将表单中的吨转换为 kg 存储
       const dataToSubmit = {
         ...values,
         tareWeight: values.tareWeight * 1000,
         tareWeightVariance: values.tareWeightVariance * 1000,
         maxLoad: values.maxLoad * 1000,
+        driverNameTranslations: cleanTranslations(values.driverNameTranslations),
       };
 
       const response = await fetch(url, {
@@ -349,7 +395,7 @@ export default function VehiclesPage() {
       dataIndex: "driverName",
       key: "driverName",
       width: 100,
-      render: (v) => v || "-",
+      render: (_, record) => getTranslatedValue(record.driverName, record.driverNameTranslations) || "-",
     },
     {
       title: t("vehicles.driverPhone"),
@@ -631,6 +677,43 @@ export default function VehiclesPage() {
                 />
               </Form.Item>
             )}
+            
+            {/* 翻译编辑区域 */}
+            <Divider style={{ margin: '16px 0 8px' }} />
+            <Collapse
+              ghost
+              items={[
+                {
+                  key: 'translations',
+                  label: (
+                    <Space>
+                      <TranslationOutlined />
+                      {t('vehicles.translationSection')}
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ paddingTop: 8 }}>
+                      <Form.Item label={t('common.language')} style={{ marginBottom: 16 }}>
+                        <Select
+                          value={translationLang}
+                          onChange={setTranslationLang}
+                          style={{ width: 150 }}
+                          options={translationLanguages}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        label={t('vehicles.driverName')}
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Form.Item name={['driverNameTranslations', translationLang]} noStyle>
+                          <Input placeholder={`${t('vehicles.driverName')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                        </Form.Item>
+                      </Form.Item>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </Form>
         )}
       </Modal>

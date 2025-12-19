@@ -24,6 +24,7 @@
     "updatedAt": "更新时间",
     "success": "操作成功",
     "error": "操作失败",
+    "language": "语言",
     "yes": "是",
     "no": "否",
     "all": "全部",
@@ -132,7 +133,8 @@
     "resettingGeocode": "定位中...",
     "resetGeocodeConfirm": "确定要根据地址重新获取坐标吗？",
     "resetGeocodeSuccess": "坐标更新成功",
-    "resetGeocodeFailed": "坐标更新失败"
+    "resetGeocodeFailed": "坐标更新失败",
+    "translationSection": "多语言翻译（用于导出）"
   },
   "stores": {
     "title": "门店管理",
@@ -190,7 +192,9 @@
       "generating": "正在生成文档",
       "merging": "正在合并文档",
       "converting": "正在转换 PDF"
-    }
+    },
+    "exportFileName": "门店列表",
+    "translationSection": "多语言翻译（用于导出）"
   },
   "vehicles": {
     "title": "车辆管理",
@@ -215,7 +219,8 @@
     "batchUpdateOptional": "留空则保持原值不变",
     "batchUpdateKeepOriginal": "保持原值",
     "batchUpdateAtLeastOne": "皮重和最大载重至少需要填写一项",
-    "batchUpdateSuccess": "成功修改 {count} 辆车"
+    "batchUpdateSuccess": "成功修改 {count} 辆车",
+    "translationSection": "多语言翻译（用于导出）"
   },
   "settings": {
     "title": "系统设置",
@@ -343,7 +348,11 @@
     "tonnageWarning": "⚠️ {warning}",
     "loadingEstimate": "正在计算建议值...",
     "selectDateFirst": "请先选择时间范围",
-    "timeOfDay": "时间"
+    "timeOfDay": "时间",
+    "collectionLedgerFileName": "收集台账",
+    "transferLedgerFileName": "转移台账",
+    "driverLedger": "司机台账",
+    "transferLedger": "转移台账"
   },
   "validation": {
     "required": "{field}不能为空",

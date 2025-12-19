@@ -80,6 +80,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     currentCollectionPoint,
     setCurrentCollectionPoint,
     loading: cpLoading,
+    getTranslatedName,
   } = useCollectionPoint();
   const { user, can, loading: authLoading } = useAuth();
 
@@ -391,7 +392,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     key: cp.id,
     label: (
       <Space>
-        {cp.name}
+        {getTranslatedName(cp)}
         {currentCollectionPoint?.id === cp.id && (
           <CheckOutlined style={{ color: token.colorPrimary }} />
         )}
@@ -515,7 +516,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <Space>
                     {!isMobile && (
                       <>
-                        {currentCollectionPoint?.name || t("ledgers.collectionPoint")}
+                        {getTranslatedName(currentCollectionPoint) || t("ledgers.collectionPoint")}
                         <DownOutlined style={{ fontSize: 10 }} />
                       </>
                     )}

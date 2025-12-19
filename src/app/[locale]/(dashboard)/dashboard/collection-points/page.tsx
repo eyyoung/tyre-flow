@@ -17,6 +17,8 @@ import {
   Col,
   App,
   Descriptions,
+  Collapse,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -26,21 +28,31 @@ import {
   ReloadOutlined,
   EnvironmentOutlined,
   AimOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
 
+interface TranslationCache {
+  en?: string;
+  [locale: string]: string | undefined;
+}
+
 interface CollectionPoint {
   id: string;
   code: string;
   name: string;
+  nameTranslations: TranslationCache | null;
   companyName: string | null;
+  companyNameTranslations: TranslationCache | null;
   address: string;
+  addressTranslations: TranslationCache | null;
   province: string | null;
   city: string | null;
+  cityTranslations: TranslationCache | null;
   district: string | null;
   postcode: string | null;
   longitude: number | null;
@@ -58,6 +70,7 @@ interface CollectionPoint {
 
 export default function CollectionPointsPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<CollectionPoint[]>([]);
@@ -72,6 +85,27 @@ export default function CollectionPointsPage() {
   
   // 重置坐标相关状态
   const [resettingGeocode, setResettingGeocode] = useState(false);
+  
+  // 翻译编辑相关状态
+  const [translationLang, setTranslationLang] = useState<string>('en');
+  
+  // 支持的翻译语言列表
+  const translationLanguages = [
+    { value: 'en', label: 'English' },
+    { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' },
+    { value: 'es', label: 'Español' },
+  ];
+
+  // 获取翻译值的辅助函数
+  const getTranslatedValue = (
+    original: string | null | undefined,
+    translations: TranslationCache | null | undefined
+  ): string => {
+    if (!original) return '';
+    if (locale === 'zh') return original;
+    return translations?.[locale] || original;
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -116,20 +150,32 @@ export default function CollectionPointsPage() {
 
   const handleAdd = () => {
     setEditingItem(null);
+    setTranslationLang('en');
     form.resetFields();
-    form.setFieldsValue({ status: 'ACTIVE' });
+    form.setFieldsValue({ 
+      status: 'ACTIVE',
+      nameTranslations: {},
+      companyNameTranslations: {},
+      addressTranslations: {},
+      cityTranslations: {},
+    });
     setModalVisible(true);
   };
 
   const handleEdit = (item: CollectionPoint) => {
     setEditingItem(item);
+    setTranslationLang('en');
     form.setFieldsValue({
       code: item.code,
       name: item.name,
+      nameTranslations: item.nameTranslations || {},
       companyName: item.companyName,
+      companyNameTranslations: item.companyNameTranslations || {},
       address: item.address,
+      addressTranslations: item.addressTranslations || {},
       province: item.province,
       city: item.city,
+      cityTranslations: item.cityTranslations || {},
       district: item.district,
       postcode: item.postcode,
       longitude: item.longitude,
@@ -169,10 +215,27 @@ export default function CollectionPointsPage() {
         : '/api/collection-points';
       const method = isEditing ? 'PUT' : 'POST';
 
+      // 清理空的翻译对象
+      const cleanTranslations = (obj: TranslationCache | undefined) => {
+        if (!obj) return null;
+        const cleaned = Object.fromEntries(
+          Object.entries(obj).filter(([, v]) => v && v.trim() !== '')
+        );
+        return Object.keys(cleaned).length > 0 ? cleaned : null;
+      };
+
+      const dataToSubmit = {
+        ...values,
+        nameTranslations: cleanTranslations(values.nameTranslations),
+        companyNameTranslations: cleanTranslations(values.companyNameTranslations),
+        addressTranslations: cleanTranslations(values.addressTranslations),
+        cityTranslations: cleanTranslations(values.cityTranslations),
+      };
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(dataToSubmit),
       });
 
       const result = await response.json();
@@ -255,6 +318,7 @@ export default function CollectionPointsPage() {
       dataIndex: 'name',
       key: 'name',
       width: 150,
+      render: (_, record) => getTranslatedValue(record.name, record.nameTranslations),
     },
     {
       title: t('collectionPoints.address'),
@@ -262,6 +326,7 @@ export default function CollectionPointsPage() {
       key: 'address',
       width: 250,
       ellipsis: true,
+      render: (_, record) => getTranslatedValue(record.address, record.addressTranslations),
     },
     {
       title: t('collectionPoints.contactName'),
@@ -406,7 +471,6 @@ export default function CollectionPointsPage() {
         onCancel={() => setModalVisible(false)}
         width={700}
         destroyOnHidden
-        forceRender
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
@@ -569,6 +633,67 @@ export default function CollectionPointsPage() {
               />
             </Form.Item>
           )}
+          
+          {/* 翻译编辑区域 */}
+          <Divider style={{ margin: '16px 0 8px' }} />
+          <Collapse
+            ghost
+            items={[
+              {
+                key: 'translations',
+                label: (
+                  <Space>
+                    <TranslationOutlined />
+                    {t('collectionPoints.translationSection')}
+                  </Space>
+                ),
+                children: (
+                  <div style={{ paddingTop: 8 }}>
+                    <Form.Item label={t('common.language')} style={{ marginBottom: 16 }}>
+                      <Select
+                        value={translationLang}
+                        onChange={setTranslationLang}
+                        style={{ width: 150 }}
+                        options={translationLanguages}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label={t('collectionPoints.name')}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Form.Item name={['nameTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('collectionPoints.name')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                    <Form.Item
+                      label={t('collectionPoints.companyName')}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Form.Item name={['companyNameTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('collectionPoints.companyName')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                    <Form.Item
+                      label={t('collectionPoints.address')}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Form.Item name={['addressTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('collectionPoints.address')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                    <Form.Item
+                      label={t('collectionPoints.city')}
+                      style={{ marginBottom: 8 }}
+                    >
+                      <Form.Item name={['cityTranslations', translationLang]} noStyle>
+                        <Input placeholder={`${t('collectionPoints.city')} (${translationLanguages.find(l => l.value === translationLang)?.label})`} />
+                      </Form.Item>
+                    </Form.Item>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
     </div>

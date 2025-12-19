@@ -82,6 +82,7 @@ export async function POST(request: NextRequest) {
         tareWeightVariance,
         maxLoad,
         driverName,
+        driverNameTranslations,
         driverPhone,
         collectionPointId,
       } = body;
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
           tareWeightVariance: tareWeightVariance ? parseFloat(tareWeightVariance) : 0.05,
           maxLoad: parseFloat(maxLoad),
           driverName: driverName || null,
+          driverNameTranslations: driverNameTranslations || null,
           driverPhone: driverPhone || null,
           collectionPointId,
         },
