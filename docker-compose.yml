@@ -106,6 +106,8 @@ services:
       - TENCENT_LBS_SK=${TENCENT_LBS_SK:-}
       # 手写签名服务地址
       - SIGNATURE_SERVICE_URL=${SIGNATURE_SERVICE_URL:-http://signature:3333/generate}
+      - ALIBABA_CLOUD_ACCESS_KEY_ID=${ALIBABA_CLOUD_ACCESS_KEY_ID:-}
+      - ALIBABA_CLOUD_ACCESS_KEY_SECRET=${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}
     depends_on:
       signature:
         condition: service_healthy

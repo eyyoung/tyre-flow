@@ -61,7 +61,7 @@
     "storeList": "门店列表",
     "storeImport": "数据导入",
     "storeCleanup": "数据清理",
-    "storeTranslate": "门店地址方案",
+    "storeTranslate": "门店地址翻译",
     "vehicles": "车辆管理",
     "vehicleList": "车辆列表",
     "vehicleImport": "车辆导入",
@@ -481,7 +481,7 @@
     "moreErrors": "还有 {count} 条错误..."
   },
   "storeTranslate": {
-    "title": "门店地址方案",
+    "title": "门店地址翻译",
     "description": "批量翻译门店信息",
     "descriptionDetail": "通过阿里云机器翻译服务，将门店的公司名称、地址、法人代表等信息批量翻译为英文。翻译后的内容将用于 ISCC 声明等导出文档。请确保已在环境变量中配置阿里云访问凭证（ALIBABA_CLOUD_ACCESS_KEY_ID 和 ALIBABA_CLOUD_ACCESS_KEY_SECRET）。",
     "selectCollectionPoint": "选择收集点",
