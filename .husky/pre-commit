@@ -1,5 +1,26 @@
 #!/bin/sh
 
+# 尝试加载 Node.js 环境（支持 nvm、fnm、Homebrew 等）
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+# 尝试 fnm
+if command -v fnm >/dev/null 2>&1; then
+    eval "$(fnm env)"
+fi
+
+# 尝试 Homebrew node
+if [ -z "$(command -v npm)" ]; then
+    [ -f "/opt/homebrew/bin/npm" ] && export PATH="/opt/homebrew/bin:$PATH"
+    [ -f "/usr/local/bin/npm" ] && export PATH="/usr/local/bin:$PATH"
+fi
+
+# 如果仍然找不到 npm，跳过检查
+if ! command -v npm >/dev/null 2>&1; then
+    echo "⚠️  npm 未找到，跳过 package-lock.json 同步检查"
+    exit 0
+fi
+
 # 检查 package.json 和 package-lock.json 是否同步
 # 如果 package.json 被修改，确保 lock 文件也被更新
 
