@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
+import { NextRequest, NextResponse } from "next/server";
+import { withMiddlewares, standardMiddlewares } from "@/lib/middleware";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -10,8 +10,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   return withMiddlewares(request, standardMiddlewares, async (ctx) => {
     const { id } = await params;
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '20');
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
 
     try {
       // 检查任务是否存在 - ctx.prisma 已自动带收集点权限过滤
@@ -21,7 +21,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
 
       if (!task) {
-        return NextResponse.json({ message: 'Task not found' }, { status: 404 });
+        return NextResponse.json(
+          { message: "Task not found" },
+          { status: 404 }
+        );
       }
 
       // 只返回收集记录（转移记录已移至 TransferTask）
@@ -31,13 +34,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           where: { taskId: id },
           include: {
             store: {
-              select: { id: true, code: true, name: true, address: true },
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                address: true,
+                nameTranslations: true,
+              },
             },
             vehicle: {
               select: { id: true, plateNumber: true },
             },
           },
-          orderBy: { collectionDate: 'asc' },
+          orderBy: { collectionDate: "asc" },
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
@@ -51,9 +60,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         totalPages: Math.ceil(total / pageSize),
       });
     } catch (error) {
-      console.error('Get ledger records error:', error);
+      console.error("Get ledger records error:", error);
       return NextResponse.json(
-        { message: 'Internal server error' },
+        { message: "Internal server error" },
         { status: 500 }
       );
     }

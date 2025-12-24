@@ -93,7 +93,12 @@ interface CollectionRecord {
   loadingNetWeight: number;
   unloadingNetWeight: number;
   loss: number;
-  store: { code: string; name: string; address: string };
+  store: {
+    code: string;
+    name: string;
+    address: string;
+    nameTranslations?: TranslationCache | null;
+  };
   vehicle: { plateNumber: string };
 }
 
@@ -136,7 +141,7 @@ export default function CollectionLedgerPage() {
 
   const fetchData = useCallback(async () => {
     if (!currentCollectionPoint) return;
-    
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -214,7 +219,7 @@ export default function CollectionLedgerPage() {
       message.warning(t("ledgers.selectCollectionPointRequired"));
       return;
     }
-    
+
     try {
       const values = await form.validateFields();
       const [startDate, endDate] = values.dateRange;
@@ -513,6 +518,8 @@ export default function CollectionLedgerPage() {
       key: "storeName",
       width: 180,
       ellipsis: true,
+      render: (v, record) =>
+        getTranslatedValue(v, record.store.nameTranslations, locale),
     },
     {
       title: t("vehicles.plateNumber"),
