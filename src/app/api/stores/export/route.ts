@@ -5,6 +5,7 @@ import { calculateSignDate } from '@/lib/iscc-utils';
 import { pinyin } from 'pinyin-pro';
 import dayjs from 'dayjs';
 import ExcelJS from 'exceljs';
+import path from 'path';
 
 // 将中文转换为拼音（首字母大写）
 function toPinyin(text: string | null | undefined): string {
@@ -116,70 +117,19 @@ export async function GET(request: NextRequest) {
       // 收集需要更新签署日期的门店
       const storesToUpdateSignDate: { id: string; signDate: Date }[] = [];
 
-      // 创建 Excel 工作簿
+      // 加载模板文件
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(l.sheetName);
+      const templatePath = path.join(process.cwd(), 'template', 'store_list_template.xlsx');
+      await workbook.xlsx.readFile(templatePath);
 
-      // 定义表头样式
-      const headerStyle: Partial<ExcelJS.Style> = {
-        font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } },
-        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } },
-        alignment: { horizontal: 'center', vertical: 'middle' },
-        border: {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' },
-        },
-      };
+      // 获取 Sheet1 工作表
+      const worksheet = workbook.getWorksheet('Sheet1');
+      if (!worksheet) {
+        throw new Error('Template worksheet "Sheet1" not found');
+      }
 
-      // 定义单元格样式
-      const cellStyle: Partial<ExcelJS.Style> = {
-        font: { size: 10 },
-        alignment: { vertical: 'middle' },
-        border: {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' },
-        },
-      };
-
-      // 设置列（按照模板要求的字段）
-      worksheet.columns = [
-        { header: 'ID', key: 'id', width: 30 },
-        { header: 'Individual certification', key: 'individualCertification', width: 20 },
-        { header: 'Certificate ID', key: 'certificateId', width: 15 },
-        { header: 'Site Name', key: 'siteName', width: 40 },
-        { header: 'Address', key: 'address', width: 50 },
-        { header: 'Post code', key: 'postCode', width: 12 },
-        { header: 'City', key: 'city', width: 15 },
-        { header: 'State', key: 'state', width: 15 },
-        { header: 'Country', key: 'country', width: 10 },
-        { header: 'Latitude (format: xx.xxxxxx)', key: 'latitude', width: 25 },
-        { header: 'Longitude (format: xxx.xxxxxx)', key: 'longitude', width: 25 },
-        { header: 'Legal Type', key: 'legalType', width: 15 },
-        { header: 'Other legal identification', key: 'otherLegalId', width: 20 },
-        { header: 'Email', key: 'email', width: 15 },
-        { header: 'National Trade Register Identification Type', key: 'nationalTradeType', width: 35 },
-        { header: 'National Trade Register Identification', key: 'nationalTradeId', width: 30 },
-        { header: 'VAT', key: 'vat', width: 15 },
-        { header: 'Website', key: 'website', width: 15 },
-        { header: 'Phone', key: 'phone', width: 15 },
-        { header: 'Scope of Sourcing Contact', key: 'scopeOfSourcing', width: 25 },
-        { header: 'Outgoing Material', key: 'outgoingMaterial', width: 20 },
-        { header: 'Date of adding', key: 'dateOfAdding', width: 15 },
-        { header: 'Date of removal', key: 'dateOfRemoval', width: 15 },
-        { header: 'Maximum capacity per year', key: 'maxCapacity', width: 22 },
-        { header: 'Renewable capacity per year', key: 'renewableCapacity', width: 25 },
-        { header: 'Measuring Unit', key: 'measuringUnit', width: 15 },
-      ];
-
-      // 应用表头样式
-      worksheet.getRow(1).eachCell((cell) => {
-        cell.style = headerStyle;
-      });
-      worksheet.getRow(1).height = 25;
+      // 数据从第2行开始（第1行是表头）
+      let currentRow = 2;
 
       // 添加数据
       for (const store of stores) {
@@ -219,41 +169,37 @@ export async function GET(request: NextRequest) {
         const latitude = store.latitude ? store.latitude.toFixed(6) : '';
         const longitude = store.longitude ? store.longitude.toFixed(6) : '';
 
-        const rowData = {
-          id: store.code,
-          individualCertification: 'No',
-          certificateId: '',
-          siteName: siteName,
-          address: address,
-          postCode: store.collectionPoint.postcode || '',
-          city: city,
-          state: state,
-          country: l.country,
-          latitude: latitude,
-          longitude: longitude,
-          legalType: l.legalType,
-          otherLegalId: '',
-          email: '',
-          nationalTradeType: '',
-          nationalTradeId: '',
-          vat: '',
-          website: '',
-          phone: store.contactPhone || '',
-          scopeOfSourcing: 'Point of Origin',
-          outgoingMaterial: 'End-of-life tires',
-          dateOfAdding: dateOfAdding,
-          dateOfRemoval: '',
-          maxCapacity: 119,
-          renewableCapacity: 119,
-          measuringUnit: 'tonnes',
-        };
+        // 按模板列顺序填入数据
+        const row = worksheet.getRow(currentRow);
+        row.getCell(1).value = store.code;                          // A: ID
+        row.getCell(2).value = 'No';                                // B: Individual certification
+        row.getCell(3).value = '';                                  // C: Certificate ID
+        row.getCell(4).value = siteName;                            // D: Site Name
+        row.getCell(5).value = address;                             // E: Address
+        row.getCell(6).value = store.collectionPoint.postcode || '';// F: Post code
+        row.getCell(7).value = city;                                // G: City
+        row.getCell(8).value = state;                               // H: State
+        row.getCell(9).value = l.country;                           // I: Country
+        row.getCell(10).value = latitude;                           // J: Latitude
+        row.getCell(11).value = longitude;                          // K: Longitude
+        row.getCell(12).value = l.legalType;                        // L: Legal Type
+        row.getCell(13).value = '';                                 // M: Other legal identification
+        row.getCell(14).value = '';                                 // N: Email
+        row.getCell(15).value = '';                                 // O: National Trade Register Type
+        row.getCell(16).value = '';                                 // P: National Trade Register ID
+        row.getCell(17).value = '';                                 // Q: VAT
+        row.getCell(18).value = '';                                 // R: Website
+        row.getCell(19).value = store.contactPhone || '';           // S: Phone
+        row.getCell(20).value = 'Point of Origin';                  // T: Scope of Sourcing
+        row.getCell(21).value = 'End-of-life tires';                // U: Outgoing Material
+        row.getCell(22).value = dateOfAdding;                       // V: Date of adding
+        row.getCell(23).value = '';                                 // W: Date of removal
+        row.getCell(24).value = 119;                                // X: Maximum capacity
+        row.getCell(25).value = 119;                                // Y: Renewable capacity
+        row.getCell(26).value = 'tonnes';                           // Z: Measuring Unit
 
-        const row = worksheet.addRow(rowData);
-
-        // 应用单元格样式
-        row.eachCell((cell) => {
-          cell.style = cellStyle;
-        });
+        row.commit();
+        currentRow++;
       }
 
       // 批量更新新计算的签署日期到数据库
@@ -267,9 +213,6 @@ export async function GET(request: NextRequest) {
           )
         );
       }
-
-      // 冻结首行
-      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
 
       // 生成文件
       const buffer = await workbook.xlsx.writeBuffer();
