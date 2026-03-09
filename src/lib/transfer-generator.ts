@@ -85,12 +85,14 @@ async function getConfig(): Promise<GeneratorConfig> {
  * @param startDate 开始日期
  * @param endDate 结束日期
  * @param targetWeightKg 目标重量（kg）
+ * @param factoryName 目标工厂名称
  */
 export async function generateTransferData(
   collectionPointId: string,
   startDate: Date,
   endDate: Date,
-  targetWeightKg: number
+  targetWeightKg: number,
+  factoryName: string = "再生资源加工厂"
 ): Promise<{ transferRecords: TransferRecordData[] }> {
   const config = await getConfig();
 
@@ -222,7 +224,7 @@ export async function generateTransferData(
       recordNo: generateRecordNo("TR", globalIndex, workDay),
       vehicleId: vehicle.id,
       transferDate: workDay,
-      destination: "再生资源加工厂",
+      destination: factoryName,
       tireCount,
       loadingNetWeight,
       grossWeight,
@@ -264,6 +266,7 @@ export async function executeTransferTask(
 ): Promise<TransferGenerationResult> {
   const task = await prisma.transferTask.findUnique({
     where: { id: taskId },
+    include: { factory: { select: { name: true } } },
   });
 
   if (!task) {
@@ -282,7 +285,8 @@ export async function executeTransferTask(
       task.collectionPointId,
       task.startDate,
       task.endDate,
-      task.targetTonnage
+      task.targetTonnage,
+      task.factory?.name ?? "再生资源加工厂"
     );
 
     // 在保存前调整时间为中国时区

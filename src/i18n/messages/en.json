@@ -71,6 +71,7 @@
     "transferLedger": "Transfer Ledger",
     "driverLedger": "Driver Ledger",
     "driverAnalysis": "Ledger Analysis",
+    "factories": "Factories",
     "settings": "Settings",
     "profile": "Profile"
   },
@@ -355,7 +356,18 @@
     "collectionLedgerFileName": "Collection_Ledger",
     "transferLedgerFileName": "Transfer_Ledger",
     "driverLedger": "Driver_Ledger",
-    "transferLedger": "Transfer_Ledger"
+    "transferLedger": "Transfer_Ledger",
+    "factory": "Target Factory",
+    "selectFactory": "Please select a factory"
+  },
+  "factories": {
+    "title": "Factory Management",
+    "name": "Factory Name",
+    "addFactory": "Add Factory",
+    "editFactory": "Edit Factory",
+    "deleteConfirm": "Are you sure you want to delete factory {name}?",
+    "hasTransferTasks": "Cannot delete factory with associated transfer tasks",
+    "transferTaskCount": "Transfer Tasks"
   },
   "validation": {
     "required": "{field} is required",

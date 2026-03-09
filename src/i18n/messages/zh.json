@@ -71,6 +71,7 @@
     "transferLedger": "转移台账",
     "driverLedger": "司机台账",
     "driverAnalysis": "台账检查",
+    "factories": "工厂管理",
     "settings": "系统设置",
     "profile": "个人中心"
   },
@@ -355,7 +356,18 @@
     "collectionLedgerFileName": "收集台账",
     "transferLedgerFileName": "转移台账",
     "driverLedger": "司机台账",
-    "transferLedger": "转移台账"
+    "transferLedger": "转移台账",
+    "factory": "目标工厂",
+    "selectFactory": "请选择工厂"
+  },
+  "factories": {
+    "title": "工厂管理",
+    "name": "工厂名称",
+    "addFactory": "新增工厂",
+    "editFactory": "编辑工厂",
+    "deleteConfirm": "确定要删除工厂 {name} 吗？",
+    "hasTransferTasks": "该工厂已有关联的转移任务，无法删除",
+    "transferTaskCount": "转移任务数"
   },
   "validation": {
     "required": "{field}不能为空",

@@ -35,6 +35,7 @@ import {
   ClearOutlined,
   CheckOutlined,
   TranslationOutlined,
+  BankOutlined,
 } from "@ant-design/icons";
 import { useTranslations } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
@@ -223,6 +224,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           ),
         },
       ],
+    },
+    {
+      key: "/dashboard/factories",
+      icon: <BankOutlined />,
+      permission: MENU.FACTORIES,
+      label: (
+        <Link href={`/${currentLocale}/dashboard/factories`}>
+          {t("menu.factories")}
+        </Link>
+      ),
     },
     {
       key: "/dashboard/ledgers",

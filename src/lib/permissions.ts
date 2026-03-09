@@ -28,6 +28,7 @@ export const MENU = {
   LEDGERS_DRIVER: 'menu:ledgers:driver',
   LEDGERS_TRANSFER: 'menu:ledgers:transfer',
   LEDGERS_DRIVER_ANALYSIS: 'menu:ledgers:driver-analysis',
+  FACTORIES: 'menu:factories',
   SETTINGS: 'menu:settings',
 } as const;
 
@@ -75,6 +76,15 @@ export const TRANSFER_TASK = {
 } as const;
 
 /**
+ * 工厂操作权限常量
+ */
+export const FACTORY = {
+  CREATE: 'factory:create',
+  EDIT: 'factory:edit',
+  DELETE: 'factory:delete',
+} as const;
+
+/**
  * 统一权限常量导出（可选，方便一次性导入所有权限）
  */
 export const P = {
@@ -84,6 +94,7 @@ export const P = {
   COLLECTION_POINT,
   LEDGER_TASK,
   TRANSFER_TASK,
+  FACTORY,
 } as const;
 
 // ============================================================
@@ -99,6 +110,7 @@ type VehiclePermission = (typeof VEHICLE)[keyof typeof VEHICLE];
 type CollectionPointPermission = (typeof COLLECTION_POINT)[keyof typeof COLLECTION_POINT];
 type LedgerTaskPermission = (typeof LEDGER_TASK)[keyof typeof LEDGER_TASK];
 type TransferTaskPermission = (typeof TRANSFER_TASK)[keyof typeof TRANSFER_TASK];
+type FactoryPermission = (typeof FACTORY)[keyof typeof FACTORY];
 
 /**
  * 所有权限类型的联合类型
@@ -109,7 +121,8 @@ export type Permission =
   | VehiclePermission
   | CollectionPointPermission
   | LedgerTaskPermission
-  | TransferTaskPermission;
+  | TransferTaskPermission
+  | FactoryPermission;
 
 // ============================================================
 // 角色权限配置
@@ -136,6 +149,7 @@ export const rolePermissions: Record<string, Permission[]> = {
     MENU.LEDGERS_DRIVER,
     MENU.LEDGERS_TRANSFER,
     MENU.LEDGERS_DRIVER_ANALYSIS,
+    MENU.FACTORIES,
     MENU.SETTINGS,
     // 操作权限
     STORE.CREATE,
@@ -151,6 +165,9 @@ export const rolePermissions: Record<string, Permission[]> = {
     LEDGER_TASK.DELETE,
     TRANSFER_TASK.CREATE,
     TRANSFER_TASK.DELETE,
+    FACTORY.CREATE,
+    FACTORY.EDIT,
+    FACTORY.DELETE,
   ],
 
   // 收集点审核员 - 只能查看门店列表和台账对账

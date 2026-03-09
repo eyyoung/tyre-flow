@@ -26,6 +26,11 @@
 
 ### 本地开发
 
+0. 启动数据库
+```bash
+docker-compose up db
+```
+
 1. 安装依赖：
 ```bash
 npm install

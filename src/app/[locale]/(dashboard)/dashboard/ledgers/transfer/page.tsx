@@ -62,9 +62,18 @@ interface TransferTask {
     name: string;
     code: string;
   };
+  factory?: {
+    id: string;
+    name: string;
+  } | null;
   _count: {
     transferRecords: number;
   };
+}
+
+interface FactoryOption {
+  id: string;
+  name: string;
 }
 
 interface CollectionPoint {
@@ -118,6 +127,7 @@ export default function TransferLedgerPage() {
   const [recordsTotal, setRecordsTotal] = useState(0);
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
+  const [factories, setFactories] = useState<FactoryOption[]>([]);
   const [form] = Form.useForm();
 
   // 格式化数字，添加千分位
@@ -156,6 +166,15 @@ export default function TransferLedgerPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    fetch('/api/factories?all=true')
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.data) setFactories(result.data);
+      })
+      .catch(() => {});
+  }, []);
 
   // 当收集点变化时，重置页码
   useEffect(() => {
@@ -205,7 +224,8 @@ export default function TransferLedgerPage() {
           collectionPointId: currentCollectionPoint.id,
           startDate: startDate.format('YYYY-MM-DD'),
           endDate: endDate.format('YYYY-MM-DD'),
-          targetTonnage: values.targetTonnage * 1000, // 吨转换为 kg
+          targetTonnage: values.targetTonnage * 1000,
+          factoryId: values.factoryId,
         }),
       });
 
@@ -359,6 +379,12 @@ export default function TransferLedgerPage() {
       key: 'dateRange',
       width: 200,
       render: (_, record) => formatDateRange(record.startDate, record.endDate),
+    },
+    {
+      title: t('ledgers.factory'),
+      key: 'factory',
+      width: 140,
+      render: (_, record) => record.factory?.name || '-',
     },
     {
       title: `${t('ledgers.targetWeight')}(t)`,
@@ -558,7 +584,7 @@ export default function TransferLedgerPage() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1540 }}
           pagination={{
             current: page,
             pageSize,
@@ -591,6 +617,18 @@ export default function TransferLedgerPage() {
               rules={[{ required: true, message: '请选择时间范围' }]}
             >
               <RangePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="factoryId"
+              label={t('ledgers.factory')}
+              rules={[{ required: true, message: t('ledgers.selectFactory') }]}
+            >
+              <Select
+                placeholder={t('ledgers.selectFactory')}
+                options={factories.map((f) => ({ value: f.id, label: f.name }))}
+                showSearch
+                optionFilterProp="label"
+              />
             </Form.Item>
             <Form.Item
               name="targetTonnage"
@@ -682,6 +720,9 @@ export default function TransferLedgerPage() {
               <Descriptions.Item label={t('ledgers.taskNo')}>{selectedTask.taskNo}</Descriptions.Item>
               <Descriptions.Item label={t('ledgers.collectionPoint')}>
                 {selectedTask.collectionPoint.name}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('ledgers.factory')}>
+                {selectedTask.factory?.name || '-'}
               </Descriptions.Item>
               <Descriptions.Item label={t('ledgers.dateRange')}>
                 {formatDateRange(selectedTask.startDate, selectedTask.endDate)}

@@ -31,6 +31,9 @@ export async function GET(request: NextRequest) {
             collectionPoint: {
               select: { id: true, name: true, code: true },
             },
+            factory: {
+              select: { id: true, name: true },
+            },
             _count: {
               select: { transferRecords: true },
             },
@@ -68,11 +71,11 @@ export async function POST(request: NextRequest) {
 
     try {
       const body = await request.json();
-      const { collectionPointId, startDate, endDate, targetTonnage } = body;
+      const { collectionPointId, startDate, endDate, targetTonnage, factoryId } = body;
 
-      if (!collectionPointId || !startDate || !endDate || !targetTonnage) {
+      if (!collectionPointId || !startDate || !endDate || !targetTonnage || !factoryId) {
         return NextResponse.json(
-          { error: '收集点、时间范围和目标重量为必填项' },
+          { error: '收集点、时间范围、目标重量和目标工厂为必填项' },
           { status: 400 }
         );
       }
@@ -85,6 +88,18 @@ export async function POST(request: NextRequest) {
       if (!collectionPoint) {
         return NextResponse.json(
           { error: '收集点不存在' },
+          { status: 400 }
+        );
+      }
+
+      // 检查工厂是否存在
+      const factory = await ctx.prisma.factory.findUnique({
+        where: { id: factoryId },
+      });
+
+      if (!factory) {
+        return NextResponse.json(
+          { error: '工厂不存在' },
           { status: 400 }
         );
       }
@@ -136,8 +151,9 @@ export async function POST(request: NextRequest) {
           taskNo,
           startDate: start,
           endDate: end,
-          targetTonnage: parseFloat(targetTonnage), // 已经是 kg
+          targetTonnage: parseFloat(targetTonnage),
           collectionPointId,
+          factoryId,
         },
       });
 

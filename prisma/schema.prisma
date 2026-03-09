@@ -192,6 +192,20 @@ model SystemConfig {
   @@map("system_configs")
 }
 
+// ==================== 工厂管理 ====================
+
+model Factory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  status    Status   @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transferTasks TransferTask[]
+
+  @@map("factories")
+}
+
 // ==================== 台账管理（Phase 3） ====================
 
 model LedgerTask {
@@ -237,6 +251,8 @@ model TransferTask {
   completedAt        DateTime?
   collectionPointId  String
   collectionPoint    CollectionPoint @relation(fields: [collectionPointId], references: [id])
+  factoryId          String?
+  factory            Factory?        @relation(fields: [factoryId], references: [id])
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
