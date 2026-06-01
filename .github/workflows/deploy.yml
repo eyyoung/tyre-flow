@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: deploy-prod
@@ -20,10 +19,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: actions/checkout@v4
 
       - name: Resolve target
         id: target
@@ -137,55 +133,13 @@ jobs:
             -L 5000:localhost:5000 \
             "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}"
 
-      - name: Build app image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: |
-            localhost:5000/tyre-flow-app:${{ github.sha }}
-            localhost:5000/tyre-flow-app:latest
-          build-args: |
-            DEBIAN_MIRROR=http://deb.debian.org/debian
-            DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
-          cache-from: type=gha,scope=tyre-flow-app
-          cache-to: type=gha,mode=max,scope=tyre-flow-app
-
-      - name: Build migration image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile.migrate
-          platforms: linux/amd64
-          load: true
-          tags: |
-            localhost:5000/tyre-flow-migrate:${{ github.sha }}
-            localhost:5000/tyre-flow-migrate:latest
-          cache-from: type=gha,scope=tyre-flow-migrate
-          cache-to: type=gha,mode=max,scope=tyre-flow-migrate
-
-      - name: Build signature image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./handwriting-simulator
-          file: ./handwriting-simulator/Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: |
-            localhost:5000/tyre-flow-signature:${{ github.sha }}
-            localhost:5000/tyre-flow-signature:latest
-          cache-from: type=gha,scope=tyre-flow-signature
-          cache-to: type=gha,mode=max,scope=tyre-flow-signature
-
-      - name: Push and deploy
+      - name: Build, push, and deploy
         shell: bash
         env:
           SSH_KEY: /home/runner/.ssh/deploy.pem
           REGISTRY_HOST_OVERRIDE: localhost:5000
           DEPLOY_REPO_URL: https://github.com/eyyoung/tyre-flow.git
           DEPLOY_GIT_REF: ${{ github.sha }}
-          DEPLOY_IMAGE_TAG: ${{ github.sha }}
           DEBIAN_MIRROR: http://deb.debian.org/debian
           DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
-        run: ./scripts/deploy.sh prod --yes --skip-build
+        run: ./scripts/deploy.sh prod --yes

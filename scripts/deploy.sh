@@ -2,11 +2,10 @@
 
 # ===========================================
 # 本地 / GitHub Actions 部署脚本
-# 用法: ./scripts/deploy.sh prod [--scp] [--skip-build] [--yes]
+# 用法: ./scripts/deploy.sh prod [--scp] [--yes]
 #
 # 选项:
 #   --scp  使用传统 SCP 方式传输（默认使用 Registry 增量推送）
-#   --skip-build  跳过本地构建，复用已存在的镜像标签（用于 CI Buildx cache）
 #   --yes  跳过交互确认（用于 CI）
 # ===========================================
 
@@ -39,20 +38,18 @@ error() {
 
 # 检查参数
 if [ -z "$1" ]; then
-    echo "用法: $0 prod [--scp] [--skip-build] [--yes]"
+    echo "用法: $0 prod [--scp] [--yes]"
     echo ""
     echo "  prod  - 部署到生产环境 (8.148.203.142)"
     echo ""
     echo "选项:"
     echo "  --scp - 使用传统 SCP 方式传输完整镜像（默认使用 Registry 增量推送）"
-    echo "  --skip-build - 跳过本地构建，复用已存在的镜像标签（用于 CI Buildx cache）"
     echo "  --yes - 跳过交互确认（用于 CI）"
     exit 1
 fi
 
 ENV=$1
 USE_SCP=false
-SKIP_BUILD=false
 AUTO_APPROVE=false
 
 # 解析额外参数
@@ -61,10 +58,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --scp)
             USE_SCP=true
-            shift
-            ;;
-        --skip-build)
-            SKIP_BUILD=true
             shift
             ;;
         -y|--yes)
@@ -123,8 +116,8 @@ REGISTRY_HOST="${REGISTRY_HOST_OVERRIDE:-${REGISTRY_HOST}}"
 # 服务器代码同步目标。CI 传入精确 SHA；本地默认部署 main。
 DEPLOY_GIT_REF="${DEPLOY_GIT_REF:-${GIT_BRANCH}}"
 
-# 获取镜像 tag。CI 可传入完整 SHA；本地默认使用当前 Git commit short SHA。
-GIT_SHA="${DEPLOY_IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo "latest")}"
+# 获取当前 Git commit short SHA
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
 
 echo ""
 echo "========================================"
@@ -142,9 +135,6 @@ if [ "$USE_SCP" = true ]; then
 else
     echo "传输方式: Registry（增量推送）🚀"
     echo "Registry: ${REGISTRY_HOST}"
-fi
-if [ "$SKIP_BUILD" = true ]; then
-    echo "构建方式: 跳过本地构建，复用已存在镜像"
 fi
 
 echo "========================================"
@@ -209,9 +199,9 @@ if [ "$USE_SCP" = false ] && [[ ! "$REGISTRY_HOST" =~ ^(localhost|127\.0\.0\.1)(
 fi
 
 # ===========================================
-# 阶段1: 准备 Docker 镜像
+# 阶段1: 构建 Docker 镜像
 # ===========================================
-info "🏗️  准备 Docker 镜像..."
+info "🏗️  开始构建 Docker 镜像..."
 
 # 根据传输方式决定镜像标签
 if [ "$USE_SCP" = true ]; then
@@ -227,44 +217,31 @@ else
     SIGNATURE_IMAGE_LATEST="${REGISTRY_HOST}/tyre-flow-signature:latest"
 fi
 
-if [ "$SKIP_BUILD" = false ]; then
-    # 构建应用镜像
-    info "构建应用镜像..."
-    if [ "$USE_SCP" = true ]; then
-        docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" .
-    else
-        docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" -t "$APP_IMAGE_LATEST" .
-    fi
-
-    # 构建迁移镜像
-    info "构建迁移镜像..."
-    if [ "$USE_SCP" = true ]; then
-        docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" .
-    else
-        docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" -t "$MIGRATE_IMAGE_LATEST" .
-    fi
-
-    # 构建签名服务镜像
-    info "构建签名服务镜像..."
-    if [ "$USE_SCP" = true ]; then
-        docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" ./handwriting-simulator
-    else
-        docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" -t "$SIGNATURE_IMAGE_LATEST" ./handwriting-simulator
-    fi
-
-    success "镜像构建完成"
+# 构建应用镜像
+info "构建应用镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" .
 else
-    info "跳过 Docker build，检查预构建镜像标签..."
-    docker image inspect "$APP_IMAGE" > /dev/null
-    docker image inspect "$MIGRATE_IMAGE" > /dev/null
-    docker image inspect "$SIGNATURE_IMAGE" > /dev/null
-    if [ "$USE_SCP" = false ]; then
-        docker image inspect "$APP_IMAGE_LATEST" > /dev/null
-        docker image inspect "$MIGRATE_IMAGE_LATEST" > /dev/null
-        docker image inspect "$SIGNATURE_IMAGE_LATEST" > /dev/null
-    fi
-    success "预构建镜像检查完成"
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" -t "$APP_IMAGE_LATEST" .
 fi
+
+# 构建迁移镜像
+info "构建迁移镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" .
+else
+    docker build --platform linux/amd64 -f Dockerfile.migrate -t "$MIGRATE_IMAGE" -t "$MIGRATE_IMAGE_LATEST" .
+fi
+
+# 构建签名服务镜像
+info "构建签名服务镜像..."
+if [ "$USE_SCP" = true ]; then
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" ./handwriting-simulator
+else
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" -t "$SIGNATURE_IMAGE_LATEST" ./handwriting-simulator
+fi
+
+success "镜像构建完成"
 docker images | grep tyre-flow
 
 if [ "$USE_SCP" = true ]; then
