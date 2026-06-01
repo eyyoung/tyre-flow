@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 REMOTE_DIR="/root/deployment/tyre-flow"
-REPO_URL="https://cnb:7HNZfxtX3b1dEVBNT4TaJh1A1PF@cnb.cool/tyre-flow/tyre-flow.git"
+REPO_URL="${REPO_URL:-https://github.com/eyyoung/tyre-flow.git}"
 
 echo "🔧 Tyre Flow 服务器初始化"
 echo "========================================"
@@ -203,13 +203,14 @@ mkdir -p $REMOTE_DIR
 cd $REMOTE_DIR
 
 if [ ! -d ".git" ]; then
-    echo "📦 克隆仓库..."
-    git clone $REPO_URL .
-else
-    echo "✅ 仓库已存在，更新代码..."
-    git fetch origin
-    git reset --hard origin/main
+    echo "📦 初始化仓库..."
+    git init
 fi
+echo "✅ 更新代码..."
+git remote remove origin 2>/dev/null || true
+git remote add origin "$REPO_URL"
+git fetch --prune origin main
+git reset --hard FETCH_HEAD
 
 # 创建或更新 .env 文件
 echo "📝 创建 .env 文件..."
@@ -232,16 +233,16 @@ echo ""
 
 if [ "$USE_EXTERNAL_DB" = true ]; then
     echo "   2. 首次部署（外部数据库模式）:"
-    echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
+    echo "      在 GitHub Actions 中手动运行 Deploy workflow"
     echo "      或手动执行:"
     echo "      ssh $SERVER 'cd $REMOTE_DIR && docker compose --profile external-db up -d'"
 else
     echo "   2. 首次部署（Docker 数据库模式）:"
-    echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
-    echo "      CI/CD 会自动检测首次部署并初始化数据库"
+    echo "      在 GitHub Actions 中手动运行 Deploy workflow"
+    echo "      部署脚本会自动检测首次部署并初始化数据库"
 fi
 
 echo ""
-echo "   3. 自动部署 (推荐):"
-echo "      代码推送到 CNB 的 main 分支即可自动触发 CI/CD 部署"
+echo "   3. GitHub Actions 部署:"
+echo "      Actions -> Deploy -> Run workflow -> 选择 dev 或 prod"
 echo "========================================"

@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # ===========================================
-# 本地部署脚本
-# 用法: ./scripts/deploy.sh [dev|prod] [--scp]
+# 本地 / GitHub Actions 部署脚本
+# 用法: ./scripts/deploy.sh [dev|prod] [--scp] [--yes]
 #
 # 选项:
 #   --scp  使用传统 SCP 方式传输（默认使用 Registry 增量推送）
+#   --yes  跳过交互确认（用于 CI）
 # ===========================================
 
 set -e
@@ -37,18 +38,20 @@ error() {
 
 # 检查参数
 if [ -z "$1" ]; then
-    echo "用法: $0 [dev|prod] [--scp]"
+    echo "用法: $0 [dev|prod] [--scp] [--yes]"
     echo ""
     echo "  dev   - 部署到测试环境 (212.129.242.30)"
     echo "  prod  - 部署到生产环境 (8.148.203.142)"
     echo ""
     echo "选项:"
     echo "  --scp - 使用传统 SCP 方式传输完整镜像（默认使用 Registry 增量推送）"
+    echo "  --yes - 跳过交互确认（用于 CI）"
     exit 1
 fi
 
 ENV=$1
 USE_SCP=false
+AUTO_APPROVE=false
 
 # 解析额外参数
 shift
@@ -56,6 +59,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --scp)
             USE_SCP=true
+            shift
+            ;;
+        -y|--yes)
+            AUTO_APPROVE=true
             shift
             ;;
         *)
@@ -66,6 +73,26 @@ done
 
 # Registry 配置（在服务器上运行）
 REGISTRY_PORT="5000"
+
+# 部署源仓库（这段在服务器上执行，默认使用 GitHub HTTPS，避免依赖本机 SSH alias）
+DEPLOY_REPO_URL="${DEPLOY_REPO_URL:-https://github.com/eyyoung/tyre-flow.git}"
+
+# SSH 配置。本地默认使用 ~/.ssh/deploy.pem；CI 可通过 SSH_KEY 指定。
+SSH_KEY="${SSH_KEY:-${HOME}/.ssh/deploy.pem}"
+SSH_OPTS=(-o StrictHostKeyChecking=no)
+SCP_OPTS=(-o StrictHostKeyChecking=no)
+if [ -f "$SSH_KEY" ]; then
+    SSH_OPTS+=(-i "$SSH_KEY")
+    SCP_OPTS+=(-i "$SSH_KEY")
+fi
+
+# Debian apt 镜像源（用于 Docker build，国内网络默认走阿里云镜像）
+DEBIAN_MIRROR="${DEBIAN_MIRROR:-http://mirrors.aliyun.com/debian}"
+DEBIAN_SECURITY_MIRROR="${DEBIAN_SECURITY_MIRROR:-http://mirrors.aliyun.com/debian-security}"
+DEBIAN_BUILD_ARGS=(
+    --build-arg "DEBIAN_MIRROR=${DEBIAN_MIRROR}"
+    --build-arg "DEBIAN_SECURITY_MIRROR=${DEBIAN_SECURITY_MIRROR}"
+)
 
 # 配置变量
 case $ENV in
@@ -94,6 +121,12 @@ case $ENV in
         ;;
 esac
 
+# CI 可通过 SSH tunnel 访问远端 registry，例如 REGISTRY_HOST_OVERRIDE=localhost:5000
+REGISTRY_HOST="${REGISTRY_HOST_OVERRIDE:-${REGISTRY_HOST}}"
+
+# 服务器代码同步目标。CI 传入精确 SHA；本地默认部署 main。
+DEPLOY_GIT_REF="${DEPLOY_GIT_REF:-${GIT_BRANCH}}"
+
 # 获取当前 Git commit short SHA
 GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
 
@@ -103,29 +136,34 @@ echo "🚀 部署到 $ENV 环境"
 echo "========================================"
 echo "服务器: ${SERVER_USER}@${SERVER_IP}"
 echo "部署目录: ${DEPLOY_DIR}"
+echo "部署仓库: ${DEPLOY_REPO_URL}"
+echo "部署引用: ${DEPLOY_GIT_REF}"
 echo "Git SHA: ${GIT_SHA}"
 echo "Docker Profile: ${DOCKER_PROFILE}"
+echo "Debian Mirror: ${DEBIAN_MIRROR}"
 if [ "$USE_SCP" = true ]; then
     echo "传输方式: SCP（完整镜像）"
 else
     echo "传输方式: Registry（增量推送）🚀"
     echo "Registry: ${REGISTRY_HOST}"
 fi
+
 echo "========================================"
 echo ""
 
-# 确认部署
-read -p "确认部署到 $ENV 环境? (y/N) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    info "部署已取消"
-    exit 0
+if [ "$AUTO_APPROVE" = false ]; then
+    read -p "确认部署到 $ENV 环境? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        info "部署已取消"
+        exit 0
+    fi
 fi
 
 # ===========================================
 # Registry 模式预检查
 # ===========================================
-if [ "$USE_SCP" = false ]; then
+if [ "$USE_SCP" = false ] && [[ ! "$REGISTRY_HOST" =~ ^(localhost|127\.0\.0\.1)(:|$) ]]; then
     info "🔍 检查 Docker 配置..."
     
     # 检查本地 Docker 是否配置了 insecure-registries
@@ -193,9 +231,9 @@ fi
 # 构建应用镜像
 info "构建应用镜像..."
 if [ "$USE_SCP" = true ]; then
-    docker build --platform linux/amd64 -t "$APP_IMAGE" .
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" .
 else
-    docker build --platform linux/amd64 -t "$APP_IMAGE" -t "$APP_IMAGE_LATEST" .
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -t "$APP_IMAGE" -t "$APP_IMAGE_LATEST" .
 fi
 
 # 构建迁移镜像
@@ -209,9 +247,9 @@ fi
 # 构建签名服务镜像
 info "构建签名服务镜像..."
 if [ "$USE_SCP" = true ]; then
-    docker build --platform linux/amd64 -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" ./handwriting-simulator
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" ./handwriting-simulator
 else
-    docker build --platform linux/amd64 -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" -t "$SIGNATURE_IMAGE_LATEST" ./handwriting-simulator
+    docker build --platform linux/amd64 "${DEBIAN_BUILD_ARGS[@]}" -f handwriting-simulator/Dockerfile -t "$SIGNATURE_IMAGE" -t "$SIGNATURE_IMAGE_LATEST" ./handwriting-simulator
 fi
 
 success "镜像构建完成"
@@ -237,9 +275,9 @@ if [ "$USE_SCP" = true ]; then
 
     info "📤 传输镜像到服务器 (${SERVER_IP})..."
 
-    scp -o StrictHostKeyChecking=no "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
-    scp -o StrictHostKeyChecking=no "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
-    scp -o StrictHostKeyChecking=no "$TEMP_SIGNATURE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-signature.tar.gz"
+    scp "${SCP_OPTS[@]}" "$TEMP_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-app.tar.gz"
+    scp "${SCP_OPTS[@]}" "$TEMP_MIGRATE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-migrate.tar.gz"
+    scp "${SCP_OPTS[@]}" "$TEMP_SIGNATURE_FILE" "${SERVER_USER}@${SERVER_IP}:/tmp/tyre-flow-signature.tar.gz"
 
     success "镜像传输完成"
 
@@ -252,10 +290,17 @@ else
     
     # 确保服务器上 Registry 正在运行
     info "🔧 确保远程 Registry 服务运行中..."
-    ssh -o StrictHostKeyChecking=no "${SERVER_USER}@${SERVER_IP}" << 'REGISTRY_SETUP'
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << 'REGISTRY_SETUP'
 set -e
-# 检查 registry 是否运行
-if ! docker ps --format '{{.Names}}' | grep -q "^registry$"; then
+# 检查 registry 是否存在/运行，保证重复执行可恢复
+if docker inspect registry > /dev/null 2>&1; then
+    if [ "$(docker inspect -f '{{.State.Running}}' registry)" != "true" ]; then
+        echo "启动已存在的 Docker Registry..."
+        docker start registry
+    else
+        echo "Registry 已在运行"
+    fi
+else
     echo "启动 Docker Registry..."
     docker run -d \
         --name registry \
@@ -264,8 +309,6 @@ if ! docker ps --format '{{.Names}}' | grep -q "^registry$"; then
         -v /var/lib/registry:/var/lib/registry \
         registry:2
     echo "Registry 已启动"
-else
-    echo "Registry 已在运行"
 fi
 REGISTRY_SETUP
     
@@ -328,7 +371,7 @@ fi
 
 if [ "$ENV" = "dev" ]; then
     # Dev 环境部署脚本
-    ssh -o StrictHostKeyChecking=no "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
 set -e
 
 echo "📂 进入项目目录..."
@@ -339,12 +382,13 @@ cd \$DEPLOY_DIR
 ${LOAD_IMAGES_CMD}
 
 echo "📥 同步配置文件..."
-if [ -d ".git" ]; then
-  git fetch origin
-  git reset --hard origin/${GIT_BRANCH}
-else
-  git clone -b ${GIT_BRANCH} https://cnb.cool/tyre-flow/tyre-flow.git .
+if [ ! -d ".git" ]; then
+  git init
 fi
+git remote remove origin 2>/dev/null || true
+git remote add origin "${DEPLOY_REPO_URL}"
+git fetch --prune origin "${DEPLOY_GIT_REF}"
+git reset --hard FETCH_HEAD
 
 # 检测是否是首次部署（检查数据库容器是否存在）
 FIRST_DEPLOY=false
@@ -410,7 +454,7 @@ DEPLOY_SCRIPT
 
 else
     # Prod 环境部署脚本
-    ssh -o StrictHostKeyChecking=no "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
 set -e
 
 echo "📂 进入项目目录..."
@@ -421,16 +465,17 @@ cd \$DEPLOY_DIR
 ${LOAD_IMAGES_CMD}
 
 echo "📥 同步配置文件..."
-if [ -d ".git" ]; then
-  git fetch origin
-  git reset --hard origin/${GIT_BRANCH}
-else
-  git clone -b ${GIT_BRANCH} https://cnb.cool/tyre-flow/tyre-flow.git .
+if [ ! -d ".git" ]; then
+  git init
 fi
+git remote remove origin 2>/dev/null || true
+git remote add origin "${DEPLOY_REPO_URL}"
+git fetch --prune origin "${DEPLOY_GIT_REF}"
+git reset --hard FETCH_HEAD
 
-# 检测是否是首次部署（应用容器不存在）
+# 检测是否是首次部署（生产应用容器不存在）
 FIRST_DEPLOY=false
-if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-app"; then
+if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-external-db-app"; then
   echo "🆕 检测到首次部署..."
   FIRST_DEPLOY=true
 fi

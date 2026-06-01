@@ -1,0 +1,88 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.environment }}" in
+            dev)
+              echo "server_ip=212.129.242.30" >> "$GITHUB_OUTPUT"
+              echo "server_user=root" >> "$GITHUB_OUTPUT"
+              ;;
+            prod)
+              echo "server_ip=8.148.203.142" >> "$GITHUB_OUTPUT"
+              echo "server_user=root" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown environment: ${{ inputs.environment }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install -m 700 -d ~/.ssh
+          cat > ~/.ssh/deploy.pem <<'EOF'
+          ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          EOF
+          chmod 600 ~/.ssh/deploy.pem
+          ssh-keygen -y -f ~/.ssh/deploy.pem > /dev/null
+
+          ssh-keyscan -H "${{ steps.target.outputs.server_ip }}" >> ~/.ssh/known_hosts
+
+      - name: Open registry tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy.pem \
+            -o StrictHostKeyChecking=yes \
+            -fN \
+            -L 5000:localhost:5000 \
+            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}"
+
+      - name: Build, push, and deploy
+        shell: bash
+        env:
+          SSH_KEY: /home/runner/.ssh/deploy.pem
+          REGISTRY_HOST_OVERRIDE: localhost:5000
+          DEPLOY_REPO_URL: https://github.com/eyyoung/tyre-flow.git
+          DEPLOY_GIT_REF: ${{ github.sha }}
+          DEBIAN_MIRROR: http://deb.debian.org/debian
+          DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
+        run: ./scripts/deploy.sh "${{ inputs.environment }}" --yes
