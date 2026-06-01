@@ -23,6 +23,7 @@ jobs:
   deploy:
     name: Deploy ${{ inputs.environment }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     timeout-minutes: 60
 
     steps:
@@ -39,10 +40,12 @@ jobs:
             dev)
               echo "server_ip=212.129.242.30" >> "$GITHUB_OUTPUT"
               echo "server_user=root" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
               ;;
             prod)
               echo "server_ip=8.148.203.142" >> "$GITHUB_OUTPUT"
               echo "server_user=root" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "Unknown environment: ${{ inputs.environment }}" >&2
@@ -63,6 +66,99 @@ jobs:
           ssh-keygen -y -f ~/.ssh/deploy.pem > /dev/null
 
           ssh-keyscan -H "${{ steps.target.outputs.server_ip }}" >> ~/.ssh/known_hosts
+
+      - name: Prepare runtime env
+        shell: bash
+        env:
+          EXTERNAL_DB_URL: ${{ secrets.EXTERNAL_DB_URL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          AMAP_API_KEY: ${{ secrets.AMAP_API_KEY }}
+          TENCENT_LBS_KEY: ${{ secrets.TENCENT_LBS_KEY }}
+          TENCENT_LBS_SK: ${{ secrets.TENCENT_LBS_SK }}
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
+          APP_PORT: ${{ secrets.APP_PORT }}
+          SIGNATURE_PORT: ${{ secrets.SIGNATURE_PORT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          SECURE_COOKIES: ${{ secrets.SECURE_COOKIES }}
+          LBS_PROVIDER: ${{ secrets.LBS_PROVIDER }}
+          SIGNATURE_SERVICE_URL: ${{ secrets.SIGNATURE_SERVICE_URL }}
+        run: |
+          set -euo pipefail
+
+          : > /tmp/tyre-flow.env
+
+          require_value() {
+            local key="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required runtime env key: ${key}"
+              exit 1
+            fi
+          }
+
+          write_value() {
+            local key="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              local escaped="${value//\'/\'\\\'\'}"
+              printf "%s='%s'\n" "$key" "$escaped" >> /tmp/tyre-flow.env
+            fi
+          }
+
+          case "${{ inputs.environment }}" in
+            dev)
+              require_value POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+              require_value JWT_SECRET "$JWT_SECRET"
+              require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
+
+              write_value POSTGRES_USER "${POSTGRES_USER:-tyre_flow}"
+              write_value POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+              write_value POSTGRES_DB "${POSTGRES_DB:-tyre_flow}"
+              ;;
+            prod)
+              require_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
+              require_value JWT_SECRET "$JWT_SECRET"
+              require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
+
+              write_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
+              ;;
+          esac
+
+          write_value JWT_SECRET "$JWT_SECRET"
+          write_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
+          write_value NEXTAUTH_URL "$NEXTAUTH_URL"
+          write_value SECURE_COOKIES "${SECURE_COOKIES:-false}"
+          write_value APP_PORT "$APP_PORT"
+          write_value SIGNATURE_PORT "$SIGNATURE_PORT"
+          write_value AMAP_API_KEY "$AMAP_API_KEY"
+          write_value LBS_PROVIDER "$LBS_PROVIDER"
+          write_value TENCENT_LBS_KEY "$TENCENT_LBS_KEY"
+          write_value TENCENT_LBS_SK "$TENCENT_LBS_SK"
+          write_value SIGNATURE_SERVICE_URL "$SIGNATURE_SERVICE_URL"
+          write_value ALIBABA_CLOUD_ACCESS_KEY_ID "$ALIBABA_CLOUD_ACCESS_KEY_ID"
+          write_value ALIBABA_CLOUD_ACCESS_KEY_SECRET "$ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+
+      - name: Sync runtime env
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scp \
+            -i ~/.ssh/deploy.pem \
+            -o StrictHostKeyChecking=yes \
+            /tmp/tyre-flow.env \
+            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}:/tmp/tyre-flow.env"
+
+          ssh \
+            -i ~/.ssh/deploy.pem \
+            -o StrictHostKeyChecking=yes \
+            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}" \
+            "install -m 700 -d '${{ steps.target.outputs.deploy_dir }}' && install -m 600 /tmp/tyre-flow.env '${{ steps.target.outputs.deploy_dir }}/.env' && rm -f /tmp/tyre-flow.env"
 
       - name: Open registry tunnel
         shell: bash
