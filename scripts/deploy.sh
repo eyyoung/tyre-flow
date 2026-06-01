@@ -2,7 +2,7 @@
 
 # ===========================================
 # 本地 / GitHub Actions 部署脚本
-# 用法: ./scripts/deploy.sh [dev|prod] [--scp] [--yes]
+# 用法: ./scripts/deploy.sh prod [--scp] [--yes]
 #
 # 选项:
 #   --scp  使用传统 SCP 方式传输（默认使用 Registry 增量推送）
@@ -38,9 +38,8 @@ error() {
 
 # 检查参数
 if [ -z "$1" ]; then
-    echo "用法: $0 [dev|prod] [--scp] [--yes]"
+    echo "用法: $0 prod [--scp] [--yes]"
     echo ""
-    echo "  dev   - 部署到测试环境 (212.129.242.30)"
     echo "  prod  - 部署到生产环境 (8.148.203.142)"
     echo ""
     echo "选项:"
@@ -96,16 +95,6 @@ DEBIAN_BUILD_ARGS=(
 
 # 配置变量
 case $ENV in
-    dev)
-        SERVER_IP="212.129.242.30"
-        SERVER_USER="root"
-        DEPLOY_DIR="/root/deployment/tyre-flow"
-        GIT_BRANCH="main"
-        DOCKER_PROFILE="internal-db"
-        SETUP_PROFILE="setup"
-        MIGRATE_SERVICE="migrate"
-        REGISTRY_HOST="${SERVER_IP}:${REGISTRY_PORT}"
-        ;;
     prod)
         SERVER_IP="8.148.203.142"
         SERVER_USER="root"
@@ -117,7 +106,7 @@ case $ENV in
         REGISTRY_HOST="${SERVER_IP}:${REGISTRY_PORT}"
         ;;
     *)
-        error "未知环境: $ENV (请使用 dev 或 prod)"
+        error "未知环境: $ENV (请使用 prod)"
         ;;
 esac
 
@@ -369,92 +358,8 @@ docker tag localhost:${REGISTRY_PORT}/tyre-flow-signature:latest tyre-flow-signa
 "
 fi
 
-if [ "$ENV" = "dev" ]; then
-    # Dev 环境部署脚本
-    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
-set -e
-
-echo "📂 进入项目目录..."
-DEPLOY_DIR="${DEPLOY_DIR}"
-mkdir -p \$DEPLOY_DIR
-cd \$DEPLOY_DIR
-
-${LOAD_IMAGES_CMD}
-
-echo "📥 同步配置文件..."
-if [ ! -d ".git" ]; then
-  git init
-fi
-git remote remove origin 2>/dev/null || true
-git remote add origin "${DEPLOY_REPO_URL}"
-git fetch --prune origin "${DEPLOY_GIT_REF}"
-git reset --hard FETCH_HEAD
-
-# 检测是否是首次部署（检查数据库容器是否存在）
-FIRST_DEPLOY=false
-if ! docker ps -a --format '{{.Names}}' | grep -q "tyre-flow-db"; then
-  echo "🆕 检测到首次部署，将初始化数据库..."
-  FIRST_DEPLOY=true
-fi
-
-echo "🚢 停止旧服务..."
-docker compose down || true
-
-if [ "\$FIRST_DEPLOY" = true ]; then
-  echo "🗄️ 首次部署：启动数据库服务..."
-  docker compose up -d db
-  
-  echo "⏳ 等待数据库就绪..."
-  for i in {1..30}; do
-    if docker compose exec -T db pg_isready -U tyre_flow > /dev/null 2>&1; then
-      echo "✅ 数据库已就绪"
-      break
-    fi
-    echo "   等待数据库... (\$i/30)"
-    sleep 2
-  done
-  
-  echo "📊 运行数据库迁移和初始化..."
-  docker compose --profile ${SETUP_PROFILE} run --rm ${MIGRATE_SERVICE}
-  
-  echo "🚀 启动应用服务..."
-  docker compose --profile ${DOCKER_PROFILE} up -d --no-build
-else
-  echo "🔄 更新部署：启动所有服务..."
-  docker compose --profile ${DOCKER_PROFILE} up -d --no-build
-  
-  echo "⏳ 等待服务启动..."
-  sleep 10
-  
-  echo "📊 运行数据库迁移（如有更新）..."
-  docker compose --profile ${SETUP_PROFILE} run --rm ${MIGRATE_SERVICE} || echo "迁移已完成或无更新"
-fi
-
-echo "⏳ 等待服务完全启动..."
-sleep 5
-
-echo "🔍 检查服务状态..."
-if docker compose ps | grep -q "Up"; then
-  echo "✅ 服务运行正常"
-  docker compose ps
-else
-  echo "❌ 服务启动失败"
-  docker compose logs --tail=50
-  exit 1
-fi
-
-echo "🧹 清理旧镜像..."
-docker image prune -f
-
-echo ""
-echo "========================================"
-echo "✅ 部署完成！"
-echo "========================================"
-DEPLOY_SCRIPT
-
-else
-    # Prod 环境部署脚本
-    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
+# Prod 环境部署脚本
+ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << DEPLOY_SCRIPT
 set -e
 
 echo "📂 进入项目目录..."
@@ -517,7 +422,5 @@ echo "========================================"
 echo "✅ 生产环境部署完成！（外部数据库模式）"
 echo "========================================"
 DEPLOY_SCRIPT
-
-fi
 
 success "🎉 部署脚本执行完成！"

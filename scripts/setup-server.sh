@@ -244,5 +244,5 @@ fi
 
 echo ""
 echo "   3. GitHub Actions 部署:"
-echo "      Actions -> Deploy -> Run workflow -> 选择 dev 或 prod"
+echo "      Actions -> Deploy -> Run workflow"
 echo "========================================"

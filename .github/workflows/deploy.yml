@@ -2,28 +2,19 @@ name: Deploy
 
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment"
-        required: true
-        default: "prod"
-        type: choice
-        options:
-          - dev
-          - prod
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ inputs.environment }}
+  group: deploy-prod
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy ${{ inputs.environment }}
+    name: Deploy prod
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: prod
     timeout-minutes: 60
 
     steps:
@@ -36,22 +27,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          case "${{ inputs.environment }}" in
-            dev)
-              echo "server_ip=212.129.242.30" >> "$GITHUB_OUTPUT"
-              echo "server_user=root" >> "$GITHUB_OUTPUT"
-              echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
-              ;;
-            prod)
-              echo "server_ip=8.148.203.142" >> "$GITHUB_OUTPUT"
-              echo "server_user=root" >> "$GITHUB_OUTPUT"
-              echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Unknown environment: ${{ inputs.environment }}" >&2
-              exit 1
-              ;;
-          esac
+          echo "server_ip=8.148.203.142" >> "$GITHUB_OUTPUT"
+          echo "server_user=root" >> "$GITHUB_OUTPUT"
+          echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         shell: bash
@@ -71,7 +49,6 @@ jobs:
         shell: bash
         env:
           EXTERNAL_DB_URL: ${{ secrets.EXTERNAL_DB_URL }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           AMAP_API_KEY: ${{ secrets.AMAP_API_KEY }}
@@ -81,8 +58,6 @@ jobs:
           ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
           APP_PORT: ${{ secrets.APP_PORT }}
           SIGNATURE_PORT: ${{ secrets.SIGNATURE_PORT }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           SECURE_COOKIES: ${{ secrets.SECURE_COOKIES }}
           LBS_PROVIDER: ${{ secrets.LBS_PROVIDER }}
@@ -110,25 +85,11 @@ jobs:
             fi
           }
 
-          case "${{ inputs.environment }}" in
-            dev)
-              require_value POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
-              require_value JWT_SECRET "$JWT_SECRET"
-              require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
+          require_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
+          require_value JWT_SECRET "$JWT_SECRET"
+          require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
 
-              write_value POSTGRES_USER "${POSTGRES_USER:-tyre_flow}"
-              write_value POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
-              write_value POSTGRES_DB "${POSTGRES_DB:-tyre_flow}"
-              ;;
-            prod)
-              require_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
-              require_value JWT_SECRET "$JWT_SECRET"
-              require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
-
-              write_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
-              ;;
-          esac
-
+          write_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
           write_value JWT_SECRET "$JWT_SECRET"
           write_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
           write_value NEXTAUTH_URL "$NEXTAUTH_URL"
@@ -181,4 +142,4 @@ jobs:
           DEPLOY_GIT_REF: ${{ github.sha }}
           DEBIAN_MIRROR: http://deb.debian.org/debian
           DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
-        run: ./scripts/deploy.sh "${{ inputs.environment }}" --yes
+        run: ./scripts/deploy.sh prod --yes
