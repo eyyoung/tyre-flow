@@ -309,6 +309,12 @@
     "tareWeight": "皮重",
     "netWeight": "净重",
     "weighbridgeNo": "磅单号",
+    "openingStock": "期初库存",
+    "periodInbound": "本期入库",
+    "periodTransferred": "本期已转出",
+    "availableTransferWeight": "可转移重量",
+    "inventorySelectDateHint": "选择时间范围后显示该收集点的可转移库存",
+    "transferExceedsInventory": "目标重量不能超过可转移库存",
     "transferWeightHint": "输入需要转移的重量（kg），系统将自动分配车辆生成转移记录",
     "noTransferVehicles": "该收集点没有可用的转移车辆",
     "driverTitle": "司机台账",
@@ -571,4 +577,3 @@
     }
   }
 }
-

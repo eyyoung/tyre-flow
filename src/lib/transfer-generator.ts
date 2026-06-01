@@ -1,5 +1,10 @@
 import prisma from "./db";
 import { adjustToChineseTimezone } from "./timezone";
+import {
+  assertSufficientInventory,
+  getInventorySummary,
+  toDateParam,
+} from "./inventory";
 
 interface TransferRecordData {
   recordNo: string;
@@ -29,6 +34,10 @@ export interface TransferGenerationResult {
   vehiclesCount: number;
 }
 
+interface TransferGenerationOptions {
+  maxTransferWeightKg?: number;
+}
+
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -54,6 +63,10 @@ function randomFloatBetween(
  */
 function roundToNearest10(value: number): number {
   return Math.round(value / 10) * 10;
+}
+
+function floorToNearest10(value: number): number {
+  return Math.floor(value / 10) * 10;
 }
 
 function generateRecordNo(
@@ -102,9 +115,11 @@ export async function generateTransferData(
   startDate: Date,
   endDate: Date,
   targetWeightKg: number,
-  factoryName: string = "再生资源加工厂"
+  factoryName: string = "再生资源加工厂",
+  options: TransferGenerationOptions = {}
 ): Promise<{ transferRecords: TransferRecordData[] }> {
   const config = await getConfig();
+  const maxTransferWeightKg = options.maxTransferWeightKg;
 
   const [transferVehicles, collectionPoint] = await Promise.all([
     prisma.vehicle.findMany({
@@ -156,9 +171,9 @@ export async function generateTransferData(
       transferVehicles.length) *
     avgLoadFactor;
 
-  const randomTargetWeightKg = randomFloatBetween(
-    targetWeightKg * 1,
-    targetWeightKg * 1.03
+  const randomTargetWeightKg = Math.min(
+    maxTransferWeightKg ?? Number.POSITIVE_INFINITY,
+    randomFloatBetween(targetWeightKg * 1, targetWeightKg * 1.03)
   );
   // 计算总共需要多少车次（向上取整确保能达到目标）
   const totalTripsNeeded = Math.ceil(randomTargetWeightKg / avgVehicleCapacity);
@@ -169,6 +184,7 @@ export async function generateTransferData(
 
   let globalIndex = 0;
   let allocatedTrips = 0; // 已分配的总车次数
+  let allocatedWeight = 0; // 已分配的总转移重量
 
   // 跟踪每辆车每天的使用次数
   const vehicleDayUsage: Map<string, Map<string, number>> = new Map();
@@ -190,7 +206,16 @@ export async function generateTransferData(
   };
 
   // 生成单条转移记录的辅助函数
-  const generateTransferRecord = (workDay: Date) => {
+  const generateTransferRecord = (workDay: Date): boolean => {
+    const remainingTransferableWeight =
+      maxTransferWeightKg === undefined
+        ? Number.POSITIVE_INFINITY
+        : floorToNearest10(maxTransferWeightKg - allocatedWeight);
+
+    if (remainingTransferableWeight < 10) {
+      return false;
+    }
+
     // 选择车辆（优先选择当天使用次数少的）
     const sortedVehicles = [...transferVehicles].sort((a, b) => {
       const countA = getVehicleUsageForDay(a.id, workDay);
@@ -209,7 +234,10 @@ export async function generateTransferData(
     // 计算本次转移量（装车净重）- 四舍五入到 10kg（模拟磅秤精度）
     // 转移任务会尽量装满，甚至有一定超载（95%~105%）
     const loadFactor = randomFloatBetween(0.95, 1.05);
-    const loadingNetWeight = roundToNearest10(vehicle.maxLoad * loadFactor);
+    const loadingNetWeight = Math.min(
+      roundToNearest10(vehicle.maxLoad * loadFactor),
+      remainingTransferableWeight
+    );
 
     // 计算折损
     const lossRatio = randomFloatBetween(
@@ -238,6 +266,7 @@ export async function generateTransferData(
 
     globalIndex++;
     incrementVehicleUsage(vehicle.id, workDay);
+    allocatedWeight += loadingNetWeight;
 
     transferRecords.push({
       recordNo: generateRecordNo(
@@ -257,6 +286,8 @@ export async function generateTransferData(
       loss,
       weighbridgeNo: generateWeighbridgeNo(workDay, globalIndex),
     });
+
+    return true;
   };
 
   // 按天循环，使用累积分配方式均匀分布车次
@@ -274,7 +305,10 @@ export async function generateTransferData(
 
     // 生成当天的转移记录
     for (let i = 0; i < dailyTrips; i++) {
-      generateTransferRecord(workDay);
+      const generated = generateTransferRecord(workDay);
+      if (!generated) {
+        break;
+      }
       allocatedTrips++;
     }
   }
@@ -297,6 +331,14 @@ export async function executeTransferTask(
     throw new Error("任务不存在");
   }
 
+  const inventory = await getInventorySummary(prisma, {
+    collectionPointId: task.collectionPointId,
+    startDate: toDateParam(task.startDate),
+    endDate: toDateParam(task.endDate),
+    excludeTransferTaskId: taskId,
+  });
+  assertSufficientInventory(task.targetTonnage, inventory);
+
   try {
     await prisma.transferTask.update({
       where: { id: taskId },
@@ -310,7 +352,8 @@ export async function executeTransferTask(
       task.startDate,
       task.endDate,
       task.targetTonnage,
-      task.factory?.name ?? "再生资源加工厂"
+      task.factory?.name ?? "再生资源加工厂",
+      { maxTransferWeightKg: inventory.availableWeight }
     );
 
     // 在保存前调整时间为中国时区

@@ -22,6 +22,7 @@ import {
   Row,
   Col,
   Statistic,
+  Alert,
 } from 'antd';
 import {
   PlusOutlined,
@@ -40,7 +41,7 @@ import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { TRANSFER_TASK } from '@/lib/permissions';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 interface TransferTask {
@@ -76,12 +77,6 @@ interface FactoryOption {
   name: string;
 }
 
-interface CollectionPoint {
-  id: string;
-  code: string;
-  name: string;
-}
-
 interface TransferRecord {
   id: string;
   recordNo: string;
@@ -104,11 +99,21 @@ interface GenerationSummary {
   vehiclesCount: number;
 }
 
+interface InventorySummary {
+  collectionPointId: string;
+  startDate: string;
+  endDate: string;
+  openingStockWeight: number;
+  inboundWeight: number;
+  transferredWeight: number;
+  availableWeight: number;
+}
+
 export default function TransferLedgerPage() {
   const t = useTranslations();
   const locale = useLocale();
   const { message } = App.useApp();
-  const { currentCollectionPoint, collectionPoints } = useCollectionPoint();
+  const { currentCollectionPoint } = useCollectionPoint();
   const { can } = useAuth();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TransferTask[]>([]);
@@ -128,11 +133,20 @@ export default function TransferLedgerPage() {
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
   const [factories, setFactories] = useState<FactoryOption[]>([]);
+  const [inventory, setInventory] = useState<InventorySummary | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
   const [form] = Form.useForm();
+  const selectedDateRange = Form.useWatch('dateRange', form);
+  const selectedStartDate = selectedDateRange?.[0]?.format('YYYY-MM-DD');
+  const selectedEndDate = selectedDateRange?.[1]?.format('YYYY-MM-DD');
 
   // 格式化数字，添加千分位
   const formatNumber = (num: number, precision = 2) => {
     return num.toLocaleString('zh-CN', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+  };
+
+  const formatWeightTons = (weightKg: number, precision = 2) => {
+    return `${formatNumber(weightKg / 1000, precision)} t`;
   };
 
   const fetchData = useCallback(async () => {
@@ -192,8 +206,65 @@ export default function TransferLedgerPage() {
   }, [data, fetchData]);
 
   const handleAdd = () => {
+    setInventory(null);
     setModalVisible(true);
   };
+
+  useEffect(() => {
+    if (
+      !modalVisible ||
+      !currentCollectionPoint ||
+      !selectedStartDate ||
+      !selectedEndDate
+    ) {
+      setInventory(null);
+      setInventoryLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const fetchInventory = async () => {
+      setInventoryLoading(true);
+      try {
+        const params = new URLSearchParams({
+          startDate: selectedStartDate,
+          endDate: selectedEndDate,
+        });
+        const response = await fetch(
+          `/api/collection-points/${currentCollectionPoint.id}/inventory?${params}`,
+          { signal: controller.signal }
+        );
+        const result = await response.json();
+
+        if (response.ok) {
+          setInventory(result.data);
+        } else {
+          setInventory(null);
+          message.error(result.error || t('common.error'));
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        setInventory(null);
+        message.error(t('common.error'));
+      } finally {
+        if (!controller.signal.aborted) {
+          setInventoryLoading(false);
+        }
+      }
+    };
+
+    fetchInventory();
+
+    return () => controller.abort();
+  }, [modalVisible, currentCollectionPoint, selectedStartDate, selectedEndDate, t, message]);
+
+  useEffect(() => {
+    if (!modalVisible || !inventory) return;
+    form.validateFields(['targetTonnage']).catch(() => {});
+  }, [form, inventory, modalVisible]);
 
   // Modal 打开动画完成后设置默认值
   const handleModalAfterOpenChange = (open: boolean) => {
@@ -605,6 +676,7 @@ export default function TransferLedgerPage() {
         onOk={handleCreate}
         onCancel={() => setModalVisible(false)}
         confirmLoading={creating}
+        okButtonProps={{ disabled: inventoryLoading }}
         destroyOnHidden
         afterOpenChange={handleModalAfterOpenChange}
         okText={creating ? '生成中...' : t('common.confirm')}
@@ -618,6 +690,38 @@ export default function TransferLedgerPage() {
             >
               <RangePicker style={{ width: '100%' }} />
             </Form.Item>
+            <Spin spinning={inventoryLoading}>
+              {inventory ? (
+                <Descriptions
+                  size="small"
+                  bordered
+                  column={2}
+                  style={{ marginBottom: 16 }}
+                >
+                  <Descriptions.Item label={t('ledgers.openingStock')}>
+                    {formatWeightTons(inventory.openingStockWeight)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('ledgers.periodInbound')}>
+                    {formatWeightTons(inventory.inboundWeight)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('ledgers.periodTransferred')}>
+                    {formatWeightTons(inventory.transferredWeight)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('ledgers.availableTransferWeight')}>
+                    <Text strong type={inventory.availableWeight > 0 ? undefined : 'danger'}>
+                      {formatWeightTons(inventory.availableWeight)}
+                    </Text>
+                  </Descriptions.Item>
+                </Descriptions>
+              ) : (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message={t('ledgers.inventorySelectDateHint')}
+                />
+              )}
+            </Spin>
             <Form.Item
               name="factoryId"
               label={t('ledgers.factory')}
@@ -633,10 +737,32 @@ export default function TransferLedgerPage() {
             <Form.Item
               name="targetTonnage"
               label={t('ledgers.targetWeight')}
-              rules={[{ required: true }]}
+              rules={[
+                { required: true },
+                {
+                  validator: async (_, value) => {
+                    if (!inventory || value === undefined || value === null) {
+                      return;
+                    }
+                    if (value * 1000 > inventory.availableWeight) {
+                      throw new Error(t('ledgers.transferExceedsInventory'));
+                    }
+                  },
+                },
+              ]}
+              extra={
+                inventory
+                  ? `${t('ledgers.availableTransferWeight')}: ${formatWeightTons(inventory.availableWeight)}`
+                  : undefined
+              }
             >
               <Space.Compact>
-                <InputNumber min={0.1} max={999999} step={0.1} style={{ width: 160 }} />
+                <InputNumber
+                  min={0.1}
+                  max={inventory ? Math.max(0, inventory.availableWeight / 1000) : 999999}
+                  step={0.1}
+                  style={{ width: 160 }}
+                />
                 <Button disabled style={{ pointerEvents: 'none' }}>t (吨)</Button>
               </Space.Compact>
             </Form.Item>

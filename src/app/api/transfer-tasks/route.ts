@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 import { executeTransferTask } from '@/lib/transfer-generator';
+import { assertSufficientInventory, getInventorySummary } from '@/lib/inventory';
 
 // 获取转移任务列表
 export async function GET(request: NextRequest) {
@@ -72,10 +73,18 @@ export async function POST(request: NextRequest) {
     try {
       const body = await request.json();
       const { collectionPointId, startDate, endDate, targetTonnage, factoryId } = body;
+      const targetWeightKg = parseFloat(String(targetTonnage));
 
       if (!collectionPointId || !startDate || !endDate || !targetTonnage || !factoryId) {
         return NextResponse.json(
           { error: '收集点、时间范围、目标重量和目标工厂为必填项' },
+          { status: 400 }
+        );
+      }
+
+      if (Number.isNaN(targetWeightKg) || targetWeightKg <= 0) {
+        return NextResponse.json(
+          { error: '目标重量必须大于 0' },
           { status: 400 }
         );
       }
@@ -123,6 +132,13 @@ export async function POST(request: NextRequest) {
       const start = new Date(startDate);
       const end = new Date(endDate);
 
+      if (start > end) {
+        return NextResponse.json(
+          { error: '开始日期不能晚于结束日期' },
+          { status: 400 }
+        );
+      }
+
       // 检查是否已存在相同时间范围的任务
       const existingTask = await ctx.prisma.transferTask.findFirst({
         where: {
@@ -139,6 +155,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const inventory = await getInventorySummary(ctx.prisma, {
+        collectionPointId,
+        startDate,
+        endDate,
+      });
+
+      try {
+        assertSufficientInventory(targetWeightKg, inventory);
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: error instanceof Error ? error.message : '可转移库存不足',
+            inventory,
+          },
+          { status: 400 }
+        );
+      }
+
       // 生成任务编号
       const startStr = startDate.replace(/-/g, '');
       const endStr = endDate.replace(/-/g, '');
@@ -151,7 +185,7 @@ export async function POST(request: NextRequest) {
           taskNo,
           startDate: start,
           endDate: end,
-          targetTonnage: parseFloat(targetTonnage),
+          targetTonnage: targetWeightKg,
           collectionPointId,
           factoryId,
         },
@@ -160,7 +194,7 @@ export async function POST(request: NextRequest) {
       // 立即执行生成任务
       const summary = await executeTransferTask(task.id);
 
-      return NextResponse.json({ task, summary }, { status: 201 });
+      return NextResponse.json({ task, summary, inventory }, { status: 201 });
     } catch (error) {
       console.error('Error creating transfer task:', error);
       return NextResponse.json(

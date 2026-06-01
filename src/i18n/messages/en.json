@@ -309,6 +309,12 @@
     "tareWeight": "Tare Weight",
     "netWeight": "Net Weight",
     "weighbridgeNo": "Weighbridge No.",
+    "openingStock": "Opening Stock",
+    "periodInbound": "Period Inbound",
+    "periodTransferred": "Period Transferred",
+    "availableTransferWeight": "Available Transfer Weight",
+    "inventorySelectDateHint": "Select a date range to view transferable inventory for this collection point",
+    "transferExceedsInventory": "Target weight cannot exceed available inventory",
     "transferWeightHint": "Enter the weight (kg) to transfer, the system will automatically assign vehicles and generate transfer records",
     "noTransferVehicles": "No transfer vehicles available for this collection point",
     "driverTitle": "Driver Ledger",
@@ -571,4 +577,3 @@
     }
   }
 }
-
