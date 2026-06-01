@@ -66,6 +66,7 @@ interface MultiStopTrip {
 // 收集点信息（包含坐标）
 interface CollectionPointInfo {
   id: string;
+  code: string;
   longitude: number | null;
   latitude: number | null;
 }
@@ -508,9 +509,19 @@ function getDateFromRange(startDate: Date, dayOffset: number): Date {
   return date;
 }
 
-function generateRecordNo(prefix: string, index: number, date: Date): string {
+function generateRecordNo(
+  prefix: string,
+  collectionPointCode: string,
+  index: number,
+  date: Date
+): string {
   const dateStr = formatLocalDate(date).replace(/-/g, "");
-  return `${prefix}-${dateStr}-${String(index).padStart(5, "0")}`;
+  return [
+    prefix,
+    dateStr,
+    collectionPointCode,
+    String(index).padStart(5, "0"),
+  ].join("-");
 }
 
 /**
@@ -1146,7 +1157,12 @@ function redistributeRecordsToEmptyDays(
 
   // 重新编号
   allRecords.forEach((record, index) => {
-    record.recordNo = generateRecordNo("CR", index + 1, record.collectionDate);
+    record.recordNo = generateRecordNo(
+      "CR",
+      collectionPoint.code,
+      index + 1,
+      record.collectionDate
+    );
   });
 
   console.log(
@@ -1196,7 +1212,7 @@ export async function generateLedgerData(
     }),
     prisma.collectionPoint.findUnique({
       where: { id: collectionPointId },
-      select: { id: true, longitude: true, latitude: true },
+      select: { id: true, code: true, longitude: true, latitude: true },
     }),
   ]);
 
@@ -1324,7 +1340,12 @@ export async function generateLedgerData(
         const loss = stop.weight - unloadingNetWeight;
 
         collectionRecords.push({
-          recordNo: generateRecordNo("CR", ++collectionIndex, collectionDate),
+          recordNo: generateRecordNo(
+            "CR",
+            collectionPoint.code,
+            ++collectionIndex,
+            collectionDate
+          ),
           storeId: stop.storeId,
           vehicleId: trip.vehicleId,
           collectionDate,

@@ -56,9 +56,19 @@ function roundToNearest10(value: number): number {
   return Math.round(value / 10) * 10;
 }
 
-function generateRecordNo(prefix: string, index: number, date: Date): string {
+function generateRecordNo(
+  prefix: string,
+  collectionPointCode: string,
+  index: number,
+  date: Date
+): string {
   const dateStr = formatLocalDate(date).replace(/-/g, "");
-  return `${prefix}-${dateStr}-${String(index).padStart(5, "0")}`;
+  return [
+    prefix,
+    dateStr,
+    collectionPointCode,
+    String(index).padStart(5, "0"),
+  ].join("-");
 }
 
 function generateWeighbridgeNo(date: Date, index: number): string {
@@ -96,17 +106,26 @@ export async function generateTransferData(
 ): Promise<{ transferRecords: TransferRecordData[] }> {
   const config = await getConfig();
 
-  // 获取转移车辆
-  const transferVehicles = await prisma.vehicle.findMany({
-    where: { collectionPointId, type: "TRANSFER", status: "ACTIVE" },
-    select: {
-      id: true,
-      plateNumber: true,
-      maxLoad: true,
-      tareWeight: true,
-      tareWeightVariance: true,
-    },
-  });
+  const [transferVehicles, collectionPoint] = await Promise.all([
+    prisma.vehicle.findMany({
+      where: { collectionPointId, type: "TRANSFER", status: "ACTIVE" },
+      select: {
+        id: true,
+        plateNumber: true,
+        maxLoad: true,
+        tareWeight: true,
+        tareWeightVariance: true,
+      },
+    }),
+    prisma.collectionPoint.findUnique({
+      where: { id: collectionPointId },
+      select: { code: true },
+    }),
+  ]);
+
+  if (!collectionPoint) {
+    throw new Error("收集点不存在");
+  }
 
   if (transferVehicles.length === 0) {
     throw new Error("该收集点没有可用的转移车辆");
@@ -221,7 +240,12 @@ export async function generateTransferData(
     incrementVehicleUsage(vehicle.id, workDay);
 
     transferRecords.push({
-      recordNo: generateRecordNo("TR", globalIndex, workDay),
+      recordNo: generateRecordNo(
+        "TR",
+        collectionPoint.code,
+        globalIndex,
+        workDay
+      ),
       vehicleId: vehicle.id,
       transferDate: workDay,
       destination: factoryName,
