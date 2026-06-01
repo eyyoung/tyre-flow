@@ -414,10 +414,25 @@ else
   exit 1
 fi
 
-echo "🧹 清理旧 Docker 资源..."
+echo ""
+echo "========================================"
+echo "✅ 生产环境部署完成！（外部数据库模式）"
+echo "========================================"
+DEPLOY_SCRIPT
+
+info "🧹 在服务器上清理 Docker 旧资源..."
+ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" << CLEANUP_SCRIPT
+set -e
+
+echo "🧹 删除停止容器..."
 docker container prune -f || true
-docker builder prune -af || true
+
+echo "🧹 删除迁移镜像和未使用镜像..."
+docker image rm -f tyre-flow-migrate:latest localhost:${REGISTRY_PORT}/tyre-flow-migrate:latest 2>/dev/null || true
 docker image prune -af || true
+
+echo "🧹 清理 BuildKit cache..."
+docker builder prune -af || true
 
 echo "🏷️ 保留当前运行镜像的本地标签..."
 APP_IMAGE_ID=\$(docker inspect -f '{{.Image}}' tyre-flow-external-db-app 2>/dev/null || true)
@@ -435,12 +450,7 @@ if docker inspect registry > /dev/null 2>&1; then
   docker stop registry > /dev/null || true
   rm -rf /var/lib/registry/docker
   mkdir -p /var/lib/registry
-  docker start registry > /dev/null || docker run -d \
-    --name registry \
-    --restart=always \
-    -p ${REGISTRY_PORT}:5000 \
-    -v /var/lib/registry:/var/lib/registry \
-    registry:2 > /dev/null
+  docker start registry > /dev/null
 else
   mkdir -p /var/lib/registry
   docker run -d \
@@ -454,11 +464,6 @@ fi
 echo "📊 Docker 磁盘占用:"
 docker system df
 df -h /
-
-echo ""
-echo "========================================"
-echo "✅ 生产环境部署完成！（外部数据库模式）"
-echo "========================================"
-DEPLOY_SCRIPT
+CLEANUP_SCRIPT
 
 success "🎉 部署脚本执行完成！"
