@@ -414,8 +414,46 @@ else
   exit 1
 fi
 
-echo "🧹 清理旧镜像..."
-docker image prune -f
+echo "🧹 清理旧 Docker 资源..."
+docker container prune -f || true
+docker builder prune -af || true
+docker image prune -af || true
+
+echo "🏷️ 保留当前运行镜像的本地标签..."
+APP_IMAGE_ID=\$(docker inspect -f '{{.Image}}' tyre-flow-external-db-app 2>/dev/null || true)
+if [ -n "\$APP_IMAGE_ID" ]; then
+  docker tag "\$APP_IMAGE_ID" tyre-flow-app:latest
+fi
+
+SIGNATURE_IMAGE_ID=\$(docker inspect -f '{{.Image}}' tyre-flow-signature 2>/dev/null || true)
+if [ -n "\$SIGNATURE_IMAGE_ID" ]; then
+  docker tag "\$SIGNATURE_IMAGE_ID" tyre-flow-signature:latest
+fi
+
+echo "🧹 清理 Registry 传输缓存..."
+if docker inspect registry > /dev/null 2>&1; then
+  docker stop registry > /dev/null || true
+  rm -rf /var/lib/registry/docker
+  mkdir -p /var/lib/registry
+  docker start registry > /dev/null || docker run -d \
+    --name registry \
+    --restart=always \
+    -p ${REGISTRY_PORT}:5000 \
+    -v /var/lib/registry:/var/lib/registry \
+    registry:2 > /dev/null
+else
+  mkdir -p /var/lib/registry
+  docker run -d \
+    --name registry \
+    --restart=always \
+    -p ${REGISTRY_PORT}:5000 \
+    -v /var/lib/registry:/var/lib/registry \
+    registry:2 > /dev/null
+fi
+
+echo "📊 Docker 磁盘占用:"
+docker system df
+df -h /
 
 echo ""
 echo "========================================"
