@@ -130,6 +130,8 @@
     "contactPhone": "Contact Phone",
     "storeCount": "Store Count",
     "vehicleCount": "Vehicle Count",
+    "collectionVehicleCount": "Collection Vehicles",
+    "transferVehicleCount": "Transfer Vehicles",
     "deleteConfirm": "Are you sure you want to delete collection point {name}? Associated stores and vehicles will also be deleted.",
     "coordinates": "Coordinates",
     "resetGeocode": "Reset Location",

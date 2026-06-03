@@ -65,6 +65,8 @@ interface CollectionPoint {
   _count: {
     stores: number;
     vehicles: number;
+    collectionVehicles: number;
+    transferVehicles: number;
   };
 }
 
@@ -350,10 +352,17 @@ export default function CollectionPointsPage() {
       align: 'center',
     },
     {
-      title: t('collectionPoints.vehicleCount'),
-      dataIndex: ['_count', 'vehicles'],
-      key: 'vehicleCount',
-      width: 100,
+      title: t('collectionPoints.collectionVehicleCount'),
+      dataIndex: ['_count', 'collectionVehicles'],
+      key: 'collectionVehicleCount',
+      width: 140,
+      align: 'center',
+    },
+    {
+      title: t('collectionPoints.transferVehicleCount'),
+      dataIndex: ['_count', 'transferVehicles'],
+      key: 'transferVehicleCount',
+      width: 140,
       align: 'center',
     },
     {
@@ -445,7 +454,7 @@ export default function CollectionPointsPage() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1500 }}
           pagination={{
             current: page,
             pageSize,
@@ -699,4 +708,3 @@ export default function CollectionPointsPage() {
     </div>
   );
 }
-

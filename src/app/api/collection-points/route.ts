@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 
+type CollectionPointListItem = {
+  id: string;
+  _count: {
+    stores: number;
+    vehicles: number;
+  };
+};
+
+type VehicleType = 'COLLECTION' | 'TRANSFER';
+
+type VehicleTypeCount = {
+  collectionPointId: string;
+  type: VehicleType;
+  _count: {
+    _all: number;
+  };
+};
+
+const createEmptyVehicleCounts = (): Record<VehicleType, number> => ({
+  COLLECTION: 0,
+  TRANSFER: 0,
+});
+
 // 获取收集点列表
 export async function GET(request: NextRequest) {
   return withMiddlewares(request, standardMiddlewares, async (ctx) => {
@@ -63,8 +86,46 @@ export async function GET(request: NextRequest) {
         }),
       ]);
 
+      const listItems = collectionPoints as CollectionPointListItem[];
+      const collectionPointIds = listItems.map((item) => item.id);
+      const vehicleTypeCounts: VehicleTypeCount[] = collectionPointIds.length
+        ? ((await ctx.prisma.vehicle.groupBy({
+            by: ['collectionPointId', 'type'],
+            where: {
+              collectionPointId: { in: collectionPointIds },
+            },
+            _count: {
+              _all: true,
+            },
+          })) as VehicleTypeCount[])
+        : [];
+
+      const vehicleCountMap = new Map<string, Record<VehicleType, number>>();
+
+      for (const item of vehicleTypeCounts) {
+        const counts =
+          vehicleCountMap.get(item.collectionPointId) ||
+          createEmptyVehicleCounts();
+        counts[item.type] = item._count._all;
+        vehicleCountMap.set(item.collectionPointId, counts);
+      }
+
+      const collectionPointsWithVehicleCounts = listItems.map((item) => {
+        const vehicleCounts =
+          vehicleCountMap.get(item.id) || createEmptyVehicleCounts();
+
+        return {
+          ...item,
+          _count: {
+            ...item._count,
+            collectionVehicles: vehicleCounts.COLLECTION,
+            transferVehicles: vehicleCounts.TRANSFER,
+          },
+        };
+      });
+
       return NextResponse.json({
-        data: collectionPoints,
+        data: collectionPointsWithVehicleCounts,
         total,
         page,
         pageSize,
