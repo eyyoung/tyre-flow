@@ -40,6 +40,7 @@ import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { TRANSFER_TASK } from '@/lib/permissions';
+import { getStaggeredWorkdayEndDate } from '@/lib/staggered-workdays';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -269,8 +270,19 @@ export default function TransferLedgerPage() {
   // Modal 打开动画完成后设置默认值
   const handleModalAfterOpenChange = (open: boolean) => {
     if (open) {
+      const defaultStartDate = dayjs().startOf('month');
+      const defaultEndDate = currentCollectionPoint
+        ? dayjs(
+            getStaggeredWorkdayEndDate(
+              defaultStartDate.toDate(),
+              dayjs().endOf('month').toDate(),
+              `${currentCollectionPoint.code}:${currentCollectionPoint.id}`
+            )
+          )
+        : dayjs().endOf('month');
+
       form.setFieldsValue({
-        dateRange: [dayjs().startOf('month'), dayjs().endOf('month')],
+        dateRange: [defaultStartDate, defaultEndDate],
         targetTonnage: 30, // 默认目标重量 30 吨
       });
     }

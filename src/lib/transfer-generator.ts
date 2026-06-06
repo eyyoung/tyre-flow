@@ -5,6 +5,10 @@ import {
   getInventorySummary,
   toDateParam,
 } from "./inventory";
+import {
+  getStaggeredWorkdayEndDate,
+  getWorkDaysInRange,
+} from "./staggered-workdays";
 
 interface TransferRecordData {
   recordNo: string;
@@ -102,7 +106,7 @@ async function getConfig(): Promise<GeneratorConfig> {
 
 /**
  * 生成转移台账数据
- * 转移任务会均匀分配到选定日期范围内的每一个工作日
+ * 转移任务会按收集点稳定错峰后，再均匀分配到有效工作日
  *
  * @param collectionPointId 收集点 ID
  * @param startDate 开始日期
@@ -148,17 +152,13 @@ export async function generateTransferData(
 
   const transferRecords: TransferRecordData[] = [];
 
-  // 计算日期范围内的工作日（周一到周六）
-  const workDays: Date[] = [];
-  const currentDate = new Date(startDate);
-  while (currentDate <= endDate) {
-    const dayOfWeek = currentDate.getDay();
-    // 周一到周六工作
-    if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-      workDays.push(new Date(currentDate));
-    }
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
+  const scheduleKey = `${collectionPoint.code}:${collectionPointId}`;
+  const staggeredEndDate = getStaggeredWorkdayEndDate(
+    startDate,
+    endDate,
+    scheduleKey
+  );
+  const workDays = getWorkDaysInRange(startDate, staggeredEndDate);
 
   if (workDays.length === 0) {
     throw new Error("所选日期范围内没有工作日");
