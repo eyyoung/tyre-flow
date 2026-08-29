@@ -157,7 +157,16 @@ if [ "$USE_SCP" = false ] && [[ ! "$REGISTRY_HOST" =~ ^(localhost|127\.0\.0\.1)(
     
     # 检查本地 Docker 是否配置了 insecure-registries
     DOCKER_CONFIG_OK=false
-    
+
+    # 首选：直接问 daemon 实际加载了什么。
+    # 文件路径检查在 WSL + Docker Desktop 下会误报——daemon.json 在 Windows 侧
+    # (%USERPROFILE%\.docker\daemon.json)，Linux 文件系统里根本没有。
+    if docker info --format '{{range .RegistryConfig.IndexConfigs}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null \
+        | grep -qx "${REGISTRY_HOST}"; then
+        DOCKER_CONFIG_OK=true
+    fi
+
+    # 回退：daemon 不可用时退回到配置文件检查
     # 检查 daemon.json
     if [ -f "/etc/docker/daemon.json" ]; then
         if grep -q "${REGISTRY_HOST}" /etc/docker/daemon.json 2>/dev/null; then
@@ -177,15 +186,16 @@ if [ "$USE_SCP" = false ] && [[ ! "$REGISTRY_HOST" =~ ^(localhost|127\.0\.0\.1)(
         echo ""
         echo "📝 请将以下内容添加到 Docker 配置中："
         echo ""
-        echo "   macOS/Windows (Docker Desktop):"
+        echo "   macOS/Windows/WSL (Docker Desktop):"
         echo "   Settings -> Docker Engine -> 添加："
         echo ""
         echo "   {\"insecure-registries\": [\"${REGISTRY_HOST}\"]}"
         echo ""
-        echo "   Linux (/etc/docker/daemon.json):"
+        echo "   Linux 原生 dockerd (/etc/docker/daemon.json):"
         echo "   {\"insecure-registries\": [\"${REGISTRY_HOST}\"]}"
         echo ""
-        echo "   然后重启 Docker 服务"
+        echo "   然后重启 Docker（Docker Desktop 点 Apply & restart；"
+        echo "   原生 dockerd 执行 sudo systemctl restart docker）"
         echo ""
         read -p "配置完成后按 Enter 继续，或输入 'skip' 跳过检查: " SKIP_CHECK
         if [ "$SKIP_CHECK" != "skip" ]; then
