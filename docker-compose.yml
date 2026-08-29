@@ -108,6 +108,38 @@ services:
       - SIGNATURE_SERVICE_URL=${SIGNATURE_SERVICE_URL:-http://signature:3333/generate}
       - ALIBABA_CLOUD_ACCESS_KEY_ID=${ALIBABA_CLOUD_ACCESS_KEY_ID:-}
       - ALIBABA_CLOUD_ACCESS_KEY_SECRET=${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}
+      - ISCC_EXPORT_DIR=/app/data/iscc-exports
+    volumes:
+      - iscc_exports:/app/data/iscc-exports
+    depends_on:
+      signature:
+        condition: service_healthy
+    profiles:
+      - external-db
+
+  # ISCC 异步导出 Worker（与 Web 服务隔离，避免大文件处理影响页面访问）
+  iscc-worker:
+    image: tyre-flow-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tyre-flow-iscc-worker
+    restart: unless-stopped
+    mem_limit: ${ISCC_WORKER_MEMORY_LIMIT:-768m}
+    cpus: ${ISCC_WORKER_CPUS:-1.0}
+    environment:
+      - PORT=3001
+      - DATABASE_URL=${EXTERNAL_DB_URL}
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-nextauth-secret-change-in-production}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - SIGNATURE_SERVICE_URL=${SIGNATURE_SERVICE_URL:-http://signature:3333/generate}
+      - ISCC_EXPORT_WORKER=true
+      - ISCC_EXPORT_DIR=/app/data/iscc-exports
+      - ISCC_EXPORT_BATCH_SIZE=${ISCC_EXPORT_BATCH_SIZE:-50}
+    volumes:
+      - iscc_exports:/app/data/iscc-exports
     depends_on:
       signature:
         condition: service_healthy
@@ -166,3 +198,4 @@ services:
 
 volumes:
   postgres_data:
+  iscc_exports:

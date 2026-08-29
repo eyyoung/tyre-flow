@@ -27,6 +27,7 @@ model User {
 
   // 收集点绑定关系
   collectionPoints UserCollectionPoint[]
+  isccExportJobs  IsccExportJob[]
 
   @@map("users")
 }
@@ -72,6 +73,7 @@ model CollectionPoint {
   users         UserCollectionPoint[]
   tasks         LedgerTask[]
   transferTasks TransferTask[]
+  isccExportJobs IsccExportJob[]
 
   @@map("collection_points")
 }
@@ -267,6 +269,44 @@ enum TaskStatus {
   PROCESSING // 处理中
   COMPLETED  // 已完成
   FAILED     // 失败
+}
+
+// ==================== ISCC 异步导出任务 ====================
+
+model IsccExportJob {
+  id                String              @id @default(cuid())
+  collectionPointId String
+  collectionPoint   CollectionPoint     @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  requestedById     String?
+  requestedBy       User?               @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  language          String              @default("zh")
+  status            IsccExportJobStatus @default(PENDING)
+  phase             String              @default("queued")
+  progress          Int                 @default(0)
+  processed         Int                 @default(0)
+  total             Int                 @default(0)
+  fileName          String?
+  filePath          String?
+  fileType          String?
+  fileSize          Int?
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([status, createdAt])
+  @@index([collectionPointId, createdAt])
+  @@map("iscc_export_jobs")
+}
+
+enum IsccExportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  EXPIRED
 }
 
 // 收集记录（门店→收集点）

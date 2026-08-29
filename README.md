@@ -13,6 +13,7 @@
 - 📊 仪表盘数据统计
 - 🌐 国际化支持（中文/英文）
 - 📥 Excel 导出
+- 🗂️ ISCC 后台导出（持久化进度，完成后下载 ZIP）
 
 ## 技术栈
 
@@ -149,4 +150,7 @@ docker-compose build --no-cache
 | POSTGRES_USER | 数据库用户名 | tyre_flow |
 | POSTGRES_PASSWORD | 数据库密码 | - |
 | POSTGRES_DB | 数据库名称 | tyre_flow |
+| ISCC_EXPORT_BATCH_SIZE | ISCC Worker 每批处理的门店数（10-100） | 50 |
+| ISCC_WORKER_MEMORY_LIMIT | ISCC Worker 容器内存上限 | 768m |
 
+ISCC 批量导出会创建数据库任务，由独立 `iscc-worker` 容器分批生成、转换和打包。用户可以关闭页面，之后重新打开导出窗口查看进度或下载；完成文件默认保留 7 天。

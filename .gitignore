@@ -19,6 +19,7 @@
 
 # production
 /build
+/data/iscc-exports/
 
 # misc
 .DS_Store
