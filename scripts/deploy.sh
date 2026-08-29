@@ -301,10 +301,13 @@ if docker inspect registry > /dev/null 2>&1; then
     fi
 else
     echo "启动 Docker Registry..."
+    # 开启 delete，使得日后可以用 garbage-collect 回收无引用 blob，
+    # 而不必粗暴删除整个存储目录（那会破坏增量推送）
     docker run -d \
         --name registry \
         --restart=always \
         -p 5000:5000 \
+        -e REGISTRY_STORAGE_DELETE_ENABLED=true \
         -v /var/lib/registry:/var/lib/registry \
         registry:2
     echo "Registry 已启动"
@@ -455,21 +458,31 @@ if [ -n "\$SIGNATURE_IMAGE_ID" ]; then
   docker tag "\$SIGNATURE_IMAGE_ID" tyre-flow-signature:latest
 fi
 
-echo "🧹 清理 Registry 传输缓存..."
+echo "🔧 确保 Registry 运行中..."
+# 注意：不要删除 /var/lib/registry/docker——那不是传输缓存，而是 registry 的
+# 全部存储（blobs + repositories）。删掉它会导致下次 docker push 时所有 layer
+# 都命中不到，被迫全量重传（app 镜像仅 LibreOffice 层就上百 MB），
+# "增量推送" 会完全失效。
+#
+# 存储确实需要回收时，用 registry 自带的 GC（只删无 manifest 引用的 blob）：
+#   docker exec registry bin/registry garbage-collect /etc/docker/registry/config.yml
 if docker inspect registry > /dev/null 2>&1; then
-  docker stop registry > /dev/null || true
-  rm -rf /var/lib/registry/docker
-  mkdir -p /var/lib/registry
-  docker start registry > /dev/null
+  if [ "\$(docker inspect -f '{{.State.Running}}' registry)" != "true" ]; then
+    docker start registry > /dev/null
+  fi
 else
   mkdir -p /var/lib/registry
   docker run -d \
     --name registry \
     --restart=always \
     -p ${REGISTRY_PORT}:5000 \
+    -e REGISTRY_STORAGE_DELETE_ENABLED=true \
     -v /var/lib/registry:/var/lib/registry \
     registry:2 > /dev/null
 fi
+
+echo "📊 Registry 存储占用:"
+du -sh /var/lib/registry 2>/dev/null || true
 
 echo "📊 Docker 磁盘占用:"
 docker system df
