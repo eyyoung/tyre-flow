@@ -80,6 +80,20 @@ interface Store {
   };
 }
 
+interface IsccExportJob {
+  id: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
+  phase: string;
+  progress: number;
+  processed: number;
+  total: number;
+  fileName: string | null;
+  fileSize: number | null;
+  errorMessage: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 export default function StoresPage() {
   const t = useTranslations();
   const locale = useLocale();
@@ -116,14 +130,9 @@ export default function StoresPage() {
   
   // ISCC 导出相关状态
   const [isccModalVisible, setIsccModalVisible] = useState(false);
-  const [isccForm] = Form.useForm();
-  const [exportingIscc, setExportingIscc] = useState(false);
-  const [isccProgress, setIsccProgress] = useState<{
-    stage: 'generating' | 'merging' | 'converting' | '';
-    current: number;
-    total: number;
-    storeName?: string;
-  }>({ stage: '', current: 0, total: 0 });
+  const [submittingIscc, setSubmittingIscc] = useState(false);
+  const [loadingIsccJob, setLoadingIsccJob] = useState(false);
+  const [isccJob, setIsccJob] = useState<IsccExportJob | null>(null);
   
   // 翻译编辑相关状态
   const [translationLang, setTranslationLang] = useState<string>('en');
@@ -447,117 +456,98 @@ export default function StoresPage() {
     }
   };
 
-  // 导出 ISCC 声明（批量，SSE 方式）
+  // 提交 ISCC 异步导出任务，页面关闭后后台仍会继续处理。
   const handleExportIscc = async () => {
     if (!currentCollectionPoint) {
       message.warning(t('ledgers.selectCollectionPointRequired'));
       return;
     }
-    
-    try {
-      setExportingIscc(true);
-      setIsccProgress({ stage: '', current: 0, total: 0 });
 
+    try {
+      setSubmittingIscc(true);
       const response = await fetch('/api/stores/iscc-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collectionPointId: currentCollectionPoint.id, lang: locale }),
       });
+      const result = await response.json();
 
       if (!response.ok) {
-        const result = await response.json();
         message.error(result.message || t('common.error'));
         return;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        message.error(t('common.error'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        
-        // 解析 SSE 事件
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 保留未完整的行
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const event = JSON.parse(line.slice(6));
-              
-              switch (event.type) {
-                case 'start':
-                  setIsccProgress({ stage: 'generating', current: 0, total: event.total });
-                  break;
-                case 'generating':
-                  setIsccProgress({
-                    stage: 'generating',
-                    current: event.current,
-                    total: event.total,
-                    storeName: event.storeName,
-                  });
-                  break;
-                case 'merging':
-                  setIsccProgress({
-                    stage: 'merging',
-                    current: event.batch,
-                    total: event.totalBatches,
-                  });
-                  break;
-                case 'converting':
-                  setIsccProgress({
-                    stage: 'converting',
-                    current: event.batch,
-                    total: event.totalBatches,
-                  });
-                  break;
-                case 'complete': {
-                  // 下载文件
-                  const byteCharacters = atob(event.data);
-                  const byteNumbers = new Array(byteCharacters.length);
-                  for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                  }
-                  const byteArray = new Uint8Array(byteNumbers);
-                  const blob = new Blob([byteArray], { type: event.fileType });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = event.fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                  document.body.removeChild(a);
-                  setIsccModalVisible(false);
-                  message.success(t('common.success'));
-                  break;
-                }
-                case 'error':
-                  message.error(event.message || t('common.error'));
-                  break;
-              }
-            } catch {
-              // 忽略解析错误
-            }
-          }
-        }
-      }
+      setIsccJob(result.data);
+      message.success(
+        result.reused
+          ? t('stores.exportTaskAlreadyRunning')
+          : t('stores.exportTaskSubmitted')
+      );
     } catch {
       message.error(t('common.error'));
     } finally {
-      setExportingIscc(false);
-      setIsccProgress({ stage: '', current: 0, total: 0 });
+      setSubmittingIscc(false);
     }
   };
+
+  const handleDownloadIscc = () => {
+    if (!isccJob) return;
+    window.location.href = `/api/stores/iscc-export/jobs/${isccJob.id}/download`;
+  };
+
+  // 打开弹窗时恢复最近任务，用户无需一直停留在页面上。
+  useEffect(() => {
+    if (!isccModalVisible || !currentCollectionPoint) return;
+
+    let cancelled = false;
+    const loadLatestJob = async () => {
+      setLoadingIsccJob(true);
+      try {
+        const response = await fetch(
+          `/api/stores/iscc-export/jobs?collectionPointId=${currentCollectionPoint.id}&limit=1`
+        );
+        const result = await response.json();
+        if (!cancelled && response.ok) {
+          setIsccJob(result.data?.[0] || null);
+        }
+      } finally {
+        if (!cancelled) setLoadingIsccJob(false);
+      }
+    };
+
+    void loadLatestJob();
+    return () => {
+      cancelled = true;
+    };
+  }, [isccModalVisible, currentCollectionPoint]);
+
+  // 只在弹窗展示且任务运行时轮询，关闭弹窗不影响后台任务。
+  useEffect(() => {
+    if (
+      !isccModalVisible ||
+      !isccJob ||
+      !['PENDING', 'PROCESSING'].includes(isccJob.status)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const refreshJob = async () => {
+      try {
+        const response = await fetch(`/api/stores/iscc-export/jobs/${isccJob.id}`);
+        const result = await response.json();
+        if (!cancelled && response.ok) setIsccJob(result.data);
+      } catch {
+        // 短暂网络波动时保留当前进度，下一次轮询会继续。
+      }
+    };
+
+    const timer = window.setInterval(() => void refreshJob(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isccModalVisible, isccJob]);
 
   // 批量停用
   const handleBatchDisable = async () => {
@@ -769,7 +759,6 @@ export default function StoresPage() {
           <Button
             icon={<FileWordOutlined />}
             onClick={() => {
-              isccForm.resetFields();
               setIsccModalVisible(true);
             }}
           >
@@ -1123,47 +1112,127 @@ export default function StoresPage() {
       <Modal
         title={t('stores.exportIsccTitle')}
         open={isccModalVisible}
-        onOk={handleExportIscc}
-        onCancel={() => !exportingIscc && setIsccModalVisible(false)}
-        confirmLoading={exportingIscc}
-        okText={t('stores.export')}
-        cancelButtonProps={{ disabled: exportingIscc }}
-        closable={!exportingIscc}
-        maskClosable={!exportingIscc}
+        onCancel={() => setIsccModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsccModalVisible(false)}>
+            {t('common.cancel')}
+          </Button>,
+          isccJob?.status === 'COMPLETED' && (
+            <Button
+              key="regenerate"
+              onClick={handleExportIscc}
+              loading={submittingIscc}
+            >
+              {t('stores.regenerateExport')}
+            </Button>
+          ),
+          isccJob?.status === 'COMPLETED' ? (
+            <Button
+              key="download"
+              type="primary"
+              icon={<DownloadOutlined />}
+              onClick={handleDownloadIscc}
+            >
+              {t('stores.downloadExport')}
+            </Button>
+          ) : ['PENDING', 'PROCESSING'].includes(isccJob?.status || '') ? (
+            <Button key="processing" type="primary" disabled>
+              {t('stores.exportTaskRunning')}
+            </Button>
+          ) : (
+            <Button
+              key="submit"
+              type="primary"
+              onClick={handleExportIscc}
+              loading={submittingIscc}
+            >
+              {isccJob?.status === 'FAILED'
+                ? t('stores.retryExport')
+                : t('stores.startExport')}
+            </Button>
+          ),
+        ]}
         width={500}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 16 }}>
           {t('stores.exportIsccDescription')}
         </Typography.Paragraph>
-        
-        {/* 导出进度显示 */}
-        {exportingIscc && isccProgress.total > 0 && (
+
+        {loadingIsccJob ? (
+          <Typography.Text type="secondary">{t('common.loading')}</Typography.Text>
+        ) : isccJob ? (
           <div style={{ marginTop: 16 }}>
+            <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Typography.Text>
+                {isccJob.phase === 'queued' || isccJob.phase === 'starting'
+                  ? t('stores.exportProgress.queued')
+                  : isccJob.phase === 'generating'
+                    ? t('stores.exportProgress.generating')
+                    : isccJob.phase === 'merging'
+                      ? t('stores.exportProgress.merging')
+                      : isccJob.phase === 'converting'
+                        ? t('stores.exportProgress.converting')
+                        : isccJob.phase === 'packaging'
+                          ? t('stores.exportProgress.packaging')
+                          : isccJob.status === 'COMPLETED'
+                            ? t('stores.exportProgress.completed')
+                            : isccJob.status === 'FAILED'
+                              ? t('stores.exportProgress.failed')
+                              : t('stores.exportProgress.expired')}
+              </Typography.Text>
+              <Tag
+                color={
+                  isccJob.status === 'COMPLETED'
+                    ? 'success'
+                    : isccJob.status === 'FAILED'
+                      ? 'error'
+                      : isccJob.status === 'EXPIRED'
+                        ? 'default'
+                        : 'processing'
+                }
+              >
+                {isccJob.status}
+              </Tag>
+            </Space>
             <Progress
-              percent={Math.round((isccProgress.current / isccProgress.total) * 100)}
-              status="active"
+              percent={isccJob.progress}
+              status={
+                isccJob.status === 'FAILED'
+                  ? 'exception'
+                  : isccJob.status === 'COMPLETED'
+                    ? 'success'
+                    : 'active'
+              }
               size="small"
             />
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {isccProgress.stage === 'generating' && (
-                <>
-                  {t('stores.exportProgress.generating')} ({isccProgress.current}/{isccProgress.total})
-                  {isccProgress.storeName && `: ${isccProgress.storeName}`}
-                </>
-              )}
-              {isccProgress.stage === 'merging' && (
-                <>
-                  {t('stores.exportProgress.merging')} ({isccProgress.current}/{isccProgress.total})
-                </>
-              )}
-              {isccProgress.stage === 'converting' && (
-                <>
-                  {t('stores.exportProgress.converting')} ({isccProgress.current}/{isccProgress.total})
-                </>
-              )}
-            </Typography.Text>
+            {isccJob.total > 0 && isccJob.status !== 'COMPLETED' && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t('stores.exportProcessed', {
+                  processed: isccJob.processed,
+                  total: isccJob.total,
+                })}
+              </Typography.Text>
+            )}
+            {['PENDING', 'PROCESSING'].includes(isccJob.status) && (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 12, marginBottom: 0 }}>
+                {t('stores.exportBackgroundHint')}
+              </Typography.Paragraph>
+            )}
+            {isccJob.status === 'COMPLETED' && (
+              <Typography.Paragraph style={{ marginTop: 12, marginBottom: 0 }}>
+                {isccJob.fileName}
+                {isccJob.fileSize
+                  ? ` (${(isccJob.fileSize / 1024 / 1024).toFixed(1)} MB)`
+                  : ''}
+              </Typography.Paragraph>
+            )}
+            {isccJob.status === 'FAILED' && (
+              <Typography.Paragraph type="danger" style={{ marginTop: 12, marginBottom: 0 }}>
+                {isccJob.errorMessage || t('common.error')}
+              </Typography.Paragraph>
+            )}
           </div>
-        )}
+        ) : null}
       </Modal>
     </div>
   );

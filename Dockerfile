@@ -66,11 +66,14 @@ ENV XDG_CONFIG_HOME=/home/nextjs/.config
 # Copy necessary files
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/template ./template
 COPY --from=builder /app/package.json ./package.json
 
 # Set the correct permission for prerender cache
 RUN mkdir .next
 RUN chown nextjs:nodejs .next
+RUN mkdir -p /app/data/iscc-exports \
+    && chown -R nextjs:nodejs /app/data
 
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
@@ -88,4 +91,3 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
-

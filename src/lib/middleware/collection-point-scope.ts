@@ -24,6 +24,9 @@ export const collectionPointScopeMiddleware: Middleware = async (ctx, request, n
           async findFirst() {
             return null;
           },
+          async findUnique() {
+            return null;
+          },
           async count() {
             return 0;
           },
@@ -151,6 +154,33 @@ export const collectionPointScopeMiddleware: Middleware = async (ctx, request, n
         },
       },
 
+      // ISCC 异步导出任务
+      isccExportJob: {
+        async findMany({ args, query }) {
+          args.where = { ...args.where, collectionPointId: { in: collectionPointIds } };
+          return query(args);
+        },
+        async findFirst({ args, query }) {
+          args.where = { ...args.where, collectionPointId: { in: collectionPointIds } };
+          return query(args);
+        },
+        async findUnique({ args, query }) {
+          const result = await query(args);
+          if (
+            result &&
+            result.collectionPointId &&
+            !collectionPointIds.includes(result.collectionPointId)
+          ) {
+            return null;
+          }
+          return result;
+        },
+        async count({ args, query }) {
+          args.where = { ...args.where, collectionPointId: { in: collectionPointIds } };
+          return query(args);
+        },
+      },
+
       // 收集记录：通过关联的 task 过滤
       collectionRecord: {
         async findMany({ args, query }) {
@@ -205,4 +235,3 @@ export const collectionPointScopeMiddleware: Middleware = async (ctx, request, n
 
   return next();
 };
-

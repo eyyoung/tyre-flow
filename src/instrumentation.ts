@@ -4,6 +4,12 @@
 export async function register() {
   // 只在服务端运行
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    if (process.env.ISCC_EXPORT_WORKER === 'true') {
+      const { startIsccExportWorker } = await import('./lib/iscc-export-worker');
+      startIsccExportWorker();
+      return;
+    }
+
     // 动态导入以避免在客户端加载
     const { startRoutePlanScheduler } = await import('./lib/route-plan-scheduler');
     startRoutePlanScheduler();
