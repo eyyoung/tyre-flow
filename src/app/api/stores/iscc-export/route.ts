@@ -1,31 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateSingleIsccPdf } from "@/lib/iscc-export-generator";
 import {
-  DEFAULT_ISCC_LANGUAGE,
   DEFAULT_ISCC_TEMPLATE,
-  isIsccExportLanguage,
+  ISCC_EXPORT_LANGUAGE,
+  ISCC_TEST_EXPORT_STORE_LIMIT,
   isIsccTemplateKey,
+  type IsccTemplateKey,
 } from "@/lib/iscc-templates";
 import { standardMiddlewares, withMiddlewares } from "@/lib/middleware";
 
 const ACTIVE_JOB_STATUSES = ["PENDING", "PROCESSING"] as const;
 
-function resolveExportOptions(
-  template: unknown,
-  lang: unknown
-):
-  | { ok: true; template: string; lang: string }
-  | { ok: false; message: string } {
+function resolveTemplate(
+  template: unknown
+): { ok: true; template: IsccTemplateKey } | { ok: false; message: string } {
   if (template != null && template !== "" && !isIsccTemplateKey(template)) {
     return { ok: false, message: "Invalid ISCC template" };
-  }
-  if (lang != null && lang !== "" && !isIsccExportLanguage(lang)) {
-    return { ok: false, message: "Invalid export language" };
   }
   return {
     ok: true,
     template: isIsccTemplateKey(template) ? template : DEFAULT_ISCC_TEMPLATE,
-    lang: isIsccExportLanguage(lang) ? lang : DEFAULT_ISCC_LANGUAGE,
   };
 }
 
@@ -35,10 +29,7 @@ export async function GET(request: NextRequest) {
     try {
       const { searchParams } = new URL(request.url);
       const storeId = searchParams.get("storeId");
-      const options = resolveExportOptions(
-        searchParams.get("template"),
-        searchParams.get("lang")
-      );
+      const options = resolveTemplate(searchParams.get("template"));
 
       if (!storeId) {
         return NextResponse.json(
@@ -59,13 +50,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ message: "Store not found" }, { status: 404 });
       }
 
-      const result = await generateSingleIsccPdf(
-        storeId,
-        options.lang,
-        isIsccTemplateKey(options.template)
-          ? options.template
-          : DEFAULT_ISCC_TEMPLATE
-      );
+      const result = await generateSingleIsccPdf(storeId, options.template);
       if (!result) {
         return NextResponse.json({ message: "Store not found" }, { status: 404 });
       }
@@ -95,11 +80,12 @@ export async function POST(request: NextRequest) {
     try {
       const body = (await request.json()) as {
         collectionPointId?: string;
-        lang?: string;
         template?: string;
+        testMode?: boolean;
       };
       const collectionPointId = body.collectionPointId;
-      const options = resolveExportOptions(body.template, body.lang);
+      const options = resolveTemplate(body.template);
+      const testMode = body.testMode === true;
 
       if (!collectionPointId) {
         return NextResponse.json(
@@ -110,7 +96,7 @@ export async function POST(request: NextRequest) {
       if (!options.ok) {
         return NextResponse.json({ message: options.message }, { status: 400 });
       }
-      const { template, lang } = options;
+      const { template } = options;
 
       const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
@@ -123,26 +109,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const total = await ctx.prisma.store.count({
+      const storeCount = await ctx.prisma.store.count({
         where: {
           collectionPointId,
           status: "ACTIVE",
           isVirtual: false,
         },
       });
-      if (total === 0) {
+      if (storeCount === 0) {
         return NextResponse.json(
           { message: "No active non-virtual stores found" },
           { status: 400 }
         );
       }
+      // 「仅测试用」只导出前 N 家门店
+      const total = testMode
+        ? Math.min(storeCount, ISCC_TEST_EXPORT_STORE_LIMIT)
+        : storeCount;
 
-      // 同一收集点、同一模板和语言的进行中任务直接复用
+      // 同一收集点、同一模板、同一模式的进行中任务直接复用
       const existingJob = await ctx.prisma.isccExportJob.findFirst({
         where: {
           collectionPointId,
           template,
-          language: lang,
+          testMode,
           status: { in: [...ACTIVE_JOB_STATUSES] },
         },
         orderBy: { createdAt: "desc" },
@@ -155,8 +145,9 @@ export async function POST(request: NextRequest) {
         data: {
           collectionPointId,
           requestedById: ctx.user?.userId,
-          language: lang,
+          language: ISCC_EXPORT_LANGUAGE,
           template,
+          testMode,
           total,
         },
       });

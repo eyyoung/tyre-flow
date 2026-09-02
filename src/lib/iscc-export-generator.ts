@@ -11,6 +11,8 @@ import prisma from "@/lib/db";
 import { convertDocxToPdf } from "@/lib/docx-to-pdf";
 import {
   DEFAULT_ISCC_TEMPLATE,
+  ISCC_EXPORT_LANGUAGE,
+  ISCC_TEST_EXPORT_STORE_LIMIT,
   getIsccTemplate,
   type IsccTemplateKey,
 } from "@/lib/iscc-templates";
@@ -33,8 +35,14 @@ const SIGNATORY_POSITION = "Legal Representative";
 // LibreOffice 会把它们映射到自带的 OpenSymbol 字体渲染
 const CHECKBOX_CHECKED = "\uf0fe"; // ☑ (Wingdings 0xFE)
 const CHECKBOX_UNCHECKED = "\uf0a8"; // ☐ (Wingdings 0xA8)
-// 「产废量不低于 10 t/月（PLUS）/ 5 t/月（EU）」声明是否勾选
-const MIN_VOLUME_CONFIRMED = true;
+// 「产废量不低于 10 t/月（PLUS）/ 5 t/月（EU）」声明固定不勾选：
+// 台账显示门店月产废量普遍在 1～3 t，没有门店达到阈值
+const MIN_VOLUME_CONFIRMED = false;
+// EU 模板「Maximum estimated (sustainable) capacity per year (in mt)」的统一申报值。
+// 取 60 t/年（5 t/月阈值）以下的整数，与上面不勾选保持一致；废轮胎整批作为
+// 废弃物进入 ISCC 渠道，可持续产能与总产能相同
+const MAX_CAPACITY_TONNES_PER_YEAR = 50;
+const MAX_SUSTAINABLE_CAPACITY_TONNES_PER_YEAR = MAX_CAPACITY_TONNES_PER_YEAR;
 
 type StoreForExport = {
   id: string;
@@ -375,9 +383,8 @@ async function generateIsccDocument(
     geoCoordinates: formatGeoCoordinates(store.latitude, store.longitude),
     position: SIGNATORY_POSITION,
     minVolumeCheck: MIN_VOLUME_CONFIRMED ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED,
-    // 暂无数据来源，导出为 "-"
-    maxCapacity: NOT_AVAILABLE,
-    maxSustainableCapacity: NOT_AVAILABLE,
+    maxCapacity: String(MAX_CAPACITY_TONNES_PER_YEAR),
+    maxSustainableCapacity: String(MAX_SUSTAINABLE_CAPACITY_TONNES_PER_YEAR),
     collectionPoint:
       translatedCompanyName || translatedCollectionPointName,
     placeDate: `${translatedCity || collectionPoint.province || "China"}, ${dayjs(
@@ -395,9 +402,9 @@ async function generateIsccDocument(
 
 export async function generateSingleIsccPdf(
   storeId: string,
-  lang: string,
   templateKey: IsccTemplateKey = DEFAULT_ISCC_TEMPLATE
 ): Promise<{ buffer: Buffer; fileName: string } | null> {
+  const lang = ISCC_EXPORT_LANGUAGE;
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     include: {
@@ -555,6 +562,8 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         createdAt: true,
       },
       orderBy: { code: "asc" },
+      // 「仅测试用」任务只处理前 N 家门店
+      take: job.testMode ? ISCC_TEST_EXPORT_STORE_LIMIT : undefined,
     })) as StoreForExport[];
 
     if (stores.length === 0) {
@@ -590,16 +599,18 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
     const totalBatches = Math.ceil(total / batchSize);
     const pdfFiles: Array<{ path: string; name: string }> = [];
     const currentDate = dayjs().format("YYYY-MM-DD");
+    // 测试导出的文件名加 _TEST 后缀，避免和正式导出混淆
+    const fileSuffix = job.testMode ? "_TEST" : "";
     const collectionPointName = sanitizeFileName(
       getTranslatedValue(
         job.collectionPoint.name,
         job.collectionPoint.nameTranslations as TranslationCache | null,
-        job.language
+        ISCC_EXPORT_LANGUAGE
       )
     );
 
     console.log(
-      `[ISCC Worker] Job ${jobId}: template ${job.template}, language ${job.language}, ${total} stores, ${totalBatches} batches of at most ${batchSize}`
+      `[ISCC Worker] Job ${jobId}: template ${job.template}${job.testMode ? " (test)" : ""}, ${total} stores, ${totalBatches} batches of at most ${batchSize}`
     );
 
     let processed = 0;
@@ -637,7 +648,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
             templateContent,
             signatureDataURL,
             signDate,
-            job.language
+            ISCC_EXPORT_LANGUAGE
           )
         );
         processed++;
@@ -681,7 +692,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         total,
       });
       const pdfBuffer = await convertDocxToPdf(mergedDocx);
-      const pdfName = `${filePrefix}_${collectionPointName}_${currentDate}_${String(
+      const pdfName = `${filePrefix}_${collectionPointName}_${currentDate}${fileSuffix}_${String(
         batchIndex + 1
       ).padStart(3, "0")}.pdf`;
       const pdfPath = path.join(jobDir, pdfName);
@@ -699,7 +710,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       total,
     });
 
-    const finalFileName = `${filePrefix}_${collectionPointName}_${currentDate}.zip`;
+    const finalFileName = `${filePrefix}_${collectionPointName}_${currentDate}${fileSuffix}.zip`;
     const finalPath = path.join(jobDir, finalFileName);
     await createZipFromFiles(finalPath, pdfFiles);
 

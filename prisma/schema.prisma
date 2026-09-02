@@ -279,8 +279,9 @@ model IsccExportJob {
   collectionPoint   CollectionPoint     @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
   requestedById     String?
   requestedBy       User?               @relation(fields: [requestedById], references: [id], onDelete: SetNull)
-  language          String              @default("zh")
+  language          String              @default("en") // 自我声明统一按英文生成
   template          String              @default("PLUS_V1") // 模板版本，见 src/lib/iscc-templates.ts
+  testMode          Boolean             @default(false) // 仅测试用：只导出前 N 家门店
   status            IsccExportJobStatus @default(PENDING)
   phase             String              @default("queued")
   progress          Int                 @default(0)
@@ -324,9 +325,9 @@ model CollectionRecord {
   loadingTime        DateTime   // 装车时间（精确到分）
   unloadingTime      DateTime?  // 卸车时间（精确到分），只有最后一站才有
   tireCount          Int        // 轮胎条数
-  loadingNetWeight   Float      // 装车净重（吨）
-  unloadingNetWeight Float      // 卸车净重（吨）
-  loss               Float      // 折损（吨）
+  loadingNetWeight   Float      // 装车净重（kg）
+  unloadingNetWeight Float      // 卸车净重（kg）
+  loss               Float      // 折损（kg）
   remarks            String?
   createdAt          DateTime   @default(now())
 

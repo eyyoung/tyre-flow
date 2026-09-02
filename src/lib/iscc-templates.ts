@@ -38,22 +38,16 @@ export const ISCC_TEMPLATES: Record<IsccTemplateKey, IsccTemplateDefinition> = {
 /** 未指定模板时沿用原有的 ISCC.docx */
 export const DEFAULT_ISCC_TEMPLATE: IsccTemplateKey = "PLUS_V1";
 
-/** 导出语言：中文原文 + 系统支持自动翻译的语言 */
-export const ISCC_EXPORT_LANGUAGES = ["zh", "en", "fr", "de", "es"] as const;
-export type IsccExportLanguage = (typeof ISCC_EXPORT_LANGUAGES)[number];
-export const DEFAULT_ISCC_LANGUAGE: IsccExportLanguage = "zh";
+/** 自我声明统一按英文生成（门店 / 收集点字段走翻译缓存，缺失时回退中文原文） */
+export const ISCC_EXPORT_LANGUAGE = "en";
+
+/** 「仅测试用」导出只处理收集点下前 N 家门店 */
+export const ISCC_TEST_EXPORT_STORE_LIMIT = 10;
 
 export function isIsccTemplateKey(value: unknown): value is IsccTemplateKey {
   return (
     typeof value === "string" &&
     (ISCC_TEMPLATE_KEYS as readonly string[]).includes(value)
-  );
-}
-
-export function isIsccExportLanguage(value: unknown): value is IsccExportLanguage {
-  return (
-    typeof value === "string" &&
-    (ISCC_EXPORT_LANGUAGES as readonly string[]).includes(value)
   );
 }
 

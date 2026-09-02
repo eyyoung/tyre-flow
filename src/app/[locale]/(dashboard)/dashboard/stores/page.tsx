@@ -41,18 +41,16 @@ import { useTranslations, useLocale } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
+import { LOCALE_NAMES } from '@/lib/translations';
 import { useAuth } from '@/contexts/AuthContext';
 import { STORE } from '@/lib/permissions';
 import {
   DEFAULT_ISCC_TEMPLATE,
-  ISCC_EXPORT_LANGUAGES,
   ISCC_TEMPLATE_KEYS,
   ISCC_TEMPLATES,
-  isIsccExportLanguage,
-  type IsccExportLanguage,
+  ISCC_TEST_EXPORT_STORE_LIMIT,
   type IsccTemplateKey,
 } from '@/lib/iscc-templates';
-import { LOCALE_NAMES } from '@/lib/translations';
 
 const { Title } = Typography;
 
@@ -93,7 +91,7 @@ interface Store {
 interface IsccExportJob {
   id: string;
   template: string;
-  language: string;
+  testMode: boolean;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
   phase: string;
   progress: number;
@@ -145,11 +143,10 @@ export default function StoresPage() {
   const [submittingIscc, setSubmittingIscc] = useState(false);
   const [loadingIsccJob, setLoadingIsccJob] = useState(false);
   const [isccJob, setIsccJob] = useState<IsccExportJob | null>(null);
-  // 导出模板版本 / 语言（批量导出与单店导出共用）
+  // 导出模板版本（批量导出与单店导出共用）；声明统一按英文生成
   const [isccTemplate, setIsccTemplate] = useState<IsccTemplateKey>(DEFAULT_ISCC_TEMPLATE);
-  const [isccLanguage, setIsccLanguage] = useState<IsccExportLanguage>(
-    isIsccExportLanguage(locale) ? locale : 'zh'
-  );
+  // 仅测试用：只导出前 N 份
+  const [isccTestMode, setIsccTestMode] = useState(false);
   // 单店导出弹窗
   const [singleIsccStore, setSingleIsccStore] = useState<Store | null>(null);
   const [exportingSingleIscc, setExportingSingleIscc] = useState(false);
@@ -323,7 +320,7 @@ export default function StoresPage() {
 
       const params = new URLSearchParams();
       params.set('collectionPointId', currentCollectionPoint.id);
-      params.set('lang', locale); // 添加语言参数
+      params.set('lang', values.lang || (locale === 'zh' ? 'zh' : 'en')); // 导出语言由弹窗选择
       if (values.onlyActive) {
         params.set('status', 'ACTIVE');
       }
@@ -344,7 +341,13 @@ export default function StoresPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${t('stores.exportFileName')}_${getTranslatedName(currentCollectionPoint)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        // 文件名由服务端按导出语言生成，取不到时回退为界面语言
+        const encodedFileName = response.headers
+          .get('Content-Disposition')
+          ?.match(/filename\*=UTF-8''([^;]+)/)?.[1];
+        a.download = encodedFileName
+          ? decodeURIComponent(encodedFileName)
+          : `${t('stores.exportFileName')}_${getTranslatedName(currentCollectionPoint)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -443,13 +446,12 @@ export default function StoresPage() {
     }
   };
 
-  // 导出单个门店 ISCC 声明（按当前选择的模板版本和语言）
+  // 导出单个门店 ISCC 声明（按当前选择的模板版本）
   const handleExportSingleIscc = async (storeId: string, storeName: string) => {
     try {
       setExportingSingleIscc(true);
       const params = new URLSearchParams({
         storeId,
-        lang: isccLanguage,
         template: isccTemplate,
       });
       const response = await fetch(`/api/stores/iscc-export?${params.toString()}`);
@@ -499,8 +501,8 @@ export default function StoresPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           collectionPointId: currentCollectionPoint.id,
-          lang: isccLanguage,
           template: isccTemplate,
+          testMode: isccTestMode,
         }),
       });
       const result = await response.json();
@@ -528,10 +530,10 @@ export default function StoresPage() {
     window.location.href = `/api/stores/iscc-export/jobs/${isccJob.id}/download`;
   };
 
-  // 模板版本 / 语言选择器
+  // 模板版本选择器
   const renderIsccExportOptions = (disabled = false) => (
     <Row gutter={12} style={{ marginBottom: 16 }}>
-      <Col span={14}>
+      <Col span={24}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('stores.isccTemplate')}
         </Typography.Text>
@@ -546,28 +548,12 @@ export default function StoresPage() {
           }))}
         />
       </Col>
-      <Col span={10}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {t('stores.isccLanguage')}
-        </Typography.Text>
-        <Select
-          style={{ width: '100%', marginTop: 4 }}
-          value={isccLanguage}
-          onChange={(value: IsccExportLanguage) => setIsccLanguage(value)}
-          disabled={disabled}
-          options={ISCC_EXPORT_LANGUAGES.map((lang) => ({
-            value: lang,
-            label: LOCALE_NAMES[lang],
-          }))}
-        />
-      </Col>
     </Row>
   );
 
   const describeIsccJobOptions = (job: IsccExportJob) => {
     const templateLabel = ISCC_TEMPLATES[job.template as IsccTemplateKey]?.label ?? job.template;
-    const languageLabel = LOCALE_NAMES[job.language as keyof typeof LOCALE_NAMES] ?? job.language;
-    return `${templateLabel} · ${languageLabel}`;
+    return job.testMode ? `${templateLabel} · ${t('stores.isccTestModeTag')}` : templateLabel;
   };
 
   // 打开弹窗时恢复最近任务，用户无需一直停留在页面上。
@@ -1161,16 +1147,34 @@ export default function StoresPage() {
         width={500}
       >
         <Form form={exportForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="isVirtual" label={t('stores.isVirtual')}>
-            <Select
-              placeholder={t('common.all')}
-              allowClear
-              options={[
-                { value: 'true', label: t('common.yes') },
-                { value: 'false', label: t('common.no') },
-              ]}
-            />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                name="lang"
+                label={t('stores.exportLanguage')}
+                initialValue={locale === 'zh' ? 'zh' : 'en'}
+              >
+                <Select
+                  options={[
+                    { value: 'zh', label: LOCALE_NAMES.zh },
+                    { value: 'en', label: LOCALE_NAMES.en },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="isVirtual" label={t('stores.isVirtual')}>
+                <Select
+                  placeholder={t('common.all')}
+                  allowClear
+                  options={[
+                    { value: 'true', label: t('common.yes') },
+                    { value: 'false', label: t('common.no') },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="onlyActive" valuePropName="checked">
             <Checkbox>{t('stores.onlyActiveStores')}</Checkbox>
           </Form.Item>
@@ -1234,6 +1238,14 @@ export default function StoresPage() {
         </Typography.Paragraph>
 
         {renderIsccExportOptions(submittingIscc)}
+        <Checkbox
+          checked={isccTestMode}
+          onChange={(e) => setIsccTestMode(e.target.checked)}
+          disabled={submittingIscc}
+          style={{ marginBottom: 16 }}
+        >
+          {t('stores.isccTestMode', { count: ISCC_TEST_EXPORT_STORE_LIMIT })}
+        </Checkbox>
 
         {loadingIsccJob ? (
           <Typography.Text type="secondary">{t('common.loading')}</Typography.Text>
