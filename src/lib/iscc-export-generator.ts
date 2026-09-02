@@ -9,6 +9,13 @@ import * as path from "path";
 import PizZip from "pizzip";
 import prisma from "@/lib/db";
 import { convertDocxToPdf } from "@/lib/docx-to-pdf";
+import {
+  DEFAULT_ISCC_TEMPLATE,
+  ISCC_EXPORT_LANGUAGE,
+  ISCC_TEST_EXPORT_STORE_LIMIT,
+  getIsccTemplate,
+  type IsccTemplateKey,
+} from "@/lib/iscc-templates";
 import { calculateSignDate } from "@/lib/iscc-utils";
 import { getTranslatedValue, type TranslationCache } from "@/lib/translations";
 
@@ -21,6 +28,21 @@ const SIGNATURE_SERVICE_URL =
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 100;
 const EXPORT_RETENTION_DAYS = 7;
+const NOT_AVAILABLE = "-";
+// 新版模板（ISCC PLUS v2.0 / ISCC EU v2.3）新增字段的默认值
+const SIGNATORY_POSITION = "Legal Representative";
+// 模板中的复选框单元格使用 Wingdings 字体（Word 存储符号字体字符的私用区编码），
+// LibreOffice 会把它们映射到自带的 OpenSymbol 字体渲染
+const CHECKBOX_CHECKED = "\uf0fe"; // ☑ (Wingdings 0xFE)
+const CHECKBOX_UNCHECKED = "\uf0a8"; // ☐ (Wingdings 0xA8)
+// 「产废量不低于 10 t/月（PLUS）/ 5 t/月（EU）」声明固定不勾选：
+// 台账显示门店月产废量普遍在 1～3 t，没有门店达到阈值
+const MIN_VOLUME_CONFIRMED = false;
+// EU 模板「Maximum estimated (sustainable) capacity per year (in mt)」的统一申报值。
+// 取 60 t/年（5 t/月阈值）以下的整数，与上面不勾选保持一致；废轮胎整批作为
+// 废弃物进入 ISCC 渠道，可持续产能与总产能相同
+const MAX_CAPACITY_TONNES_PER_YEAR = 50;
+const MAX_SUSTAINABLE_CAPACITY_TONNES_PER_YEAR = MAX_CAPACITY_TONNES_PER_YEAR;
 
 type StoreForExport = {
   id: string;
@@ -34,6 +56,9 @@ type StoreForExport = {
   province: string | null;
   city: string | null;
   district: string | null;
+  contactPhone: string | null;
+  latitude: number | null;
+  longitude: number | null;
   isccSignDate: Date | null;
   signatureFileId: string | null;
   createdAt: Date;
@@ -69,6 +94,19 @@ export function resolveIsccExportPath(relativePath: string): string {
     throw new Error("Invalid export file path");
   }
   return resolved;
+}
+
+function loadIsccTemplate(templateKey: string): string {
+  const { file } = getIsccTemplate(templateKey);
+  return fs.readFileSync(path.join(process.cwd(), "template", file), "binary");
+}
+
+function formatGeoCoordinates(
+  latitude: number | null,
+  longitude: number | null
+): string {
+  if (latitude == null || longitude == null) return NOT_AVAILABLE;
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
 function sanitizeFileName(value: string): string {
@@ -162,11 +200,19 @@ function extractBodyContent(documentXml: string): string {
 }
 
 function extractSectPr(documentXml: string): string {
-  return documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] || "";
+  // The document-level section properties are the last <w:sectPr> in the body.
+  const matches = documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/g);
+  return matches?.[matches.length - 1] || "";
 }
 
-function createPageBreak(): string {
-  return `<w:p xmlns:w="${WORD_NS}"><w:r><w:br w:type="page"/></w:r></w:p>`;
+/**
+ * Separator between merged declarations: a (visually empty) paragraph that
+ * closes a section with the template's own section properties. Each
+ * declaration therefore keeps its footer and, where the template restarts
+ * numbering (<w:pgNumType w:start="1"/>), its own "1 of 2" page counter.
+ */
+function createSectionBreak(sectPr: string): string {
+  return `<w:p xmlns:w="${WORD_NS}"><w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>${sectPr}</w:pPr></w:p>`;
 }
 
 function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
@@ -246,7 +292,7 @@ function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
     baseDocXml.match(/<w:document[^>]*>/)?.[0] || "<w:document>";
   const mergedDocXml = `${xmlDeclaration}
 ${documentStart}
-<w:body>${allBodyContents.join(createPageBreak())}${baseSectPr}</w:body>
+<w:body>${allBodyContents.join(createSectionBreak(baseSectPr))}${baseSectPr}</w:body>
 </w:document>`;
 
   baseZip.file("word/document.xml", mergedDocXml);
@@ -328,8 +374,17 @@ async function generateIsccDocument(
     address: getTranslatedValue(store.address, store.addressTranslations, lang),
     postcodeCity:
       [collectionPoint.postcode, translatedCity].filter(Boolean).join(", ") ||
-      "-",
+      NOT_AVAILABLE,
+    cityPostcode:
+      [translatedCity, collectionPoint.postcode].filter(Boolean).join(", ") ||
+      NOT_AVAILABLE,
     country: "China",
+    phone: store.contactPhone || NOT_AVAILABLE,
+    geoCoordinates: formatGeoCoordinates(store.latitude, store.longitude),
+    position: SIGNATORY_POSITION,
+    minVolumeCheck: MIN_VOLUME_CONFIRMED ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED,
+    maxCapacity: String(MAX_CAPACITY_TONNES_PER_YEAR),
+    maxSustainableCapacity: String(MAX_SUSTAINABLE_CAPACITY_TONNES_PER_YEAR),
     collectionPoint:
       translatedCompanyName || translatedCollectionPointName,
     placeDate: `${translatedCity || collectionPoint.province || "China"}, ${dayjs(
@@ -347,8 +402,9 @@ async function generateIsccDocument(
 
 export async function generateSingleIsccPdf(
   storeId: string,
-  lang: string
+  templateKey: IsccTemplateKey = DEFAULT_ISCC_TEMPLATE
 ): Promise<{ buffer: Buffer; fileName: string } | null> {
+  const lang = ISCC_EXPORT_LANGUAGE;
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     include: {
@@ -396,10 +452,7 @@ export async function generateSingleIsccPdf(
     store.signatureFileId,
     store.legalPerson || store.name
   );
-  const templateContent = fs.readFileSync(
-    path.join(process.cwd(), "template", "ISCC.docx"),
-    "binary"
-  );
+  const templateContent = loadIsccTemplate(templateKey);
   const docxBuffer = await generateIsccDocument(
     store as StoreForExport,
     store.collectionPoint as CollectionPointForExport,
@@ -417,7 +470,9 @@ export async function generateSingleIsccPdf(
 
   return {
     buffer: pdfBuffer,
-    fileName: `ISCC_${sanitizeFileName(translatedStoreName)}.pdf`,
+    fileName: `${getIsccTemplate(templateKey).filePrefix}_${sanitizeFileName(
+      translatedStoreName
+    )}.pdf`,
   };
 }
 
@@ -499,11 +554,16 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         province: true,
         city: true,
         district: true,
+        contactPhone: true,
+        latitude: true,
+        longitude: true,
         isccSignDate: true,
         signatureFileId: true,
         createdAt: true,
       },
       orderBy: { code: "asc" },
+      // 「仅测试用」任务只处理前 N 家门店
+      take: job.testMode ? ISCC_TEST_EXPORT_STORE_LIMIT : undefined,
     })) as StoreForExport[];
 
     if (stores.length === 0) {
@@ -533,24 +593,24 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       }
     }
 
-    const templateContent = fs.readFileSync(
-      path.join(process.cwd(), "template", "ISCC.docx"),
-      "binary"
-    );
+    const { filePrefix } = getIsccTemplate(job.template);
+    const templateContent = loadIsccTemplate(job.template);
     const batchSize = getBatchSize();
     const totalBatches = Math.ceil(total / batchSize);
     const pdfFiles: Array<{ path: string; name: string }> = [];
     const currentDate = dayjs().format("YYYY-MM-DD");
+    // 测试导出的文件名加 _TEST 后缀，避免和正式导出混淆
+    const fileSuffix = job.testMode ? "_TEST" : "";
     const collectionPointName = sanitizeFileName(
       getTranslatedValue(
         job.collectionPoint.name,
         job.collectionPoint.nameTranslations as TranslationCache | null,
-        job.language
+        ISCC_EXPORT_LANGUAGE
       )
     );
 
     console.log(
-      `[ISCC Worker] Job ${jobId}: ${total} stores, ${totalBatches} batches of at most ${batchSize}`
+      `[ISCC Worker] Job ${jobId}: template ${job.template}${job.testMode ? " (test)" : ""}, ${total} stores, ${totalBatches} batches of at most ${batchSize}`
     );
 
     let processed = 0;
@@ -588,7 +648,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
             templateContent,
             signatureDataURL,
             signDate,
-            job.language
+            ISCC_EXPORT_LANGUAGE
           )
         );
         processed++;
@@ -632,7 +692,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         total,
       });
       const pdfBuffer = await convertDocxToPdf(mergedDocx);
-      const pdfName = `ISCC_${collectionPointName}_${currentDate}_${String(
+      const pdfName = `${filePrefix}_${collectionPointName}_${currentDate}${fileSuffix}_${String(
         batchIndex + 1
       ).padStart(3, "0")}.pdf`;
       const pdfPath = path.join(jobDir, pdfName);
@@ -650,7 +710,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       total,
     });
 
-    const finalFileName = `ISCC_${collectionPointName}_${currentDate}.zip`;
+    const finalFileName = `${filePrefix}_${collectionPointName}_${currentDate}${fileSuffix}.zip`;
     const finalPath = path.join(jobDir, finalFileName);
     await createZipFromFiles(finalPath, pdfFiles);
 

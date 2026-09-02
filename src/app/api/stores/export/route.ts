@@ -217,9 +217,27 @@ export async function GET(request: NextRequest) {
       // 生成文件
       const buffer = await workbook.xlsx.writeBuffer();
 
-      // 生成文件名
+      // 生成文件名：<门店列表>_<收集点名称>_<日期>.xlsx，前两段跟随导出语言
+      let collectionPointLabel = '';
+      if (collectionPointId) {
+        const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
+          where: { id: collectionPointId },
+          select: { name: true, nameTranslations: true },
+        });
+        if (collectionPoint) {
+          collectionPointLabel = getTranslatedValue(
+            collectionPoint.name,
+            collectionPoint.nameTranslations as TranslationCache | null,
+            lang
+          );
+        }
+      }
       const timestamp = new Date().toISOString().slice(0, 10);
-      const fileName = `${l.fileName}_${timestamp}.xlsx`;
+      const fileName = `${[l.fileName, collectionPointLabel, timestamp]
+        .filter(Boolean)
+        .join('_')
+        .replace(/[/\\?%*:|"<>]/g, '_')
+        .replace(/\s+/g, '_')}.xlsx`;
 
       return new NextResponse(buffer, {
         headers: {
