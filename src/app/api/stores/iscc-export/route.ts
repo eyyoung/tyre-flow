@@ -1,8 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateSingleIsccPdf } from "@/lib/iscc-export-generator";
+import {
+  DEFAULT_ISCC_LANGUAGE,
+  DEFAULT_ISCC_TEMPLATE,
+  isIsccExportLanguage,
+  isIsccTemplateKey,
+} from "@/lib/iscc-templates";
 import { standardMiddlewares, withMiddlewares } from "@/lib/middleware";
 
 const ACTIVE_JOB_STATUSES = ["PENDING", "PROCESSING"] as const;
+
+function resolveExportOptions(
+  template: unknown,
+  lang: unknown
+):
+  | { ok: true; template: string; lang: string }
+  | { ok: false; message: string } {
+  if (template != null && template !== "" && !isIsccTemplateKey(template)) {
+    return { ok: false, message: "Invalid ISCC template" };
+  }
+  if (lang != null && lang !== "" && !isIsccExportLanguage(lang)) {
+    return { ok: false, message: "Invalid export language" };
+  }
+  return {
+    ok: true,
+    template: isIsccTemplateKey(template) ? template : DEFAULT_ISCC_TEMPLATE,
+    lang: isIsccExportLanguage(lang) ? lang : DEFAULT_ISCC_LANGUAGE,
+  };
+}
 
 // Keep the existing single-store download behavior.
 export async function GET(request: NextRequest) {
@@ -10,13 +35,19 @@ export async function GET(request: NextRequest) {
     try {
       const { searchParams } = new URL(request.url);
       const storeId = searchParams.get("storeId");
-      const lang = searchParams.get("lang") || "zh";
+      const options = resolveExportOptions(
+        searchParams.get("template"),
+        searchParams.get("lang")
+      );
 
       if (!storeId) {
         return NextResponse.json(
           { message: "Store ID is required" },
           { status: 400 }
         );
+      }
+      if (!options.ok) {
+        return NextResponse.json({ message: options.message }, { status: 400 });
       }
 
       // The scoped client verifies that the user can access this store.
@@ -28,7 +59,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ message: "Store not found" }, { status: 404 });
       }
 
-      const result = await generateSingleIsccPdf(storeId, lang);
+      const result = await generateSingleIsccPdf(
+        storeId,
+        options.lang,
+        isIsccTemplateKey(options.template)
+          ? options.template
+          : DEFAULT_ISCC_TEMPLATE
+      );
       if (!result) {
         return NextResponse.json({ message: "Store not found" }, { status: 404 });
       }
@@ -59,9 +96,10 @@ export async function POST(request: NextRequest) {
       const body = (await request.json()) as {
         collectionPointId?: string;
         lang?: string;
+        template?: string;
       };
       const collectionPointId = body.collectionPointId;
-      const lang = body.lang || "zh";
+      const options = resolveExportOptions(body.template, body.lang);
 
       if (!collectionPointId) {
         return NextResponse.json(
@@ -69,6 +107,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (!options.ok) {
+        return NextResponse.json({ message: options.message }, { status: 400 });
+      }
+      const { template, lang } = options;
 
       const collectionPoint = await ctx.prisma.collectionPoint.findUnique({
         where: { id: collectionPointId },
@@ -95,9 +137,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // 同一收集点、同一模板和语言的进行中任务直接复用
       const existingJob = await ctx.prisma.isccExportJob.findFirst({
         where: {
           collectionPointId,
+          template,
+          language: lang,
           status: { in: [...ACTIVE_JOB_STATUSES] },
         },
         orderBy: { createdAt: "desc" },
@@ -111,6 +156,7 @@ export async function POST(request: NextRequest) {
           collectionPointId,
           requestedById: ctx.user?.userId,
           language: lang,
+          template,
           total,
         },
       });

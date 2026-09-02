@@ -280,6 +280,7 @@ model IsccExportJob {
   requestedById     String?
   requestedBy       User?               @relation(fields: [requestedById], references: [id], onDelete: SetNull)
   language          String              @default("zh")
+  template          String              @default("PLUS_V1") // 模板版本，见 src/lib/iscc-templates.ts
   status            IsccExportJobStatus @default(PENDING)
   phase             String              @default("queued")
   progress          Int                 @default(0)

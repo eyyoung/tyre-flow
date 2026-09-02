@@ -43,6 +43,16 @@ import dayjs from 'dayjs';
 import { useCollectionPoint } from '@/contexts/CollectionPointContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { STORE } from '@/lib/permissions';
+import {
+  DEFAULT_ISCC_TEMPLATE,
+  ISCC_EXPORT_LANGUAGES,
+  ISCC_TEMPLATE_KEYS,
+  ISCC_TEMPLATES,
+  isIsccExportLanguage,
+  type IsccExportLanguage,
+  type IsccTemplateKey,
+} from '@/lib/iscc-templates';
+import { LOCALE_NAMES } from '@/lib/translations';
 
 const { Title } = Typography;
 
@@ -82,6 +92,8 @@ interface Store {
 
 interface IsccExportJob {
   id: string;
+  template: string;
+  language: string;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
   phase: string;
   progress: number;
@@ -133,6 +145,14 @@ export default function StoresPage() {
   const [submittingIscc, setSubmittingIscc] = useState(false);
   const [loadingIsccJob, setLoadingIsccJob] = useState(false);
   const [isccJob, setIsccJob] = useState<IsccExportJob | null>(null);
+  // 导出模板版本 / 语言（批量导出与单店导出共用）
+  const [isccTemplate, setIsccTemplate] = useState<IsccTemplateKey>(DEFAULT_ISCC_TEMPLATE);
+  const [isccLanguage, setIsccLanguage] = useState<IsccExportLanguage>(
+    isIsccExportLanguage(locale) ? locale : 'zh'
+  );
+  // 单店导出弹窗
+  const [singleIsccStore, setSingleIsccStore] = useState<Store | null>(null);
+  const [exportingSingleIscc, setExportingSingleIscc] = useState(false);
   
   // 翻译编辑相关状态
   const [translationLang, setTranslationLang] = useState<string>('en');
@@ -423,10 +443,16 @@ export default function StoresPage() {
     }
   };
 
-  // 导出单个门店 ISCC 声明
+  // 导出单个门店 ISCC 声明（按当前选择的模板版本和语言）
   const handleExportSingleIscc = async (storeId: string, storeName: string) => {
     try {
-      const response = await fetch(`/api/stores/iscc-export?storeId=${storeId}&lang=${locale}`);
+      setExportingSingleIscc(true);
+      const params = new URLSearchParams({
+        storeId,
+        lang: isccLanguage,
+        template: isccTemplate,
+      });
+      const response = await fetch(`/api/stores/iscc-export?${params.toString()}`);
 
       if (response.ok) {
         const blob = await response.blob();
@@ -434,7 +460,7 @@ export default function StoresPage() {
         const a = document.createElement('a');
         a.href = url;
         const contentDisposition = response.headers.get('Content-Disposition');
-        let fileName = `ISCC_${storeName}.docx`;
+        let fileName = `${ISCC_TEMPLATES[isccTemplate].filePrefix}_${storeName}.pdf`;
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="?([^"]+)"?/);
           if (match) {
@@ -447,12 +473,15 @@ export default function StoresPage() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
         message.success(t('common.success'));
+        setSingleIsccStore(null);
       } else {
         const result = await response.json();
         message.error(result.message || t('common.error'));
       }
     } catch {
       message.error(t('common.error'));
+    } finally {
+      setExportingSingleIscc(false);
     }
   };
 
@@ -468,7 +497,11 @@ export default function StoresPage() {
       const response = await fetch('/api/stores/iscc-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collectionPointId: currentCollectionPoint.id, lang: locale }),
+        body: JSON.stringify({
+          collectionPointId: currentCollectionPoint.id,
+          lang: isccLanguage,
+          template: isccTemplate,
+        }),
       });
       const result = await response.json();
 
@@ -493,6 +526,48 @@ export default function StoresPage() {
   const handleDownloadIscc = () => {
     if (!isccJob) return;
     window.location.href = `/api/stores/iscc-export/jobs/${isccJob.id}/download`;
+  };
+
+  // 模板版本 / 语言选择器
+  const renderIsccExportOptions = (disabled = false) => (
+    <Row gutter={12} style={{ marginBottom: 16 }}>
+      <Col span={14}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('stores.isccTemplate')}
+        </Typography.Text>
+        <Select
+          style={{ width: '100%', marginTop: 4 }}
+          value={isccTemplate}
+          onChange={(value: IsccTemplateKey) => setIsccTemplate(value)}
+          disabled={disabled}
+          options={ISCC_TEMPLATE_KEYS.map((key) => ({
+            value: key,
+            label: ISCC_TEMPLATES[key].label,
+          }))}
+        />
+      </Col>
+      <Col span={10}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {t('stores.isccLanguage')}
+        </Typography.Text>
+        <Select
+          style={{ width: '100%', marginTop: 4 }}
+          value={isccLanguage}
+          onChange={(value: IsccExportLanguage) => setIsccLanguage(value)}
+          disabled={disabled}
+          options={ISCC_EXPORT_LANGUAGES.map((lang) => ({
+            value: lang,
+            label: LOCALE_NAMES[lang],
+          }))}
+        />
+      </Col>
+    </Row>
+  );
+
+  const describeIsccJobOptions = (job: IsccExportJob) => {
+    const templateLabel = ISCC_TEMPLATES[job.template as IsccTemplateKey]?.label ?? job.template;
+    const languageLabel = LOCALE_NAMES[job.language as keyof typeof LOCALE_NAMES] ?? job.language;
+    return `${templateLabel} · ${languageLabel}`;
   };
 
   // 打开弹窗时恢复最近任务，用户无需一直停留在页面上。
@@ -685,7 +760,7 @@ export default function StoresPage() {
               type="link"
               size="small"
               icon={<FileWordOutlined />}
-              onClick={() => handleExportSingleIscc(record.id, record.name)}
+              onClick={() => setSingleIsccStore(record)}
               title={t('stores.exportIscc')}
             />
           )}
@@ -1158,10 +1233,15 @@ export default function StoresPage() {
           {t('stores.exportIsccDescription')}
         </Typography.Paragraph>
 
+        {renderIsccExportOptions(submittingIscc)}
+
         {loadingIsccJob ? (
           <Typography.Text type="secondary">{t('common.loading')}</Typography.Text>
         ) : isccJob ? (
           <div style={{ marginTop: 16 }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              {describeIsccJobOptions(isccJob)}
+            </Typography.Paragraph>
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
               <Typography.Text>
                 {isccJob.phase === 'queued' || isccJob.phase === 'starting'
@@ -1233,6 +1313,32 @@ export default function StoresPage() {
             )}
           </div>
         ) : null}
+      </Modal>
+
+      {/* 单店导出 ISCC 声明弹窗 */}
+      <Modal
+        title={t('stores.exportIsccTitle')}
+        open={singleIsccStore !== null}
+        onCancel={() => setSingleIsccStore(null)}
+        onOk={() => {
+          if (singleIsccStore) {
+            void handleExportSingleIscc(singleIsccStore.id, singleIsccStore.name);
+          }
+        }}
+        okText={t('stores.downloadExport')}
+        okButtonProps={{ icon: <DownloadOutlined /> }}
+        cancelText={t('common.cancel')}
+        confirmLoading={exportingSingleIscc}
+        width={500}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 16 }}>
+          {t('stores.exportSingleIsccDescription', {
+            name: singleIsccStore
+              ? getTranslatedValue(singleIsccStore.name, singleIsccStore.nameTranslations)
+              : '',
+          })}
+        </Typography.Paragraph>
+        {renderIsccExportOptions(exportingSingleIscc)}
       </Modal>
     </div>
   );
