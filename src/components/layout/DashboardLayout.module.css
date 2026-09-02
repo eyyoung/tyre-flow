@@ -2,7 +2,11 @@
   min-height: 100vh;
 }
 
-.sider {
+/*
+ * 用 .layout > .sider 提高特异性：antd 自身给 .ant-layout-sider 设了 position: relative，
+ * 与单个 .sider 类同级，dev 与生产构建的样式注入顺序不同，会导致 fixed 被覆盖、侧边栏额外占位。
+ */
+.layout > .sider {
   overflow: auto;
   height: 100vh;
   position: fixed;
