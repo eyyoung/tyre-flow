@@ -1,49 +1,130 @@
 name: Deploy
 
+# 手动触发的生产部署。
+#
+# 思路：机器带宽小，所以「构建」放在 GitHub Actions，「传输」反过来由服务器主动拉取：
+#   1. CI 构建 Next standalone 产物，上传到固定的 GitHub Release（tag: deploy-artifacts）
+#   2. CI 通过 SSH 只发送几 KB 的命令和 .env
+#   3. 服务器自行从 GitHub Release 下载产物（实测约 10 MB/s），provision.sh 幂等初始化，
+#      deploy.sh 切换 release、重启 systemd 服务、健康检查，失败自动回滚
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # 上传构建产物到 Release
 
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+env:
+  SERVER_IP: 8.148.203.142
+  SERVER_USER: root
+  RELEASE_TAG: deploy-artifacts
+  KEEP_ARTIFACTS: 10          # Release 里保留的最近构建数
+
 jobs:
   deploy:
-    name: Deploy prod
+    name: Build and deploy prod
     runs-on: ubuntu-latest
     environment: prod
-    timeout-minutes: 60
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve target
-        id: target
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+        run: |
+          set -euo pipefail
+          npx prisma generate
+          npm run build
+
+      - name: Package artifact
+        id: pack
         shell: bash
         run: |
           set -euo pipefail
+          sha="${GITHUB_SHA}"
+          dist="$(mktemp -d)"
 
-          echo "server_ip=8.148.203.142" >> "$GITHUB_OUTPUT"
-          echo "server_user=root" >> "$GITHUB_OUTPUT"
-          echo "deploy_dir=/root/deployment/tyre-flow" >> "$GITHUB_OUTPUT"
+          # Next standalone 的文件追踪会把整个项目目录（src、handwriting-simulator 等）一并带上，
+          # 这里只挑运行时真正需要的内容
+          cp -a .next/standalone/server.js .next/standalone/package.json "$dist/"
+          cp -a .next/standalone/.next "$dist/.next"
+          cp -a .next/standalone/node_modules "$dist/node_modules"
+          cp -a .next/static "$dist/.next/static"
+          cp -a public "$dist/public"
+          cp -a template "$dist/template"
 
-      - name: Configure SSH
+          # Prisma client 与查询引擎：追踪可能漏掉 .so.node，显式覆盖一份
+          rm -rf "$dist/node_modules/.prisma" "$dist/node_modules/@prisma/client"
+          mkdir -p "$dist/node_modules/.prisma" "$dist/node_modules/@prisma"
+          cp -a node_modules/.prisma/client "$dist/node_modules/.prisma/client"
+          cp -a node_modules/@prisma/client "$dist/node_modules/@prisma/client"
+          # 只保留服务器平台的引擎（见 prisma/schema.prisma 的 binaryTargets）
+          find "$dist/node_modules/.prisma/client" -name 'libquery_engine-*.so.node' ! -name '*debian-openssl-3.0.x*' -delete
+          ls "$dist/node_modules/.prisma/client" | grep -q 'libquery_engine-.*\.so\.node' || { echo "::error::缺少服务器平台的 Prisma 引擎"; exit 1; }
+
+          # 数据库迁移输入：schema + 编译好的 seed（服务器上不需要 tsx）
+          mkdir -p "$dist/prisma"
+          cp prisma/schema.prisma "$dist/prisma/"
+          cp -a prisma/migrations "$dist/prisma/migrations"
+          npx esbuild prisma/seed.ts --bundle --platform=node --format=cjs --target=node22 \
+            --external:@prisma/client --outfile="$dist/prisma/seed.cjs" --log-level=warning
+
+          prisma_version="$(node -p "require('./node_modules/prisma/package.json').version")"
+          {
+            echo "GIT_SHA=${sha}"
+            echo "GIT_REF=${GITHUB_REF_NAME}"
+            echo "PRISMA_VERSION=${prisma_version}"
+            echo "NODE_VERSION=$(node -v)"
+            echo "BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "RUN_URL=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "$dist/BUILD_INFO"
+
+          artifact="tyre-flow-${sha}.tar.zst"
+          tar --zstd -cf "$artifact" -C "$dist" .
+          sha256sum "$artifact" | tee "${artifact}.sha256"
+          ls -lh "$artifact"
+
+          echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "${artifact}.sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact to GitHub Release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.pack.outputs.artifact }}
         run: |
           set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --prerelease --title "Deploy artifacts" \
+              --notes "由 Deploy workflow 自动维护的构建产物，服务器部署时从这里下载。请勿手动删除。" \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$RELEASE_TAG" "$ARTIFACT" "${ARTIFACT}.sha256" --clobber
 
-          install -m 700 -d ~/.ssh
-          cat > ~/.ssh/deploy.pem <<'EOF'
-          ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          EOF
-          chmod 600 ~/.ssh/deploy.pem
-          ssh-keygen -y -f ~/.ssh/deploy.pem > /dev/null
-
-          ssh-keyscan -H "${{ steps.target.outputs.server_ip }}" >> ~/.ssh/known_hosts
+          # 只保留最近 KEEP_ARTIFACTS 次构建（每次两个文件）
+          keep=$((KEEP_ARTIFACTS * 2))
+          gh release view "$RELEASE_TAG" --json assets \
+            --jq ".assets | sort_by(.createdAt) | reverse | .[${keep}:] | .[].name" \
+          | while read -r name; do
+              [ -n "$name" ] || continue
+              echo "删除旧产物 $name"
+              gh release delete-asset "$RELEASE_TAG" "$name" --yes
+            done
 
       - name: Prepare runtime env
         shell: bash
@@ -51,51 +132,51 @@ jobs:
           EXTERNAL_DB_URL: ${{ secrets.EXTERNAL_DB_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-          AMAP_API_KEY: ${{ secrets.AMAP_API_KEY }}
-          TENCENT_LBS_KEY: ${{ secrets.TENCENT_LBS_KEY }}
-          TENCENT_LBS_SK: ${{ secrets.TENCENT_LBS_SK }}
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
-          APP_PORT: ${{ secrets.APP_PORT }}
-          SIGNATURE_PORT: ${{ secrets.SIGNATURE_PORT }}
           NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           SECURE_COOKIES: ${{ secrets.SECURE_COOKIES }}
+          AMAP_API_KEY: ${{ secrets.AMAP_API_KEY }}
           LBS_PROVIDER: ${{ secrets.LBS_PROVIDER }}
+          TENCENT_LBS_KEY: ${{ secrets.TENCENT_LBS_KEY }}
+          TENCENT_LBS_SK: ${{ secrets.TENCENT_LBS_SK }}
           SIGNATURE_SERVICE_URL: ${{ secrets.SIGNATURE_SERVICE_URL }}
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
         run: |
           set -euo pipefail
-
           : > /tmp/tyre-flow.env
 
           require_value() {
-            local key="$1"
-            local value="$2"
-            if [ -z "$value" ]; then
-              echo "::error::Missing required runtime env key: ${key}"
+            if [ -z "$2" ]; then
+              echo "::error::缺少必需的运行时环境变量: $1"
               exit 1
             fi
           }
 
+          # 文件会同时被 bash 和 systemd EnvironmentFile 读取，统一用单引号包裹，
+          # 值里不能有单引号或换行（systemd 不支持转义）
           write_value() {
-            local key="$1"
-            local value="$2"
-            if [ -n "$value" ]; then
-              local escaped="${value//\'/\'\\\'\'}"
-              printf "%s='%s'\n" "$key" "$escaped" >> /tmp/tyre-flow.env
-            fi
+            local key="$1" value="$2"
+            [ -n "$value" ] || return 0
+            case "$value" in
+              *\'*|*$'\n'*)
+                echo "::error::${key} 的值不能包含单引号或换行"
+                exit 1
+                ;;
+            esac
+            printf "%s='%s'\n" "$key" "$value" >> /tmp/tyre-flow.env
           }
 
           require_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
           require_value JWT_SECRET "$JWT_SECRET"
           require_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
 
+          # 应用读取 DATABASE_URL；EXTERNAL_DB_URL 保留一份方便服务器上排障（psql "$EXTERNAL_DB_URL"）
+          write_value DATABASE_URL "$EXTERNAL_DB_URL"
           write_value EXTERNAL_DB_URL "$EXTERNAL_DB_URL"
           write_value JWT_SECRET "$JWT_SECRET"
           write_value NEXTAUTH_SECRET "$NEXTAUTH_SECRET"
           write_value NEXTAUTH_URL "$NEXTAUTH_URL"
           write_value SECURE_COOKIES "${SECURE_COOKIES:-false}"
-          write_value APP_PORT "$APP_PORT"
-          write_value SIGNATURE_PORT "$SIGNATURE_PORT"
           write_value AMAP_API_KEY "$AMAP_API_KEY"
           write_value LBS_PROVIDER "$LBS_PROVIDER"
           write_value TENCENT_LBS_KEY "$TENCENT_LBS_KEY"
@@ -104,42 +185,43 @@ jobs:
           write_value ALIBABA_CLOUD_ACCESS_KEY_ID "$ALIBABA_CLOUD_ACCESS_KEY_ID"
           write_value ALIBABA_CLOUD_ACCESS_KEY_SECRET "$ALIBABA_CLOUD_ACCESS_KEY_SECRET"
 
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          cat > ~/.ssh/deploy.pem <<'EOF'
+          ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          EOF
+          chmod 600 ~/.ssh/deploy.pem
+          ssh-keygen -y -f ~/.ssh/deploy.pem > /dev/null
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<EOF
+          Host prod
+            HostName $SERVER_IP
+            User $SERVER_USER
+            IdentityFile ~/.ssh/deploy.pem
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+          EOF
+
+      # 幂等：已满足的项直接跳过，首次会安装 Node / LibreOffice / 字体 / Python venv / systemd 单元
+      - name: Provision server
+        run: ssh prod 'bash -s' < scripts/server/provision.sh
+
       - name: Sync runtime env
-        shell: bash
         run: |
           set -euo pipefail
+          scp /tmp/tyre-flow.env prod:/tmp/tyre-flow.env
+          ssh prod 'install -o tyreflow -g tyreflow -m 600 /tmp/tyre-flow.env /opt/tyre-flow/shared/.env && rm -f /tmp/tyre-flow.env'
 
-          scp \
-            -i ~/.ssh/deploy.pem \
-            -o StrictHostKeyChecking=yes \
-            /tmp/tyre-flow.env \
-            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}:/tmp/tyre-flow.env"
-
-          ssh \
-            -i ~/.ssh/deploy.pem \
-            -o StrictHostKeyChecking=yes \
-            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}" \
-            "install -m 700 -d '${{ steps.target.outputs.deploy_dir }}' && install -m 600 /tmp/tyre-flow.env '${{ steps.target.outputs.deploy_dir }}/.env' && rm -f /tmp/tyre-flow.env"
-
-      - name: Open registry tunnel
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh \
-            -i ~/.ssh/deploy.pem \
-            -o StrictHostKeyChecking=yes \
-            -fN \
-            -L 5000:localhost:5000 \
-            "${{ steps.target.outputs.server_user }}@${{ steps.target.outputs.server_ip }}"
-
-      - name: Build, push, and deploy
-        shell: bash
+      - name: Deploy
         env:
-          SSH_KEY: /home/runner/.ssh/deploy.pem
-          REGISTRY_HOST_OVERRIDE: localhost:5000
-          DEPLOY_REPO_URL: https://github.com/eyyoung/tyre-flow.git
-          DEPLOY_GIT_REF: ${{ github.sha }}
-          DEBIAN_MIRROR: http://deb.debian.org/debian
-          DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
-        run: ./scripts/deploy.sh prod --yes
+          SHA256: ${{ steps.pack.outputs.sha256 }}
+        run: ssh prod "bash -s -- deploy '$GITHUB_SHA' '$SHA256'" < scripts/server/deploy.sh
+
+      - name: Smoke test (public endpoint)
+        continue-on-error: true
+        run: curl -fsS --retry 3 --retry-delay 5 -m 10 "http://$SERVER_IP:3000/api/health"; echo

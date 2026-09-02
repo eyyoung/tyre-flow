@@ -6,6 +6,7 @@
 
 import base64
 import io
+import os
 import random
 from pathlib import Path
 
@@ -170,6 +171,9 @@ def list_fonts():
 
 
 if __name__ == "__main__":
+    # 监听地址/端口可由环境变量覆盖（生产环境由 systemd 设为 127.0.0.1:3333，仅本机可访问）
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "3333"))
     print("=" * 50)
     print("中文手写签名生成器 API 服务")
     print("=" * 50)
@@ -177,9 +181,9 @@ if __name__ == "__main__":
     for f in AVAILABLE_FONTS:
         print(f"  - {f.name}")
     print()
-    print("API 地址: http://localhost:3333")
+    print(f"API 地址: http://{host}:{port}")
     print("生成签名: POST /generate")
     print("=" * 50)
     
-    app.run(host="0.0.0.0", port=3333, debug=False)
+    app.run(host=host, port=port, debug=False)
 
