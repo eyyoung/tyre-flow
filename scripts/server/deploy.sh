@@ -91,6 +91,8 @@ check_prerequisites() {
   [ -d "$RELEASES_DIR" ] || die "$RELEASES_DIR 不存在，请先执行 provision.sh"
   [ -x /usr/local/bin/node ] || die "Node 未安装，请先执行 provision.sh"
   [ -s "$SHARED_DIR/.env" ] || die "$SHARED_DIR/.env 为空，请先写入环境变量"
+  # ssh 进来时 cwd 是 /root，以 tyreflow 运行的命令读不了那里；统一切到应用目录
+  cd "$APP_ROOT"
   if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^tyre-flow-'; then
     die "旧的 Docker 栈仍在运行（端口 3000/3333 会冲突）。请先执行: cd /root/deployment/tyre-flow && docker compose --profile external-db down"
   fi
@@ -175,9 +177,10 @@ migrate_db() {
   [ -n "$db_url" ] || die "$SHARED_DIR/.env 缺少 DATABASE_URL"
   # 与原 Dockerfile.migrate 一致：db push（生产库从未用过 prisma migrate）+ 幂等 seed
   log "同步数据库结构（prisma db push）"
-  as_app env DATABASE_URL="$db_url" PRISMA_ENGINES_MIRROR="$PRISMA_ENGINES_MIRROR" \
+  # 必须在 release 目录里执行：Prisma 6 会在 cwd 查找 prisma.config.ts，cwd 不可读会直接报错
+  (cd "$RELEASE_DIR" && as_app env DATABASE_URL="$db_url" PRISMA_ENGINES_MIRROR="$PRISMA_ENGINES_MIRROR" \
     "$TOOLS_DIR/node_modules/.bin/prisma" db push \
-      --schema "$RELEASE_DIR/prisma/schema.prisma" --skip-generate --accept-data-loss
+      --schema prisma/schema.prisma --skip-generate --accept-data-loss)
   log "写入种子数据（seed）"
   (cd "$RELEASE_DIR" && as_app env DATABASE_URL="$db_url" NODE_ENV=production node prisma/seed.cjs)
 }
