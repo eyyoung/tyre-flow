@@ -1,7 +1,9 @@
+import { rm } from "fs/promises";
 import prisma from "@/lib/db";
 import {
   expireOldIsccExports,
   processIsccExportJob,
+  resolveIsccExportPath,
 } from "@/lib/iscc-export-generator";
 
 const POLL_INTERVAL_MS = 5_000;
@@ -12,9 +14,29 @@ let isProcessing = false;
 let lastCleanupAt = 0;
 
 async function recoverStaleJobs(): Promise<void> {
+  // 生产环境只有一个 worker 进程：它在启动，说明上一个进程里的任务都已经死了，
+  // 所有 PROCESSING 都是上次异常退出留下的。用户已请求停止的直接标记为已停止，其余重新排队。
+  const cancelling = await prisma.isccExportJob.findMany({
+    where: { status: "PROCESSING", cancelRequestedAt: { not: null } },
+    select: { id: true },
+  });
+  for (const { id } of cancelling) {
+    await rm(resolveIsccExportPath(id), { recursive: true, force: true }).catch(() => {});
+    await prisma.isccExportJob.updateMany({
+      where: { id, status: "PROCESSING" },
+      data: {
+        status: "CANCELLED",
+        phase: "cancelled",
+        errorMessage: null,
+        completedAt: new Date(),
+      },
+    });
+  }
+  if (cancelling.length > 0) {
+    console.log(`[ISCC Worker] Marked ${cancelling.length} stale job(s) as cancelled`);
+  }
+
   const result = await prisma.isccExportJob.updateMany({
-    // Production runs a single dedicated worker container. If it is starting,
-    // no prior in-process job can still be alive, so all unfinished claims are safe to retry.
     where: { status: "PROCESSING" },
     data: {
       status: "PENDING",

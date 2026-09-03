@@ -205,6 +205,10 @@
     "exportTaskSubmitted": "Export job submitted",
     "exportTaskAlreadyRunning": "An export job is already running",
     "exportTaskRunning": "Processing in Background",
+    "stopExport": "Stop Export",
+    "stopExportConfirm": "Stop the current export job? Everything generated so far will be discarded.",
+    "stopExportRequested": "Stop requested, waiting for the job to exit",
+    "exportTaskStopped": "Export job stopped",
     "exportBackgroundHint": "You can close this window or leave the page. The job will continue, and you can reopen this window later to check progress and download the result.",
     "exportProcessed": "Generated {processed} / {total}",
     "exportProgress": {
@@ -213,6 +217,8 @@
       "merging": "Merging documents",
       "converting": "Converting to PDF",
       "packaging": "Packaging download",
+      "cancelling": "Stopping",
+      "cancelled": "Stopped",
       "completed": "Export complete",
       "failed": "Export failed",
       "expired": "File expired"

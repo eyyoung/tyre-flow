@@ -92,7 +92,7 @@ interface IsccExportJob {
   id: string;
   template: string;
   testMode: boolean;
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
   phase: string;
   progress: number;
   processed: number;
@@ -100,6 +100,7 @@ interface IsccExportJob {
   fileName: string | null;
   fileSize: number | null;
   errorMessage: string | null;
+  cancelRequestedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
 }
@@ -141,6 +142,7 @@ export default function StoresPage() {
   // ISCC 导出相关状态
   const [isccModalVisible, setIsccModalVisible] = useState(false);
   const [submittingIscc, setSubmittingIscc] = useState(false);
+  const [stoppingIscc, setStoppingIscc] = useState(false);
   const [loadingIsccJob, setLoadingIsccJob] = useState(false);
   const [isccJob, setIsccJob] = useState<IsccExportJob | null>(null);
   // 导出模板版本（批量导出与单店导出共用）；声明统一按英文生成
@@ -530,6 +532,32 @@ export default function StoresPage() {
     window.location.href = `/api/stores/iscc-export/jobs/${isccJob.id}/download`;
   };
 
+  // 停止后台生成任务：排队中的立即停止；处理中的由 worker 在两份文档之间退出，期间状态显示「正在停止」。
+  const handleStopIscc = async () => {
+    if (!isccJob) return;
+    try {
+      setStoppingIscc(true);
+      const response = await fetch(`/api/stores/iscc-export/jobs/${isccJob.id}/cancel`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (result.data) setIsccJob(result.data);
+      if (!response.ok) {
+        message.error(result.message || t('common.error'));
+        return;
+      }
+      message.success(
+        result.data?.status === 'CANCELLED'
+          ? t('stores.exportTaskStopped')
+          : t('stores.stopExportRequested')
+      );
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setStoppingIscc(false);
+    }
+  };
+
   // 模板版本选择器
   const renderIsccExportOptions = (disabled = false) => (
     <Row gutter={12} style={{ marginBottom: 16 }}>
@@ -554,6 +582,28 @@ export default function StoresPage() {
   const describeIsccJobOptions = (job: IsccExportJob) => {
     const templateLabel = ISCC_TEMPLATES[job.template as IsccTemplateKey]?.label ?? job.template;
     return job.testMode ? `${templateLabel} · ${t('stores.isccTestModeTag')}` : templateLabel;
+  };
+
+  // 停止标记优先于 phase：worker 收尾前还会继续写 generating/merging 等阶段
+  const describeIsccJobPhase = (job: IsccExportJob) => {
+    if (job.status === 'CANCELLED') return t('stores.exportProgress.cancelled');
+    if (job.cancelRequestedAt) return t('stores.exportProgress.cancelling');
+    switch (job.phase) {
+      case 'queued':
+      case 'starting':
+        return t('stores.exportProgress.queued');
+      case 'generating':
+        return t('stores.exportProgress.generating');
+      case 'merging':
+        return t('stores.exportProgress.merging');
+      case 'converting':
+        return t('stores.exportProgress.converting');
+      case 'packaging':
+        return t('stores.exportProgress.packaging');
+    }
+    if (job.status === 'COMPLETED') return t('stores.exportProgress.completed');
+    if (job.status === 'FAILED') return t('stores.exportProgress.failed');
+    return t('stores.exportProgress.expired');
   };
 
   // 打开弹窗时恢复最近任务，用户无需一直停留在页面上。
@@ -1215,9 +1265,22 @@ export default function StoresPage() {
               {t('stores.downloadExport')}
             </Button>
           ) : ['PENDING', 'PROCESSING'].includes(isccJob?.status || '') ? (
-            <Button key="processing" type="primary" disabled>
-              {t('stores.exportTaskRunning')}
-            </Button>
+            <Popconfirm
+              key="stop"
+              title={t('stores.stopExportConfirm')}
+              onConfirm={handleStopIscc}
+              okText={t('stores.stopExport')}
+              okButtonProps={{ danger: true }}
+              cancelText={t('common.cancel')}
+              disabled={!!isccJob?.cancelRequestedAt}
+              destroyOnHidden
+            >
+              <Button danger loading={stoppingIscc || !!isccJob?.cancelRequestedAt}>
+                {isccJob?.cancelRequestedAt
+                  ? t('stores.exportProgress.cancelling')
+                  : t('stores.stopExport')}
+              </Button>
+            </Popconfirm>
           ) : (
             <Button
               key="submit"
@@ -1255,32 +1318,18 @@ export default function StoresPage() {
               {describeIsccJobOptions(isccJob)}
             </Typography.Paragraph>
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Typography.Text>
-                {isccJob.phase === 'queued' || isccJob.phase === 'starting'
-                  ? t('stores.exportProgress.queued')
-                  : isccJob.phase === 'generating'
-                    ? t('stores.exportProgress.generating')
-                    : isccJob.phase === 'merging'
-                      ? t('stores.exportProgress.merging')
-                      : isccJob.phase === 'converting'
-                        ? t('stores.exportProgress.converting')
-                        : isccJob.phase === 'packaging'
-                          ? t('stores.exportProgress.packaging')
-                          : isccJob.status === 'COMPLETED'
-                            ? t('stores.exportProgress.completed')
-                            : isccJob.status === 'FAILED'
-                              ? t('stores.exportProgress.failed')
-                              : t('stores.exportProgress.expired')}
-              </Typography.Text>
+              <Typography.Text>{describeIsccJobPhase(isccJob)}</Typography.Text>
               <Tag
                 color={
                   isccJob.status === 'COMPLETED'
                     ? 'success'
                     : isccJob.status === 'FAILED'
                       ? 'error'
-                      : isccJob.status === 'EXPIRED'
-                        ? 'default'
-                        : 'processing'
+                      : isccJob.status === 'CANCELLED'
+                        ? 'warning'
+                        : isccJob.status === 'EXPIRED'
+                          ? 'default'
+                          : 'processing'
                 }
               >
                 {isccJob.status}
@@ -1293,7 +1342,9 @@ export default function StoresPage() {
                   ? 'exception'
                   : isccJob.status === 'COMPLETED'
                     ? 'success'
-                    : 'active'
+                    : isccJob.status === 'CANCELLED'
+                      ? 'normal'
+                      : 'active'
               }
               size="small"
             />

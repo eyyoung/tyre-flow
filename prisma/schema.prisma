@@ -293,6 +293,7 @@ model IsccExportJob {
   fileType          String?
   fileSize          Int?
   errorMessage      String?
+  cancelRequestedAt DateTime?           // 用户请求停止的时间；worker 在生成间隙检查到后中止任务
   startedAt         DateTime?
   completedAt       DateTime?
   expiresAt         DateTime?
@@ -310,6 +311,7 @@ enum IsccExportJobStatus {
   COMPLETED
   FAILED
   EXPIRED
+  CANCELLED // 用户主动停止
 }
 
 // 收集记录（门店→收集点）

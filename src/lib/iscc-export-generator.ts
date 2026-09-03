@@ -366,6 +366,23 @@ async function updateProgress(
   });
 }
 
+/** 用户请求停止时由 worker 抛出，用来把「主动停止」和「失败」区分开 */
+export class IsccExportCancelledError extends Error {
+  constructor(jobId: string) {
+    super(`ISCC export job ${jobId} was cancelled`);
+    this.name = "IsccExportCancelledError";
+  }
+}
+
+/** 检查用户是否已请求停止（见 jobs/[id]/cancel 路由）。在两份文档之间调用，所以停止最多再多生成一份 */
+async function throwIfCancelRequested(jobId: string): Promise<void> {
+  const job = await prisma.isccExportJob.findUnique({
+    where: { id: jobId },
+    select: { cancelRequestedAt: true },
+  });
+  if (!job || job.cancelRequestedAt) throw new IsccExportCancelledError(jobId);
+}
+
 export async function processIsccExportJob(jobId: string): Promise<void> {
   const job = await prisma.isccExportJob.findUnique({
     where: { id: jobId },
@@ -478,6 +495,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       const pdfDocuments: Uint8Array[] = [];
 
       for (let storeIndex = 0; storeIndex < batchStores.length; storeIndex++) {
+        await throwIfCancelRequested(jobId);
         const store = batchStores[storeIndex];
         const { signDate, isNewlyCalculated } = calculateSignDate(
           store.isccSignDate,
@@ -528,6 +546,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         }
       }
 
+      await throwIfCancelRequested(jobId);
       await updateProgress(jobId, {
         phase: "merging",
         progress: Math.min(
@@ -549,6 +568,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
 
+    await throwIfCancelRequested(jobId);
     await updateProgress(jobId, {
       phase: "packaging",
       progress: 97,
@@ -584,11 +604,24 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
     });
     console.log(`[ISCC Worker] Job ${jobId} completed`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[ISCC Worker] Job ${jobId} failed:`, error);
     await rm(jobDir, { recursive: true, force: true }).catch((cleanupError) => {
       console.error(`[ISCC Worker] Failed to clean job ${jobId} files:`, cleanupError);
     });
+    if (error instanceof IsccExportCancelledError) {
+      await prisma.isccExportJob.updateMany({
+        where: { id: jobId },
+        data: {
+          status: "CANCELLED",
+          phase: "cancelled",
+          errorMessage: null,
+          completedAt: new Date(),
+        },
+      });
+      console.log(`[ISCC Worker] Job ${jobId} cancelled by user`);
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[ISCC Worker] Job ${jobId} failed:`, error);
     await prisma.isccExportJob.update({
       where: { id: jobId },
       data: {

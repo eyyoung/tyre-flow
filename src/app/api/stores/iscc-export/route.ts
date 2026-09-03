@@ -127,13 +127,14 @@ export async function POST(request: NextRequest) {
         ? Math.min(storeCount, ISCC_TEST_EXPORT_STORE_LIMIT)
         : storeCount;
 
-      // 同一收集点、同一模板、同一模式的进行中任务直接复用
+      // 同一收集点、同一模板、同一模式的进行中任务直接复用（正在停止的除外）
       const existingJob = await ctx.prisma.isccExportJob.findFirst({
         where: {
           collectionPointId,
           template,
           testMode,
           status: { in: [...ACTIVE_JOB_STATUSES] },
+          cancelRequestedAt: null,
         },
         orderBy: { createdAt: "desc" },
       });

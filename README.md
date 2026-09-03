@@ -170,7 +170,7 @@ ssh root@HOST 'set -a; . /opt/tyre-flow/shared/.env; psql "$DATABASE_URL" -c "se
 | ISCC_EXPORT_DIR | ISCC 导出文件目录 | /opt/tyre-flow/shared/data/iscc-exports |
 | ISCC_EXPORT_BATCH_SIZE | ISCC Worker 每批处理的门店数（10-100） | 50 |
 
-ISCC 批量导出会创建数据库任务，由独立的 `tyre-flow-worker` 进程分批生成、合并和打包。用户可以关闭页面，之后重新打开导出窗口查看进度或下载；完成文件默认保留 7 天。
+ISCC 批量导出会创建数据库任务，由独立的 `tyre-flow-worker` 进程分批生成、合并和打包。用户可以关闭页面，之后重新打开导出窗口查看进度或下载；进行中的任务可以在窗口里停止（worker 在两份文档之间检查停止标记，已生成的临时文件会被清理）；完成文件默认保留 7 天。
 
 ### ISCC 自我声明模板
 
