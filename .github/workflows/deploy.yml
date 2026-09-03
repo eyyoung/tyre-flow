@@ -207,7 +207,7 @@ jobs:
             ServerAliveCountMax 10
           EOF
 
-      # 幂等：已满足的项直接跳过，首次会安装 Node / LibreOffice / 字体 / Python venv / systemd 单元
+      # 幂等：已满足的项直接跳过，首次会安装 apt 包 / Node / Python venv / systemd 单元
       - name: Provision server
         run: ssh prod 'bash -s' < scripts/server/provision.sh
 

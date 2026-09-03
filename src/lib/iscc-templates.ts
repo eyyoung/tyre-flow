@@ -2,7 +2,8 @@
  * ISCC 自我声明模板注册表
  *
  * 同时供服务端（生成器 / API）与客户端（导出弹窗）使用，因此不要在这里引入 Node 专属模块。
- * 模板文件位于 template/ 目录，占位符使用 docxtemplater 语法（{tag}）。
+ * 模板文件位于 template/ 目录，都是带命名字段的 PDF 表单（AcroForm），
+ * 字段与数据的对应关系见 src/lib/iscc-pdf-form.ts。
  */
 
 export const ISCC_TEMPLATE_KEYS = ["PLUS_V1", "PLUS_V2", "EU_V2"] as const;
@@ -19,23 +20,23 @@ export interface IsccTemplateDefinition {
 
 export const ISCC_TEMPLATES: Record<IsccTemplateKey, IsccTemplateDefinition> = {
   PLUS_V1: {
-    file: "ISCC.docx",
+    file: "ISCC.pdf",
     label: "ISCC PLUS v1.2 (2024)",
     filePrefix: "ISCC",
   },
   PLUS_V2: {
-    file: "ISCC_PLUS.docx",
+    file: "ISCC_PLUS.pdf",
     label: "ISCC PLUS v2.0 (2025)",
     filePrefix: "ISCC_PLUS",
   },
   EU_V2: {
-    file: "ISCC_EU.docx",
+    file: "ISCC_EU.pdf",
     label: "ISCC EU v2.3 (2025)",
     filePrefix: "ISCC_EU",
   },
 };
 
-/** 未指定模板时沿用原有的 ISCC.docx */
+/** 未指定模板时沿用原有的 PLUS v1.2 */
 export const DEFAULT_ISCC_TEMPLATE: IsccTemplateKey = "PLUS_V1";
 
 /** 自我声明统一按英文生成（门店 / 收集点字段走翻译缓存，缺失时回退中文原文） */

@@ -72,7 +72,7 @@ npm run dev
 ```
 GitHub Actions                                 生产服务器 (8.148.203.142)
 ─────────────────────────────                  ─────────────────────────────────────────
-npm ci → prisma generate → next build          provision.sh  幂等初始化（apt 包 / Node / venv / systemd）
+npm ci → prisma generate → next build          provision.sh  幂等初始化（apt 包 / Node / venv / systemd，无需 LibreOffice）
 打包 standalone 产物 tyre-flow-<sha>.tar.zst   deploy.sh     下载产物 → db push + seed → 切换 current → 重启 → 健康检查
 上传到 GitHub Release (tag: deploy-artifacts)                （失败自动回滚到上一个 release）
 通过 SSH 发送 .env 和上面两个脚本（几 KB）
@@ -101,7 +101,7 @@ systemd 服务（均以 tyreflow 用户运行）:
 
 1. 在 GitHub 仓库配置 `prod` environment 的 Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`EXTERNAL_DB_URL`、`JWT_SECRET`、`NEXTAUTH_SECRET`，以及可选的 `NEXTAUTH_URL`、`SECURE_COOKIES`、`AMAP_API_KEY`、`LBS_PROVIDER`、`TENCENT_LBS_KEY`、`TENCENT_LBS_SK`、`SIGNATURE_SERVICE_URL`、`ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`。
 2. 服务器操作系统使用 **Debian 12**（阿里云公共镜像即可），换系统时绑定 `DEPLOY_SSH_PRIVATE_KEY` 对应的密钥对；安全组放行 3000 端口（3001 / 3333 只监听本机，不需要放行）。
-3. Actions → Deploy → Run workflow。首次会安装 Node、LibreOffice、字体、Python 依赖，约 5 分钟；之后每次部署只需 1 分钟左右，停机时间为 web 重启的几秒。
+3. Actions → Deploy → Run workflow。首次会安装 Node 和 Python 依赖，约 2 分钟；之后每次部署只需 1 分钟左右，停机时间为 web 重启的几秒。
 
 也可以在本地手动执行初始化（幂等，可反复运行）：
 
@@ -132,7 +132,7 @@ ssh root@HOST 'set -a; . /opt/tyre-flow/shared/.env; psql "$DATABASE_URL" -c "se
 ### 说明与约定
 
 - 数据库结构用 `prisma db push --accept-data-loss` 同步（与之前的 Dockerfile.migrate 一致），随后执行幂等的 seed。生产库没有 `_prisma_migrations` 表，`prisma/migrations` 目前只用于本地开发；要切到 `migrate deploy` 需先做 baseline。
-- LibreOffice 7.4.7 与 Liberation、文泉驿正黑/微米黑字体直接来自 Debian 12 的 apt，与原 Docker 镜像（node:20-slim，同为 Debian 12）完全一致，docx → pdf 渲染不变。Node 版本在 `scripts/server/provision.sh` 顶部维护。
+- Node 版本在 `scripts/server/provision.sh` 顶部维护。服务器不需要 LibreOffice：ISCC 自我声明直接填充 PDF 表单生成。
 - 进程时区固定为 UTC（与原容器一致）。如需改为北京时间，修改 provision.sh 里 unit 的 `TZ` 后重新部署。
 - 构建产物公开可下载（仓库本身公开，产物不含任何密钥）。若仓库转为私有，需给 deploy.sh 提供带 token 的 `DEPLOY_ARTIFACT_BASE_URL`。
 - 保留最近 5 个 release 与最近 10 次构建产物，可通过 `KEEP_RELEASES` / workflow 里的 `KEEP_ARTIFACTS` 调整。
@@ -170,4 +170,16 @@ ssh root@HOST 'set -a; . /opt/tyre-flow/shared/.env; psql "$DATABASE_URL" -c "se
 | ISCC_EXPORT_DIR | ISCC 导出文件目录 | /opt/tyre-flow/shared/data/iscc-exports |
 | ISCC_EXPORT_BATCH_SIZE | ISCC Worker 每批处理的门店数（10-100） | 50 |
 
-ISCC 批量导出会创建数据库任务，由独立的 `tyre-flow-worker` 进程分批生成、转换和打包。用户可以关闭页面，之后重新打开导出窗口查看进度或下载；完成文件默认保留 7 天。
+ISCC 批量导出会创建数据库任务，由独立的 `tyre-flow-worker` 进程分批生成、合并和打包。用户可以关闭页面，之后重新打开导出窗口查看进度或下载；完成文件默认保留 7 天。
+
+### ISCC 自我声明模板
+
+自我声明直接填充 `template/` 下带命名字段的 PDF 表单（pdf-lib），不经过 Word 和 LibreOffice：
+
+| 模板 | 文件 | 来源 |
+|------|------|------|
+| ISCC PLUS v1.2 (2024) | `template/ISCC.pdf` | 由 `template/ISCC.docx` 经 `npm run iscc:build-v1-template` 生成（本机需要 LibreOffice 和 poppler-utils） |
+| ISCC PLUS v2.0 (2025) | `template/ISCC_PLUS.pdf` | ISCC 官方可填写表单 |
+| ISCC EU v2.3 (2025) | `template/ISCC_EU.pdf` | ISCC 官方可填写表单 |
+
+字段与数据的对应关系在 `src/lib/iscc-pdf-form.ts`。表单内置 Helvetica 字体，只能输出 Latin 字符：中文会自动转为拼音，其余不可编码字符会被丢弃，所以门店、收集点字段应尽量维护好英文翻译。改过模板或映射后用 `npm run iscc:preview` 生成样例（输出在 `data/iscc-exports/preview/`）核对。

@@ -1,28 +1,22 @@
 import { ZipArchive } from "archiver";
 import dayjs from "dayjs";
-import Docxtemplater from "docxtemplater";
 import * as fs from "fs";
 import { createWriteStream } from "fs";
 import { mkdir, rm, stat, writeFile } from "fs/promises";
-import sizeOf from "image-size";
 import * as path from "path";
-import PizZip from "pizzip";
 import prisma from "@/lib/db";
-import { convertDocxToPdf } from "@/lib/docx-to-pdf";
+import { fillIsccForm, mergePdfDocuments, type IsccFormData } from "@/lib/iscc-pdf-form";
 import {
   DEFAULT_ISCC_TEMPLATE,
   ISCC_EXPORT_LANGUAGE,
   ISCC_TEST_EXPORT_STORE_LIMIT,
   getIsccTemplate,
+  isIsccTemplateKey,
   type IsccTemplateKey,
 } from "@/lib/iscc-templates";
 import { calculateSignDate } from "@/lib/iscc-utils";
 import { getTranslatedValue, type TranslationCache } from "@/lib/translations";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ImageModule = require("docxtemplater-image-module-free");
-
-const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const SIGNATURE_SERVICE_URL =
   process.env.SIGNATURE_SERVICE_URL || "http://localhost:3333/generate";
 const DEFAULT_BATCH_SIZE = 50;
@@ -31,10 +25,8 @@ const EXPORT_RETENTION_DAYS = 7;
 const NOT_AVAILABLE = "-";
 // 新版模板（ISCC PLUS v2.0 / ISCC EU v2.3）新增字段的默认值
 const SIGNATORY_POSITION = "Legal Representative";
-// 模板中的复选框单元格使用 Wingdings 字体（Word 存储符号字体字符的私用区编码），
-// LibreOffice 会把它们映射到自带的 OpenSymbol 字体渲染
-const CHECKBOX_CHECKED = "\uf0fe"; // ☑ (Wingdings 0xFE)
-const CHECKBOX_UNCHECKED = "\uf0a8"; // ☐ (Wingdings 0xA8)
+// 「The delivered material consists of the following waste or residues」的固定申报内容
+const DELIVERED_MATERIAL = "Biogenic fraction of end-of-life tires";
 // 「产废量不低于 10 t/月（PLUS）/ 5 t/月（EU）」声明固定不勾选：
 // 台账显示门店月产废量普遍在 1～3 t，没有门店达到阈值
 const MIN_VOLUME_CONFIRMED = false;
@@ -96,9 +88,13 @@ export function resolveIsccExportPath(relativePath: string): string {
   return resolved;
 }
 
-function loadIsccTemplate(templateKey: string): string {
+function resolveTemplateKey(value: string | null | undefined): IsccTemplateKey {
+  return isIsccTemplateKey(value) ? value : DEFAULT_ISCC_TEMPLATE;
+}
+
+function loadIsccTemplate(templateKey: IsccTemplateKey): Uint8Array {
   const { file } = getIsccTemplate(templateKey);
-  return fs.readFileSync(path.join(process.cwd(), "template", file), "binary");
+  return fs.readFileSync(path.join(process.cwd(), "template", file));
 }
 
 function formatGeoCoordinates(
@@ -113,12 +109,12 @@ function sanitizeFileName(value: string): string {
   return value.replace(/[/\\?%*:|"<>]/g, "_").replace(/\s+/g, "_");
 }
 
-function base64DataURLToArrayBuffer(dataURL: string): ArrayBuffer | false {
-  const base64Regex = /^data:image\/(png|jpg|jpeg|svg|svg\+xml);base64,/;
-  if (!base64Regex.test(dataURL)) return false;
-
-  const base64Data = dataURL.replace(base64Regex, "");
-  return Uint8Array.from(Buffer.from(base64Data, "base64")).buffer;
+/** 签名 data URL（PNG / JPEG）转字节；其他格式无法嵌入 PDF，返回 null */
+function signatureDataURLToBytes(dataURL: string | null): Uint8Array | null {
+  if (!dataURL) return null;
+  const match = dataURL.match(/^data:image\/(png|jpg|jpeg);base64,(.+)$/);
+  if (!match) return null;
+  return new Uint8Array(Buffer.from(match[2], "base64"));
 }
 
 async function generateSignature(name: string): Promise<string | null> {
@@ -193,155 +189,15 @@ async function getOrCreateCachedSignature(
   return signatureDataURL;
 }
 
-function extractBodyContent(documentXml: string): string {
-  const bodyMatch = documentXml.match(/<w:body[^>]*>([\s\S]*)<\/w:body>/);
-  if (!bodyMatch) return "";
-  return bodyMatch[1].replace(/<w:sectPr[\s\S]*?<\/w:sectPr>\s*$/, "");
-}
-
-function extractSectPr(documentXml: string): string {
-  // The document-level section properties are the last <w:sectPr> in the body.
-  const matches = documentXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/g);
-  return matches?.[matches.length - 1] || "";
-}
-
-/**
- * Separator between merged declarations: a (visually empty) paragraph that
- * closes a section with the template's own section properties. Each
- * declaration therefore keeps its footer and, where the template restarts
- * numbering (<w:pgNumType w:start="1"/>), its own "1 of 2" page counter.
- */
-function createSectionBreak(sectPr: string): string {
-  return `<w:p xmlns:w="${WORD_NS}"><w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>${sectPr}</w:pPr></w:p>`;
-}
-
-function mergeDocxFiles(docxBuffers: Buffer[]): Buffer {
-  if (docxBuffers.length === 0) throw new Error("No documents to merge");
-  if (docxBuffers.length === 1) return docxBuffers[0];
-
-  const baseZip = new PizZip(docxBuffers[0]);
-  const baseDocXml = baseZip.file("word/document.xml")?.asText();
-  if (!baseDocXml) throw new Error("Invalid base document");
-
-  const allBodyContents = [extractBodyContent(baseDocXml)];
-  const baseSectPr = extractSectPr(baseDocXml);
-  let imageCounter =
-    Object.keys(baseZip.files).filter((file) => file.startsWith("word/media/"))
-      .length + 1;
-  let baseRelsXml =
-    baseZip.file("word/_rels/document.xml.rels")?.asText() || "";
-
-  for (let i = 1; i < docxBuffers.length; i++) {
-    const docZip = new PizZip(docxBuffers[i]);
-    const docXml = docZip.file("word/document.xml")?.asText();
-    if (!docXml) continue;
-
-    let bodyContent = extractBodyContent(docXml);
-    const docRelsXml =
-      docZip.file("word/_rels/document.xml.rels")?.asText() || "";
-    const mediaFiles = Object.keys(docZip.files).filter((file) =>
-      file.startsWith("word/media/")
-    );
-
-    for (const mediaPath of mediaFiles) {
-      const oldFileName = mediaPath.split("/").pop() || "";
-      const extension = oldFileName.split(".").pop() || "png";
-      const newFileName = `image${imageCounter}.${extension}`;
-      const mediaContent = docZip.file(mediaPath)?.asUint8Array();
-      if (mediaContent) {
-        baseZip.file(`word/media/${newFileName}`, mediaContent);
-      }
-
-      const escapedFileName = oldFileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const relationshipPatterns = [
-        new RegExp(
-          `<Relationship[^>]*Target="media/${escapedFileName}"[^>]*Id="([^"]+)"`,
-          "i"
-        ),
-        new RegExp(
-          `<Relationship[^>]*Id="([^"]+)"[^>]*Target="media/${escapedFileName}"`,
-          "i"
-        ),
-      ];
-      const oldRelId = relationshipPatterns
-        .map((pattern) => docRelsXml.match(pattern)?.[1])
-        .find(Boolean);
-
-      if (oldRelId) {
-        const newRelId = `rId${1000 + imageCounter}`;
-        bodyContent = bodyContent.replace(
-          new RegExp(`r:embed="${oldRelId}"`, "g"),
-          `r:embed="${newRelId}"`
-        );
-        const newRel = `<Relationship Id="${newRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${newFileName}"/>`;
-        baseRelsXml = baseRelsXml.replace(
-          "</Relationships>",
-          `${newRel}</Relationships>`
-        );
-      }
-      imageCounter++;
-    }
-
-    if (bodyContent) allBodyContents.push(bodyContent);
-  }
-
-  const xmlDeclaration =
-    baseDocXml.match(/<\?xml[^?]*\?>/)?.[0] ||
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  const documentStart =
-    baseDocXml.match(/<w:document[^>]*>/)?.[0] || "<w:document>";
-  const mergedDocXml = `${xmlDeclaration}
-${documentStart}
-<w:body>${allBodyContents.join(createSectionBreak(baseSectPr))}${baseSectPr}</w:body>
-</w:document>`;
-
-  baseZip.file("word/document.xml", mergedDocXml);
-  baseZip.file("word/_rels/document.xml.rels", baseRelsXml);
-  return baseZip.generate({
-    type: "nodebuffer",
-    compression: "DEFLATE",
-  }) as Buffer;
-}
-
-async function generateIsccDocument(
+async function generateIsccPdf(
   store: StoreForExport,
   collectionPoint: CollectionPointForExport,
-  templateContent: string,
+  templateKey: IsccTemplateKey,
+  templateBytes: Uint8Array,
   signatureDataURL: string | null,
   signDate: Date,
   lang: string
-): Promise<Buffer> {
-  const zipDoc = new PizZip(templateContent);
-  const modules: unknown[] = [];
-
-  if (signatureDataURL) {
-    modules.push(
-      new ImageModule({
-        centered: false,
-        fileType: "docx",
-        getImage: (tagValue: string) => {
-          const result = base64DataURLToArrayBuffer(tagValue);
-          if (result === false) throw new Error("Invalid image data URL");
-          return result;
-        },
-        getSize: (img: ArrayBuffer): [number, number] => {
-          const dimensions = sizeOf(Buffer.from(img));
-          const width = dimensions.width || 150;
-          const height = dimensions.height || 50;
-          return [(40 * width) / height, 40];
-        },
-      })
-    );
-  }
-
-  const doc = new Docxtemplater(zipDoc, {
-    paragraphLoop: true,
-    linebreaks: true,
-    // The image module has no compatible TypeScript definition.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    modules: modules as any[],
-  });
-
+): Promise<Uint8Array> {
   const translatedCity = collectionPoint.city
     ? getTranslatedValue(
         collectionPoint.city,
@@ -362,7 +218,7 @@ async function generateIsccDocument(
       )
     : null;
 
-  const renderData: Record<string, unknown> = {
+  const data: IsccFormData = {
     storeName: getTranslatedValue(store.name, store.nameTranslations, lang),
     legalPerson: store.legalPerson
       ? getTranslatedValue(
@@ -382,22 +238,22 @@ async function generateIsccDocument(
     phone: store.contactPhone || NOT_AVAILABLE,
     geoCoordinates: formatGeoCoordinates(store.latitude, store.longitude),
     position: SIGNATORY_POSITION,
-    minVolumeCheck: MIN_VOLUME_CONFIRMED ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED,
+    minVolumeCheck: MIN_VOLUME_CONFIRMED,
     maxCapacity: String(MAX_CAPACITY_TONNES_PER_YEAR),
     maxSustainableCapacity: String(MAX_SUSTAINABLE_CAPACITY_TONNES_PER_YEAR),
-    collectionPoint:
-      translatedCompanyName || translatedCollectionPointName,
+    collectionPoint: translatedCompanyName || translatedCollectionPointName,
     placeDate: `${translatedCity || collectionPoint.province || "China"}, ${dayjs(
       signDate
     ).format("YYYY/MM/DD")}`,
+    deliveredMaterial: DELIVERED_MATERIAL,
   };
-  if (signatureDataURL) renderData.signature = signatureDataURL;
 
-  doc.render(renderData);
-  return doc.getZip().generate({
-    type: "nodebuffer",
-    compression: "DEFLATE",
-  });
+  return fillIsccForm(
+    templateBytes,
+    templateKey,
+    data,
+    signatureDataURLToBytes(signatureDataURL)
+  );
 }
 
 export async function generateSingleIsccPdf(
@@ -452,16 +308,15 @@ export async function generateSingleIsccPdf(
     store.signatureFileId,
     store.legalPerson || store.name
   );
-  const templateContent = loadIsccTemplate(templateKey);
-  const docxBuffer = await generateIsccDocument(
+  const pdfBytes = await generateIsccPdf(
     store as StoreForExport,
     store.collectionPoint as CollectionPointForExport,
-    templateContent,
+    templateKey,
+    loadIsccTemplate(templateKey),
     signatureDataURL,
     signDate,
     lang
   );
-  const pdfBuffer = await convertDocxToPdf(docxBuffer);
   const translatedStoreName = getTranslatedValue(
     store.name,
     store.nameTranslations as TranslationCache | null,
@@ -469,7 +324,7 @@ export async function generateSingleIsccPdf(
   );
 
   return {
-    buffer: pdfBuffer,
+    buffer: Buffer.from(pdfBytes),
     fileName: `${getIsccTemplate(templateKey).filePrefix}_${sanitizeFileName(
       translatedStoreName
     )}.pdf`,
@@ -593,8 +448,9 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       }
     }
 
-    const { filePrefix } = getIsccTemplate(job.template);
-    const templateContent = loadIsccTemplate(job.template);
+    const templateKey = resolveTemplateKey(job.template);
+    const { filePrefix } = getIsccTemplate(templateKey);
+    const templateBytes = loadIsccTemplate(templateKey);
     const batchSize = getBatchSize();
     const totalBatches = Math.ceil(total / batchSize);
     const pdfFiles: Array<{ path: string; name: string }> = [];
@@ -619,7 +475,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         batchIndex * batchSize,
         Math.min((batchIndex + 1) * batchSize, total)
       );
-      const docxBuffers: Buffer[] = [];
+      const pdfDocuments: Uint8Array[] = [];
 
       for (let storeIndex = 0; storeIndex < batchStores.length; storeIndex++) {
         const store = batchStores[storeIndex];
@@ -641,11 +497,12 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
           store.signatureFileId,
           store.legalPerson || store.name
         );
-        docxBuffers.push(
-          await generateIsccDocument(
+        pdfDocuments.push(
+          await generateIsccPdf(
             store,
             job.collectionPoint as CollectionPointForExport,
-            templateContent,
+            templateKey,
+            templateBytes,
             signatureDataURL,
             signDate,
             ISCC_EXPORT_LANGUAGE
@@ -680,18 +537,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
         processed,
         total,
       });
-      const mergedDocx = mergeDocxFiles(docxBuffers);
-
-      await updateProgress(jobId, {
-        phase: "converting",
-        progress: Math.min(
-          95,
-          Math.floor(((batchIndex + 0.9) / totalBatches) * 95)
-        ),
-        processed,
-        total,
-      });
-      const pdfBuffer = await convertDocxToPdf(mergedDocx);
+      const pdfBuffer = Buffer.from(await mergePdfDocuments(pdfDocuments));
       const pdfName = `${filePrefix}_${collectionPointName}_${currentDate}${fileSuffix}_${String(
         batchIndex + 1
       ).padStart(3, "0")}.pdf`;
@@ -699,7 +545,7 @@ export async function processIsccExportJob(jobId: string): Promise<void> {
       await writeFile(pdfPath, pdfBuffer);
       pdfFiles.push({ path: pdfPath, name: pdfName });
 
-      docxBuffers.length = 0;
+      pdfDocuments.length = 0;
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
 

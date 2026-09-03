@@ -2,8 +2,7 @@
 # ============================================================
 # Tyre Flow 生产服务器初始化脚本（幂等，可反复执行）
 #
-# 目标系统: Debian 12 (bookworm)。原 Docker 镜像 node:20-slim 同样基于 Debian 12，
-# 所以 LibreOffice 7.4.7 与字体直接用 apt 安装即可，版本与原镜像完全一致。
+# 目标系统: Debian 12 (bookworm)。
 #
 # 每一项都是「先检查、缺什么装什么」，已满足的直接跳过；
 # GitHub Actions 每次部署前都会先跑一遍，让机器收敛到期望状态。
@@ -23,13 +22,11 @@ NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 SWAP_SIZE_GB="${SWAP_SIZE_GB:-2}"
 
-# apt 包：与原 Dockerfile 的 runner 阶段一致（libreoffice-writer/calc + 三套字体），
-# 外加运行脚本、签名服务与排障所需的工具
+# apt 包：运行脚本、签名服务（Python）与排障（psql）所需的工具。
+# ISCC 导出直接填充 PDF 表单（pdf-lib），不再需要 LibreOffice 和字体。
 APT_PACKAGES=(
-  ca-certificates curl git xz-utils zstd fontconfig
+  ca-certificates curl git xz-utils zstd
   python3 python3-venv python3-pip
-  libreoffice-writer libreoffice-calc
-  fonts-liberation fonts-wqy-zenhei fonts-wqy-microhei
   postgresql-client
 )
 
@@ -77,9 +74,6 @@ ensure_packages() {
     apt-get install -y -qq --no-install-recommends "${missing[@]}"
     apt-get clean
   fi
-  # 代码在 Linux 下调用的是 `libreoffice` 命令；顺便确认版本与原镜像一致（7.4）
-  libreoffice --version 2>/dev/null | grep -q 'LibreOffice 7\.4' \
-    || die "LibreOffice 版本不是 7.4（$(libreoffice --version 2>/dev/null || echo 未安装)），请确认系统是 Debian 12"
 }
 
 # ---------- 2. swap（1.8 GB 内存的保险，不用于构建） ----------
@@ -280,7 +274,6 @@ summary() {
   echo "======================================"
   echo " 系统        : ${PRETTY_NAME:-unknown}"
   echo " Node        : $(/usr/local/bin/node -v)"
-  echo " LibreOffice : $(libreoffice --version 2>/dev/null | head -1)"
   echo " Python      : $("$APP_ROOT/signature/.venv/bin/python" --version 2>&1)"
   echo " swap        : $(swapon --noheadings --show 2>/dev/null | awk '{print $1, $3}' | head -1)"
   echo " 目录        : $APP_ROOT（用户 $APP_USER）"
