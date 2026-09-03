@@ -111,17 +111,16 @@ ssh -i ~/.ssh/deploy.pem root@8.148.203.142 'bash -s' < scripts/server/provision
 
 ### 白天从本机部署
 
-白天服务器从 GitHub 拉产物可能要几十分钟。改为本机中转：本机走代理从 GitHub 下载很快，本机到阿里云是国内链路。
+白天服务器从 GitHub 拉产物可能要几十分钟。改为本机中转：本机走代理从 GitHub 下载很快，本机到阿里云是国内链路。push 之后一条命令：
 
-1. Actions → Deploy → Run workflow，`mode` 选 **build-only**：只构建并上传产物（约 2 分钟），不碰服务器。
-2. 本机执行（需要 `gh` 已登录、能 ssh 到服务器 root）：
+```bash
+scripts/deploy-from-local.sh            # 部署 origin/main 最新提交
+scripts/deploy-from-local.sh <git-sha>  # 或指定提交
+```
 
-   ```bash
-   scripts/deploy-from-local.sh            # 部署 origin/main 最新提交
-   scripts/deploy-from-local.sh <git-sha>  # 或指定提交
-   ```
+脚本流程：Release 里没有该提交的产物时，自动触发 Deploy workflow 的 **build-only** 模式（只构建并上传产物，约 2 分钟，不碰服务器）并等待；然后下载并校验产物、scp 到服务器 `/opt/tyre-flow/tmp/`，再用被部署提交里的 provision.sh / deploy.sh 完成余下步骤（deploy.sh 发现产物已在本地且校验通过会跳过下载）。也可以在 Actions 页面手动跑一次 build-only 再执行脚本。
 
-   脚本会下载并校验产物、scp 到服务器 `/opt/tyre-flow/tmp/`，然后用被部署提交里的 provision.sh / deploy.sh 完成余下步骤（deploy.sh 发现产物已在本地且校验通过会跳过下载）。`DRY_RUN=1` 只下载上传不部署；`DEPLOY_HOST`、`DEPLOY_SSH_OPTS` 可覆盖服务器地址和 ssh 参数。
+前提：本机 `gh` 已登录且账号对仓库有写权限（触发 workflow 需要；产物已存在时只读即可），能 ssh 到服务器 root。环境变量：`DRY_RUN=1` 只下载上传不部署；`AUTO_BUILD=0` 产物不存在时直接报错而不触发构建；`DEPLOY_HOST`、`DEPLOY_SSH_OPTS` 覆盖服务器地址和 ssh 参数。
 
 注意：本机部署不会重写服务器上的 `shared/.env`（它由 CI 从 Secrets 生成）。改过 Secrets 时走一次 CI 的 full 模式。服务器同一时间只允许一个部署（`/opt/tyre-flow/deploy.lock`），如果 CI 的 Deploy 正卡在下载，先在 GitHub 取消它。
 

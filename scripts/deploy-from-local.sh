@@ -5,19 +5,21 @@
 # 为什么需要它：服务器从 GitHub 拉取构建产物走跨境链路，夜间约 10 MB/s，白天高峰只有几十 KB/s，
 # 一次部署可能拖到几十分钟。本机通常有代理，从 GitHub 下载很快；本机到阿里云是国内链路，上传也快。
 # 所以白天部署改为：CI 只构建并上传产物 → 本机下载 → scp 到服务器 → 远程执行 deploy.sh。
+# Release 里还没有该提交的产物时，脚本会自己触发 Deploy workflow（mode=build-only）并等它上传完，
+# 因此 git push 之后直接执行本脚本即可一键部署。
 #
 # 前提：
-#   1. 产物已由 CI 构建：Actions → Deploy → Run workflow，mode 选 build-only（约 2 分钟）
-#   2. 本机 gh 已登录且能读取仓库（gh auth status）
-#   3. 本机能 ssh 到服务器 root（known_hosts 里是当前主机密钥；换过系统后先 ssh-keygen -R <ip>）
+#   1. 本机 gh 已登录（gh auth status）。触发 CI 构建需要账号对仓库有写权限；产物已存在时只读权限即可
+#   2. 本机能 ssh 到服务器 root（known_hosts 里是当前主机密钥；换过系统后先 ssh-keygen -R <ip>）
 #
 # 用法：
 #   scripts/deploy-from-local.sh              部署 origin/main 最新提交（会先 git fetch）
-#   scripts/deploy-from-local.sh <git-sha>    部署指定提交（需要 CI 已为它构建过产物）
+#   scripts/deploy-from-local.sh <git-sha>    部署指定提交（触发构建时它必须是某个远程分支的最新提交）
 #
 # 环境变量：
 #   DEPLOY_HOST=root@8.148.203.142   服务器
 #   DEPLOY_SSH_OPTS="-i ~/.ssh/xx"   额外 ssh/scp 参数
+#   AUTO_BUILD=0                     产物不存在时不触发 CI，直接报错
 #   DRY_RUN=1                        只下载、校验、上传，不在服务器上执行部署
 #
 # 与 CI 完整部署的区别：这里不会重写服务器上的 shared/.env（那是 CI 从 GitHub Secrets 生成的）。
@@ -66,16 +68,63 @@ fi
 git -C "$ROOT" cat-file -e "$SHA^{commit}" 2>/dev/null || die "本地没有提交 $SHA 的对象"
 SHORT="${SHA:0:12}"
 log "部署提交 $SHORT: $(git -C "$ROOT" log -1 --format='%s' "$SHA")"
+LOCAL_HEAD="$(git -C "$ROOT" rev-parse HEAD)"
+[ "$LOCAL_HEAD" = "$SHA" ] || log "提示: 本地 HEAD (${LOCAL_HEAD:0:12}) 不是要部署的提交，确认已经 push"
 
-# ---------- 2. 确认 CI 已上传产物 ----------
+# ---------- 2. 产物不存在时触发 CI 构建（mode=build-only）并等待上传 ----------
 NAME="tyre-flow-${SHA}.tar.zst"
-ASSETS="$(gh release view "$RELEASE_TAG" -R "$REPO" --json assets --jq '.assets[].name')" \
-  || die "读取 Release $RELEASE_TAG 失败"
-if ! grep -qx "$NAME" <<<"$ASSETS"; then
-  RUN="$(gh run list -R "$REPO" --workflow=deploy.yml --limit 10 --json headSha,status,url \
-    --jq ".[] | select(.headSha == \"$SHA\") | \"\\(.status) \\(.url)\"" | head -1 || true)"
-  [ -n "$RUN" ] && log "该提交的 Deploy run: $RUN"
-  die "Release 里没有 $NAME。先在 GitHub Actions 运行 Deploy（mode 选 build-only），等它上传产物后再执行本脚本"
+asset_exists() {
+  gh release view "$RELEASE_TAG" -R "$REPO" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx "$NAME"
+}
+# 该提交最新的一次 Deploy run（可选：只看某时间之后创建的），输出 "<id> <status> <conclusion> <url>"
+run_for_sha() {
+  gh run list -R "$REPO" --workflow=deploy.yml --limit 20 \
+    --json databaseId,headSha,status,conclusion,url,createdAt \
+    --jq "[.[] | select(.headSha == \"$SHA\" and .createdAt >= \"${1:-}\")] | sort_by(.createdAt) | last | select(. != null)
+          | \"\\(.databaseId) \\(.status) \\(.conclusion) \\(.url)\""
+}
+
+if asset_exists; then
+  ok "Release 里已有产物 $NAME"
+else
+  RUN_ID=""; RUN_STATUS=""; RUN_CONCLUSION=""; RUN_URL=""
+  RUN="$(run_for_sha || true)"
+  [ -n "$RUN" ] && read -r RUN_ID RUN_STATUS RUN_CONCLUSION RUN_URL <<<"$RUN"
+  if [ -n "$RUN_ID" ] && [ "$RUN_STATUS" != "completed" ]; then
+    log "该提交已有 Deploy run 在进行: $RUN_URL"
+  else
+    [ "${AUTO_BUILD:-1}" = "1" ] \
+      || die "Release 里没有 $NAME（AUTO_BUILD=0 不触发构建）。到 GitHub Actions 运行 Deploy，mode 选 build-only"
+    # workflow_dispatch 只能按分支触发：找一个头指向该提交的远程分支
+    BRANCH="$(git -C "$ROOT" for-each-ref --points-at "$SHA" --format='%(refname)' refs/remotes/origin \
+      | sed 's#^refs/remotes/origin/##' | grep -vx 'HEAD' | head -1)"
+    [ -n "$BRANCH" ] || die "提交 $SHORT 不是任何远程分支的最新提交，无法触发 CI 构建（先 push，或改为部署分支最新提交）"
+    log "触发 CI 构建: Deploy (mode=build-only) @ $BRANCH"
+    DISPATCHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    gh workflow run deploy.yml -R "$REPO" --ref "$BRANCH" -f mode=build-only \
+      || die "触发失败：gh 当前账号需要对仓库有写权限（gh auth status 查看账号；用仓库所有者账号 gh auth login 后重试）"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      sleep 5
+      RUN="$(run_for_sha "$DISPATCHED_AT" || true)"
+      [ -n "$RUN" ] && break
+    done
+    [ -n "$RUN" ] || die "触发后 60 秒内没看到新的 run，去 GitHub Actions 页面确认"
+    read -r RUN_ID RUN_STATUS RUN_CONCLUSION RUN_URL <<<"$RUN"
+    log "run: $RUN_URL"
+  fi
+  # build-only 约 2 分钟。若在进行的是 full 模式的 run，它上传产物后会自己去部署，这里会在部署锁上被拦住
+  started=$(date +%s)
+  while ! asset_exists; do
+    STATE="$(gh run view "$RUN_ID" -R "$REPO" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2>/dev/null || echo unknown)"
+    case "$STATE" in
+      "completed success") die "run 已成功结束但 Release 里没有 $NAME: $RUN_URL" ;;
+      completed*) die "CI 构建失败（$STATE）: $RUN_URL" ;;
+    esac
+    printf '\r[local-deploy] 等待 CI 构建并上传产物… %ds (%s)' "$(( $(date +%s) - started ))" "${STATE% *}"
+    sleep 15
+  done
+  echo
+  ok "产物已上传，等待 $(( $(date +%s) - started )) s"
 fi
 
 # ---------- 3. 下载并校验（有缓存且校验通过则跳过） ----------
