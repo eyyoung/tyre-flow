@@ -67,7 +67,7 @@ npm run dev
 ## 生产部署
 
 生产环境不使用 Docker，直接以代码构建产物运行：GitHub Actions 负责构建，服务器只负责拉取产物并运行。
-这样做是因为服务器上行/跨境带宽很小，推送镜像经常失败，而服务器从 GitHub、npmmirror 等源**下载**很快。
+这样做是因为服务器上行/跨境带宽很小，推送镜像经常失败，而服务器从 npmmirror 等国内源下载很快；从 GitHub 下载产物夜间约 10 MB/s，白天高峰只有几十 KB/s，白天请用下面的「从本机部署」。
 
 ```
 GitHub Actions                                 生产服务器 (8.148.203.142)
@@ -108,6 +108,22 @@ systemd 服务（均以 tyreflow 用户运行）:
 ```bash
 ssh -i ~/.ssh/deploy.pem root@8.148.203.142 'bash -s' < scripts/server/provision.sh
 ```
+
+### 白天从本机部署
+
+白天服务器从 GitHub 拉产物可能要几十分钟。改为本机中转：本机走代理从 GitHub 下载很快，本机到阿里云是国内链路。
+
+1. Actions → Deploy → Run workflow，`mode` 选 **build-only**：只构建并上传产物（约 2 分钟），不碰服务器。
+2. 本机执行（需要 `gh` 已登录、能 ssh 到服务器 root）：
+
+   ```bash
+   scripts/deploy-from-local.sh            # 部署 origin/main 最新提交
+   scripts/deploy-from-local.sh <git-sha>  # 或指定提交
+   ```
+
+   脚本会下载并校验产物、scp 到服务器 `/opt/tyre-flow/tmp/`，然后用被部署提交里的 provision.sh / deploy.sh 完成余下步骤（deploy.sh 发现产物已在本地且校验通过会跳过下载）。`DRY_RUN=1` 只下载上传不部署；`DEPLOY_HOST`、`DEPLOY_SSH_OPTS` 可覆盖服务器地址和 ssh 参数。
+
+注意：本机部署不会重写服务器上的 `shared/.env`（它由 CI 从 Secrets 生成）。改过 Secrets 时走一次 CI 的 full 模式。服务器同一时间只允许一个部署（`/opt/tyre-flow/deploy.lock`），如果 CI 的 Deploy 正卡在下载，先在 GitHub 取消它。
 
 ### 日常运维
 

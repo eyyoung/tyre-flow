@@ -5,7 +5,8 @@
 # GitHub Actions 通过 ssh 调用:
 #   ssh root@HOST 'bash -s -- deploy <git-sha> <artifact-sha256>' < scripts/server/deploy.sh
 # 手动:
-#   deploy.sh deploy <git-sha> [artifact-sha256]   部署某次构建（产物由 CI 上传到 GitHub Release）
+#   deploy.sh deploy <git-sha> [artifact-sha256]   部署某次构建（产物由 CI 上传到 GitHub Release；
+#                                                  tmp/ 里已有校验通过的同名文件时跳过下载，本机部署靠这一点）
 #   deploy.sh rollback                              回滚到上一个 release
 #   deploy.sh status                                查看当前状态
 #
@@ -271,6 +272,9 @@ deploy() {
   local sha256="${2:-}"
   [ -n "$NEW_SHA" ] || die "用法: deploy.sh deploy <git-sha> [artifact-sha256]"
   check_prerequisites
+  # 同一时间只允许一个部署（CI 部署和本机部署可能撞车，见 scripts/deploy-from-local.sh）；锁随进程结束释放
+  exec 9>"$APP_ROOT/deploy.lock"
+  flock -n 9 || die "另一个部署正在进行（锁文件 $APP_ROOT/deploy.lock）"
 
   echo "========================================"
   echo " 部署 ${NEW_SHA:0:12}"

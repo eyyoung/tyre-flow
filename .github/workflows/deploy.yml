@@ -5,10 +5,21 @@ name: Deploy
 # 思路：机器带宽小，所以「构建」放在 GitHub Actions，「传输」反过来由服务器主动拉取：
 #   1. CI 构建 Next standalone 产物，上传到固定的 GitHub Release（tag: deploy-artifacts）
 #   2. CI 通过 SSH 只发送几 KB 的命令和 .env
-#   3. 服务器自行从 GitHub Release 下载产物（实测约 10 MB/s），provision.sh 幂等初始化，
+#   3. 服务器自行从 GitHub Release 下载产物（夜间约 10 MB/s），provision.sh 幂等初始化，
 #      deploy.sh 切换 release、重启 systemd 服务、健康检查，失败自动回滚
+#
+# 白天跨境链路只有几十 KB/s，服务器拉产物可能要几十分钟。这时选 mode=build-only：
+# 只构建并上传产物，然后在本机执行 scripts/deploy-from-local.sh 把产物 scp 过去完成部署。
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "full = 构建并部署；build-only = 只构建上传产物，之后用 scripts/deploy-from-local.sh 从本机部署"
+        type: choice
+        default: full
+        options:
+          - full
+          - build-only
 
 permissions:
   contents: write   # 上传构建产物到 Release
@@ -126,7 +137,19 @@ jobs:
               gh release delete-asset "$RELEASE_TAG" "$name" --yes
             done
 
+      - name: Build-only summary
+        if: ${{ inputs.mode == 'build-only' }}
+        run: |
+          {
+            echo "产物已上传到 Release \`$RELEASE_TAG\`，在本机执行："
+            echo
+            echo '```'
+            echo "scripts/deploy-from-local.sh $GITHUB_SHA"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Prepare runtime env
+        if: ${{ inputs.mode != 'build-only' }}
         shell: bash
         env:
           EXTERNAL_DB_URL: ${{ secrets.EXTERNAL_DB_URL }}
@@ -186,6 +209,7 @@ jobs:
           write_value ALIBABA_CLOUD_ACCESS_KEY_SECRET "$ALIBABA_CLOUD_ACCESS_KEY_SECRET"
 
       - name: Configure SSH
+        if: ${{ inputs.mode != 'build-only' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -209,19 +233,23 @@ jobs:
 
       # 幂等：已满足的项直接跳过，首次会安装 apt 包 / Node / Python venv / systemd 单元
       - name: Provision server
+        if: ${{ inputs.mode != 'build-only' }}
         run: ssh prod 'bash -s' < scripts/server/provision.sh
 
       - name: Sync runtime env
+        if: ${{ inputs.mode != 'build-only' }}
         run: |
           set -euo pipefail
           scp /tmp/tyre-flow.env prod:/tmp/tyre-flow.env
           ssh prod 'install -o tyreflow -g tyreflow -m 600 /tmp/tyre-flow.env /opt/tyre-flow/shared/.env && rm -f /tmp/tyre-flow.env'
 
       - name: Deploy
+        if: ${{ inputs.mode != 'build-only' }}
         env:
           SHA256: ${{ steps.pack.outputs.sha256 }}
         run: ssh prod "bash -s -- deploy '$GITHUB_SHA' '$SHA256'" < scripts/server/deploy.sh
 
       - name: Smoke test (public endpoint)
+        if: ${{ inputs.mode != 'build-only' }}
         continue-on-error: true
         run: curl -fsS --retry 3 --retry-delay 5 -m 10 "http://$SERVER_IP:3000/api/health"; echo
