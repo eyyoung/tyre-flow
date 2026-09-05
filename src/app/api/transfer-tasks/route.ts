@@ -1,7 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
+import prisma from '@/lib/db';
 import { withMiddlewares, standardMiddlewares } from '@/lib/middleware';
 import { executeTransferTask } from '@/lib/transfer-generator';
 import { assertSufficientInventory, getInventorySummary } from '@/lib/inventory';
+
+const TASK_NO_MAX_ATTEMPTS = 3;
+
+/**
+ * 生成转移任务编号：TT-<开始日期>-<结束日期>-<序号>
+ *
+ * 序号取同一日期区间下已有编号的最大值 + 1，而不是全表总数 + 1：
+ * 总数会因删除任务而回退，非管理员的 ctx.prisma 还会按收集点过滤，两者都会算出已被占用的编号。
+ * 这里用未过滤的 prisma 查询，保证跨收集点、跨用户也不重号。
+ */
+async function nextTransferTaskNo(startStr: string, endStr: string): Promise<string> {
+  const prefix = `TT-${startStr}-${endStr}-`;
+  const existing = await prisma.transferTask.findMany({
+    where: { taskNo: { startsWith: prefix } },
+    select: { taskNo: true },
+  });
+
+  let maxSeq = 0;
+  for (const { taskNo } of existing) {
+    const seq = parseInt(taskNo.slice(prefix.length), 10);
+    if (Number.isFinite(seq) && seq > maxSeq) {
+      maxSeq = seq;
+    }
+  }
+
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
+function isTaskNoConflict(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002' &&
+    (error.meta?.target as string[] | undefined)?.includes('taskNo') === true
+  );
+}
 
 // 获取转移任务列表
 export async function GET(request: NextRequest) {
@@ -173,23 +210,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 生成任务编号
+      // 生成任务编号并创建任务。编号查询与创建不在同一事务里，
+      // 并发创建可能撞号（P2002），此时重新取号再试。
       const startStr = startDate.replace(/-/g, '');
       const endStr = endDate.replace(/-/g, '');
-      const count = await ctx.prisma.transferTask.count();
-      const taskNo = `TT-${startStr}-${endStr}-${String(count + 1).padStart(4, '0')}`;
-
-      // 创建任务
-      const task = await ctx.prisma.transferTask.create({
-        data: {
-          taskNo,
-          startDate: start,
-          endDate: end,
-          targetTonnage: targetWeightKg,
-          collectionPointId,
-          factoryId,
-        },
-      });
+      let task;
+      for (let attempt = 1; ; attempt++) {
+        const taskNo = await nextTransferTaskNo(startStr, endStr);
+        try {
+          task = await ctx.prisma.transferTask.create({
+            data: {
+              taskNo,
+              startDate: start,
+              endDate: end,
+              targetTonnage: targetWeightKg,
+              collectionPointId,
+              factoryId,
+            },
+          });
+          break;
+        } catch (error) {
+          if (attempt < TASK_NO_MAX_ATTEMPTS && isTaskNoConflict(error)) {
+            console.warn(`转移任务编号 ${taskNo} 已被占用，重新取号（第 ${attempt} 次）`);
+            continue;
+          }
+          throw error;
+        }
+      }
 
       // 立即执行生成任务
       const summary = await executeTransferTask(task.id);
